@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 1.0.36 - 2026-10-11
+
+This patch speeds up VOD quality selection and keeps the dialog steady while available qualities load.
+
+### Video quality
+
+- Load available qualities directly from Twitch before falling back to Streamlink, avoiding an extra process in the usual case.
+- Reuse recent quality results when opening the same VOD again.
+- Sort resolutions from highest to lowest, including 1440p Source renditions.
+- Show the Source resolution, frame rate and codec beneath its label.
+
+### Interface
+
+- Replace the separate loading spinner with aligned placeholders that preserve the position of the quality options and action buttons.
+- Use consistent two-line options with readable text in light and dark themes.
+- Rename the dialog to Video quality and clarify the Add to queue action with a green button and queue icon.
+- Include editing workflow styles in development live updates.
+
+### Verification
+
+- Check loading, selection, cancellation, errors and retry behavior in Chromium and WebKit, including narrow windows and both themes.
+- Verify the Windows package and public update files before completing the release.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.35 - 2026-10-11
 
 This patch prevents accidental text selection on interface buttons, including the VOD download quality dialog.
