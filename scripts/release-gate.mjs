@@ -32,7 +32,7 @@ await mkdir(output, { recursive: true });
 await rm(resolve(output, 'receipt.json'), { force: true });
 for (const [, args] of checks) for (const arg of args.filter(value => value.startsWith('scripts/'))) await access(resolve(root, arg));
 const results = [];
-async function run(name, args) {
+async function run(name, args, attempt = 1) {
     const started = Date.now();
     console.log('Checking ' + name);
     try {
@@ -42,6 +42,11 @@ async function run(name, args) {
         results.push({ name, milliseconds: Date.now() - started, success: true });
     } catch (error) {
         await writeFile(resolve(output, name + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
+        if (name.endsWith('-webkit') && attempt < 3 && /Target (?:page, context or browser has been closed|crashed)/.test(String(error.stderr || ''))) {
+            await writeFile(resolve(output, name + '-attempt-' + attempt + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
+            console.warn('Retrying crashed WebKit process: ' + name + ' (attempt ' + (attempt + 1) + ')');
+            return run(name, args, attempt + 1);
+        }
         throw error;
     }
 }
