@@ -236,7 +236,7 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
     dialog.setAttribute('aria-labelledby', 'vodQualityTitle');
     const heading = document.createElement('h2');
     heading.id = 'vodQualityTitle';
-    heading.textContent = english ? 'Download quality' : 'Downloadqualität';
+    heading.textContent = english ? 'Video quality' : 'Videoqualität';
     const subtitle = document.createElement('p');
     subtitle.className = 'vod-quality-subtitle';
     subtitle.textContent = title;
