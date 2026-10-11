@@ -148,15 +148,58 @@ export function parseVodQualities(json: string, playlist = '', master = ''): Vod
     return [{ id: 'source', label: 'Source · ' + label(best) }, ...keys.map(id => ({ id, label: label(id) }))];
 }
 
-const directVodVariantCache = new Map<string, { expires: number; variants: UnavailableVodVariant[] }>();
+export function parseVodPlaylistQualities(playlist: string, master: string): VodQualityOption[] {
+    const streams: Record<string, VodStream> = {};
+    const names = new Map<string, string>();
+    let attributes: Record<string, string> | null = null;
+    for (const raw of playlist.split(/\r?\n/)) {
+        const line = raw.trim();
+        const readAttributes = (value: string): Record<string, string> => Object.fromEntries(
+            Array.from(value.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g), match => [match[1], match[2] ?? match[3]]),
+        );
+        if (line.startsWith('#EXT-X-MEDIA:')) {
+            const media = readAttributes(line.slice(13));
+            if (media.TYPE === 'VIDEO' && media['GROUP-ID'] && media.NAME) names.set(media['GROUP-ID'], media.NAME);
+        } else if (line.startsWith('#EXT-X-STREAM-INF:')) {
+            attributes = readAttributes(line.slice(18));
+        } else if (line && !line.startsWith('#') && attributes) {
+            const current = attributes;
+            attributes = null;
+            const height = parseResolution(current.RESOLUTION);
+            if (!height) continue;
+            const name = current['IVS-NAME'] || names.get(current.VIDEO) || current['STABLE-VARIANT-ID'] || '';
+            const namedQuality = name.replace(/\s*\(source\)$/i, '');
+            const fps = Number(current['FRAME-RATE']);
+            let id = normalizeVodQuality(namedQuality);
+            if (!id || id === 'source') id = `${height}p${fps > 30 ? Math.round(fps) : ''}`;
+            if (!normalizeVodQuality(id)) continue;
+            const url = new URL(line, master);
+            if (url.protocol !== 'https:') continue;
+            const source = current['IVS-VARIANT-SOURCE'] === 'source' || /\(source\)$/i.test(name) || /\/chunked\//.test(url.pathname);
+            if (streams[id]) {
+                let suffix = 0;
+                const base = id;
+                do { id = base + '_alt' + (suffix || ''); suffix++; } while (streams[id]);
+            }
+            streams[id] = { url: url.href };
+            if (source) streams.source = streams[id];
+        }
+    }
+    return parseVodQualities(JSON.stringify({ streams }), playlist, master);
+}
 
-async function loadUnavailableVodVariants(urlValue: string, signal?: AbortSignal): Promise<UnavailableVodVariant[]> {
+const directVodVariantCache = new Map<string, { expires: number; variants: UnavailableVodVariant[]; playlist: string; master: string }>();
+
+async function loadDirectVodPlaylist(urlValue: string, signal?: AbortSignal): Promise<{ variants: UnavailableVodVariant[]; playlist: string; master: string }> {
     const url = new URL(urlValue);
-    if (url.protocol !== 'https:' || !['twitch.tv', 'www.twitch.tv'].includes(url.hostname)) return [];
+    if (url.protocol !== 'https:' || !['twitch.tv', 'www.twitch.tv'].includes(url.hostname) || url.port || url.username || url.password) throw new Error('Invalid VOD URL');
     const id = url.pathname.match(/^\/videos\/(\d+)\/?$/)?.[1];
-    if (!id) return [];
+    if (!id) throw new Error('Invalid VOD URL');
+    signal?.throwIfAborted();
+    for (const [key, entry] of directVodVariantCache) if (entry.expires <= Date.now()) directVodVariantCache.delete(key);
     const cached = directVodVariantCache.get(id);
-    if (cached && cached.expires > Date.now()) return cached.variants;
+    if (cached) return cached;
+    const requestSignal = AbortSignal.any([AbortSignal.timeout(6000), ...(signal ? [signal] : [])]);
     const query = {
         operationName: 'PlaybackAccessToken_Template',
         query: 'query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature } }',
@@ -165,25 +208,28 @@ async function loadUnavailableVodVariants(urlValue: string, signal?: AbortSignal
     const tokenResponse = await fetch('https://gql.twitch.tv/gql', {
         method: 'POST',
         headers: { 'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko', 'Content-Type': 'application/json' },
-        body: JSON.stringify(query), signal,
+        body: JSON.stringify(query), signal: requestSignal,
     });
-    if (!tokenResponse.ok) return [];
+    if (!tokenResponse.ok) throw new Error('VOD access token unavailable');
     const tokenData = await tokenResponse.json() as { data?: { videoPlaybackAccessToken?: { value?: string; signature?: string } } };
     const token = tokenData.data?.videoPlaybackAccessToken;
-    if (!token?.value || !token.signature) return [];
+    if (!token?.value || !token.signature) throw new Error('VOD access token unavailable');
     const params = new URLSearchParams({
         sig: token.signature, token: token.value, allow_source: 'true', allow_audio_only: 'true', include_unavailable: 'true',
         platform: 'web', player_backend: 'mediaplayer', playlist_include_framerate: 'true', supported_codecs: 'av1,h265,h264',
     });
     const masterUrl = `https://usher.ttvnw.net/vod/v2/${id}.m3u8?${params.toString()}`;
-    const masterResponse = await fetch(masterUrl, { signal });
-    if (!masterResponse.ok) return [];
+    const masterResponse = await fetch(masterUrl, { signal: requestSignal });
+    if (!masterResponse.ok) throw new Error('VOD playlist unavailable');
     const playlist = await masterResponse.text();
+    requestSignal.throwIfAborted();
+    if (playlist.length > 1048576 || !playlist.startsWith('#EXTM3U')) throw new Error('Invalid VOD playlist');
     const referenceUrl = playlist.split(/\r?\n/).find(line => /^https?:\/\//.test(line.trim()))?.trim();
-    if (!referenceUrl) return [];
-    const variants = parseUnavailableVodVariants(playlist, referenceUrl);
-    directVodVariantCache.set(id, { expires: Date.now() + 120000, variants });
-    return variants;
+    const variants = referenceUrl ? parseUnavailableVodVariants(playlist, referenceUrl) : [];
+    const result = { expires: Date.now() + 120000, variants, playlist, master: masterUrl };
+    if (directVodVariantCache.size >= 20) directVodVariantCache.delete(directVodVariantCache.keys().next().value!);
+    directVodVariantCache.set(id, result);
+    return result;
 }
 
 export async function resolveVodQualitySource(urlValue: string, quality?: string, signal?: AbortSignal): Promise<string | null> {
@@ -191,7 +237,7 @@ export async function resolveVodQualitySource(urlValue: string, quality?: string
     if (!normalized) return null;
     if (normalized !== 'source' && Number(normalized.split('p')[0]) < 1100) return null;
     try {
-        const variants = await loadUnavailableVodVariants(urlValue, signal);
+        const { variants } = await loadDirectVodPlaylist(urlValue, signal);
         const source = variants.filter(value => value.source).sort((a, b) => b.height - a.height || (b.fps || 0) - (a.fps || 0))[0];
         if (normalized === 'source') return source?.url || null;
         return variants.find(value => value.id === normalized)?.url || null;
@@ -232,24 +278,23 @@ export class VodQualityService {
         const active = { id: input.id, controller: new AbortController() };
         this.active = active;
         try {
-            if (!await tools.prepare() || active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
-            const tool = await tools.streamlink();
-            const output = await runMediaProcess(tool.command, [...tool.prefixArgs, '--loglevel', 'none', ...TWITCH_VIDEO_CODEC_ARGS, '--json', 'https://www.twitch.tv' + url.pathname], { signal: active.controller.signal, timeoutMs: 45000 });
-            let metadata = { playlist: '', master: '' };
-            try { metadata = await loadVodPlaylist(output, active.controller.signal); } catch { if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled'); }
-            if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
-            const qualities = parseVodQualities(output, metadata.playlist, metadata.master);
+            let qualities: VodQualityOption[] | undefined;
             try {
-                if (metadata.master) {
-                    const unavailable = await loadUnavailableVodVariants(key, active.controller.signal);
-                    const hidden = unavailable.filter(variant => !qualities.some(quality => quality.id === variant.id));
-                    const source = unavailable.filter(variant => variant.source).sort((a, b) => b.height - a.height || (b.fps || 0) - (a.fps || 0))[0];
-                    if (source) qualities[0] = { id: 'source', label: 'Source · ' + variantLabel(source.id, source.fps, source.codec) };
-                    qualities.push(...hidden.map(variant => ({ id: variant.id, label: variantLabel(variant.id, variant.fps, variant.codec) })));
-                }
+                const direct = await loadDirectVodPlaylist(key, active.controller.signal);
+                qualities = parseVodPlaylistQualities(direct.playlist, direct.master);
             } catch {
                 if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
             }
+            if (!qualities) {
+                if (!await tools.prepare() || active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
+                const tool = await tools.streamlink();
+                const output = await runMediaProcess(tool.command, [...tool.prefixArgs, '--loglevel', 'none', ...TWITCH_VIDEO_CODEC_ARGS, '--json', 'https://www.twitch.tv' + url.pathname], { signal: active.controller.signal, timeoutMs: 45000 });
+                let metadata = { playlist: '', master: '' };
+                try { metadata = await loadVodPlaylist(output, active.controller.signal); } catch { if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled'); }
+                if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
+                qualities = parseVodQualities(output, metadata.playlist, metadata.master);
+            }
+            if (active.controller.signal.aborted) throw new Error('VOD quality request cancelled');
             if (this.cache.size >= 20) this.cache.delete(this.cache.keys().next().value!);
             this.cache.set(key, { expires: Date.now() + 120000, qualities: structuredClone(qualities) });
             return qualities;

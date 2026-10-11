@@ -251,6 +251,7 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
     actions.className = 'vod-quality-actions';
     const cancel = document.createElement('button');
     cancel.className = 'btn-secondary';
+    cancel.autofocus = true;
     cancel.textContent = english ? 'Cancel' : 'Abbrechen';
     const retry = document.createElement('button');
     retry.className = 'btn-secondary';
@@ -261,15 +262,17 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
     confirm.textContent = english ? 'Add to queue' : 'Zur Warteschlange';
     confirm.disabled = true;
     actions.append(cancel, retry, confirm);
-    dialog.append(heading, subtitle, status, options, actions);
+    dialog.append(heading, subtitle, options, actions);
     document.body.append(dialog);
     let selected = 'source';
     let requestId = '';
     let settled = false;
+    let loadingTimer: ReturnType<typeof setTimeout> | undefined;
     return await new Promise<string | null>(resolve => {
         const finish = (value: string | null): void => {
             if (settled) return;
             settled = true;
+            clearTimeout(loadingTimer);
             void window.api.cancelVodQualities(requestId).catch(() => {});
             dialog.close();
             dialog.remove();
@@ -281,14 +284,27 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
             const id = requestId;
             confirm.disabled = true;
             retry.hidden = true;
-            options.replaceChildren();
+            options.replaceChildren(status);
+            options.setAttribute('aria-busy', 'true');
+            for (let index = 0; index < 5; index++) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'vod-quality-placeholder';
+                placeholder.setAttribute('aria-hidden', 'true');
+                options.append(placeholder);
+            }
             status.hidden = false;
-            status.textContent = english ? 'Loading available qualities…' : 'Verfügbare Qualitäten werden geladen…';
+            status.classList.add('is-loading');
+            status.textContent = english ? 'Loading qualities…' : 'Qualitäten laden…';
+            clearTimeout(loadingTimer);
+            loadingTimer = setTimeout(() => {
+                if (!settled && requestId === id) status.textContent = english ? 'Still waiting for Twitch…' : 'Warte auf Twitch…';
+            }, 4000);
             try {
                 const qualities = await window.api.getVodQualities({ id, url });
                 if (settled || requestId !== id) return;
                 if (!qualities?.length) throw new Error('No qualities');
                 selected = 'source';
+                options.replaceChildren();
                 for (const quality of qualities) {
                     const label = document.createElement('label');
                     label.className = 'vod-quality-option';
@@ -299,16 +315,32 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
                     radio.checked = quality.id === selected;
                     radio.addEventListener('change', () => { selected = quality.id; });
                     const text = document.createElement('span');
-                    text.textContent = quality.label;
+                    text.className = 'vod-quality-description';
+                    const name = document.createElement('strong');
+                    const details = document.createElement('span');
+                    details.className = 'vod-quality-details';
+                    const parts = quality.label.split(' · ');
+                    name.textContent = quality.id === 'source' ? 'Source' : parts[0];
+                    details.textContent = parts.slice(1).join(' · ');
+                    if (quality.id === 'source') label.classList.add('is-source');
+                    text.append(name);
+                    if (details.textContent) text.append(details);
                     label.append(radio, text);
                     options.append(label);
                 }
-                status.hidden = true;
+                status.textContent = '';
                 confirm.disabled = false;
             } catch {
                 if (settled || requestId !== id) return;
-                status.textContent = english ? 'Could not load the available qualities.' : 'Verfügbare Qualitäten konnten nicht geladen werden.';
+                status.textContent = english ? 'Could not load the available qualities.' : 'Qualitäten konnten nicht geladen werden.';
+                options.replaceChildren(status);
                 retry.hidden = false;
+            } finally {
+                if (requestId === id) {
+                    clearTimeout(loadingTimer);
+                    status.classList.remove('is-loading');
+                    options.setAttribute('aria-busy', 'false');
+                }
             }
         };
         cancel.addEventListener('click', () => finish(null));
