@@ -42,7 +42,9 @@ async function run(name, args, attempt = 1) {
         results.push({ name, milliseconds: Date.now() - started, success: true });
     } catch (error) {
         await writeFile(resolve(output, name + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
-        if (name.endsWith('-webkit') && attempt < 3 && /Target (?:page, context or browser has been closed|crashed)/.test(String(error.stderr || ''))) {
+        const webkitProcessFailure = error.code === 1073807364 || /Target (?:page, context or browser has been closed|crashed)/.test(String(error.stderr || ''));
+        const webkitCompletedChecks = name.endsWith('-webkit') && /\bPASS\b/.test(String(error.stdout || '')) && !String(error.stderr || '').trim();
+        if (name.endsWith('-webkit') && attempt < 3 && (webkitProcessFailure || webkitCompletedChecks)) {
             await writeFile(resolve(output, name + '-attempt-' + attempt + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
             console.warn('Retrying crashed WebKit process: ' + name + ' (attempt ' + (attempt + 1) + ')');
             return run(name, args, attempt + 1);
