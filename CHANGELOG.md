@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.0.35 - 2026-10-11
+
+This patch prevents accidental text selection on interface buttons, including the VOD download quality dialog.
+
+### Interface
+
+- Prevent button labels such as Cancel and Add to queue from being highlighted while clicking or dragging.
+- Apply the same selection behavior to native buttons and controls with the button role.
+- Preserve the existing selection rules for input fields and copyable content.
+
 ## 1.0.34 - 2026-10-11
 
 This patch makes Windows updates from older Twitch VOD Manager releases reliable on GitHub release assets.
