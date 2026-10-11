@@ -28,7 +28,7 @@ export function createDevelopmentLiveUpdates(
         const currentRevision = ++revision;
         try {
             const { build, transform } = await import('esbuild');
-            const names = ['styles', 'styles-workflows', 'styles-overlays', 'workspace', 'workspace-refinements', 'workspace-insights'];
+            const names = ['styles', 'styles-workflows', 'styles-overlays', 'workspace', 'workspace-refinements', 'editing-workflows', 'workspace-insights'];
             const styles = await Promise.all(names.map(async name => {
                 const source = await readFile(join(root, 'src', name + '.css'), 'utf8');
                 const result = await transform(source, { loader: 'css', sourcefile: name + '.css', logLevel: 'silent' });
