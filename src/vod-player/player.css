@@ -73,6 +73,12 @@
 .archive-controls input[type="range"]:focus, .player-panel input[type="range"]:focus { outline: none; box-shadow: none; }
 .archive-controls input[type="range"]:focus-visible::-webkit-slider-thumb, .player-panel input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px #171b21, 0 0 0 4px #fff; }
 .archive-controls input[type="range"]:focus-visible::-moz-range-thumb, .player-panel input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px #171b21, 0 0 0 4px #fff; }
+.archive-controls input.archive-timeline[type="range"]::-webkit-slider-thumb, .archive-controls input.archive-timeline[type="range"]:hover::-webkit-slider-thumb { border: 0; box-shadow: none; transform: none; background: #aaa2f7; }
+.archive-controls input.archive-timeline[type="range"]::-moz-range-thumb, .archive-controls input.archive-timeline[type="range"]:hover::-moz-range-thumb { border: 0; box-shadow: none; transform: none; background: #aaa2f7; }
+.archive-controls input.archive-timeline.has-chapters[type="range"]::-webkit-slider-thumb, .archive-controls input.archive-timeline.has-chapters[type="range"]:hover::-webkit-slider-thumb { background: #fff; }
+.archive-controls input.archive-timeline.has-chapters[type="range"]::-moz-range-thumb, .archive-controls input.archive-timeline.has-chapters[type="range"]:hover::-moz-range-thumb { background: #fff; }
+.archive-controls input.archive-timeline[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px #171b21, 0 0 0 4px #fff; }
+.archive-controls input.archive-timeline[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px #171b21, 0 0 0 4px #fff; }
 .player-button.player-time-button { width: auto; height: 28px; padding: 0 2px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; }
 .player-exact-time label { display: grid; gap: 10px; }
 .player-panel .player-exact-time input { width: 100%; padding: 9px 10px; color: #fff; background: #101417; border: 1px solid #62676b; border-radius: 6px; font-size: 15px; font-variant-numeric: tabular-nums; user-select: text; }
