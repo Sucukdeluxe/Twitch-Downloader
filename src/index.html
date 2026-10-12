@@ -67,16 +67,16 @@
                     <section id="clipHistoryPanel" aria-labelledby="clipHistoryTitle"><div id="clipHistory"></div></section>
                 </aside>
                 <section id="clipCutPanel" aria-labelledby="clipSelectionTitle">
-                    <div class="vod-cut-heading"><h3 id="clipSelectionTitle">Schnittbereich</h3><div id="clipEditMode"></div><p id="clipTimeHint">HH:MM:SS.mmm oder Sekunden</p><div id="clipTimelineView"></div><button type="button" class="btn-secondary" id="vodMarkersButton" onclick="RendererVodLibrary.open('vod')">Markierungen</button></div>
+                    <div class="vod-cut-heading"><h3 id="clipSelectionTitle">Schnittbereich</h3><div id="clipEditMode"></div><p id="clipTimeHint">HH:MM:SS oder Sekunden</p><div id="clipTimelineView"></div><button type="button" class="btn-secondary" id="vodMarkersButton" onclick="RendererVodLibrary.open('vod')">Markierungen</button></div>
                     <div class="vod-cut-fields">
             <div class="clip-modal-field">
                 <label class="clip-modal-label" hidden id="clipDialogStartLabel" for="clipStartSlider">Start:</label>
                 <input hidden step="0.1" type="range" id="clipStartSlider" min="0" max="100" value="0" oninput="updateFromSlider('start')">
                 <div class="clip-modal-time-row">
                     <div class="vod-time-heading"><label class="clip-modal-meta" id="clipDialogStartTimeLabel" for="clipStartTime">Startzeit (HH:MM:SS):</label><div id="clipMarkStart"></div></div>
-                    <div class="vod-time-entry"><button type="button" id="clipStartEarlier" onclick="nudgeClipTime('start', -0.1)">−</button>
+                    <div class="vod-time-entry"><button type="button" id="clipStartEarlier" onclick="nudgeClipTime('start', -1)">−</button>
                     <input type="text" id="clipStartTime" value="00:00:00" class="clip-modal-time-input" aria-describedby="clipTimeHint" spellcheck="false" autocomplete="off" oninput="updateFromInput('start')" onchange="normalizeClipTime('start')">
-                    <button type="button" id="clipStartLater" onclick="nudgeClipTime('start', 0.1)">+</button></div>
+                    <button type="button" id="clipStartLater" onclick="nudgeClipTime('start', 1)">+</button></div>
                 </div>
             </div>
 
@@ -90,9 +90,9 @@
                 <input hidden step="0.1" type="range" id="clipEndSlider" min="0" max="100" value="60" oninput="updateFromSlider('end')">
                 <div class="clip-modal-time-row">
                     <div class="vod-time-heading"><label class="clip-modal-meta" id="clipDialogEndTimeLabel" for="clipEndTime">Endzeit (HH:MM:SS):</label><div id="clipMarkEnd"></div></div>
-                    <div class="vod-time-entry"><button type="button" id="clipEndEarlier" onclick="nudgeClipTime('end', -0.1)">−</button>
+                    <div class="vod-time-entry"><button type="button" id="clipEndEarlier" onclick="nudgeClipTime('end', -1)">−</button>
                     <input type="text" id="clipEndTime" value="00:01:00" class="clip-modal-time-input" aria-describedby="clipTimeHint" spellcheck="false" autocomplete="off" oninput="updateFromInput('end')" onchange="normalizeClipTime('end')">
-                    <button type="button" id="clipEndLater" onclick="nudgeClipTime('end', 0.1)">+</button></div>
+                    <button type="button" id="clipEndLater" onclick="nudgeClipTime('end', 1)">+</button></div>
                 </div>
             </div>
 

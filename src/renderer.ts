@@ -1675,9 +1675,11 @@ function parseTimeToSeconds(timeStr: string): number {
 }
 
 function formatClipTime(seconds: number): string {
-    const rounded = Math.round(Math.max(0, seconds) * 1000);
-    const milliseconds = rounded % 1000;
-    return formatSecondsToTime(Math.floor(rounded / 1000)) + (milliseconds ? '.' + String(milliseconds).padStart(3, '0') : '');
+    return formatSecondsToTime(Math.round(Math.max(0, seconds)));
+}
+
+function roundClipBoundary(seconds: number): number {
+    return seconds >= clipTotalSeconds - .0005 ? clipTotalSeconds : Math.max(0, Math.round(seconds));
 }
 
 let clipOmissionState: { editing?: boolean; config: import('./main/domain/vod-edit-plan').OmissionConfig | null; plan: import('./main/domain/vod-edit-plan').EditedVodPlan | null } | null = null;
@@ -1822,9 +1824,9 @@ function nudgeClipTime(which: 'start' | 'end', delta: number): void {
     const start = parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value);
     const end = parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value);
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > clipTotalSeconds || start >= end) return;
-    const minimum = which === 'start' ? 0 : start + .001;
-    const maximum = which === 'start' ? end - .001 : clipTotalSeconds;
-    const next = Math.max(minimum, Math.min(maximum, Math.round(((which === 'start' ? start : end) + delta) * 1000) / 1000));
+    const minimum = which === 'start' ? 0 : start + 1;
+    const maximum = which === 'start' ? end - 1 : clipTotalSeconds;
+    const next = Math.max(minimum, Math.min(maximum, roundClipBoundary((which === 'start' ? start : end) + delta)));
     byId<HTMLInputElement>(which === 'start' ? 'clipStartTime' : 'clipEndTime').value = formatClipTime(next);
     updateFromInput(which);
 }
@@ -1843,8 +1845,8 @@ function updateFromInput(which: string): void {
 }
 
 function updateClipDuration(syncPlayer: boolean = true): void {
-    const startSec = parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value);
-    const endSec = parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value);
+    const startSec = roundClipBoundary(parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value));
+    const endSec = roundClipBoundary(parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value));
     const duration = endSec - startSec;
     const durationDisplay = byId('clipDurationDisplay');
 
@@ -1853,8 +1855,8 @@ function updateClipDuration(syncPlayer: boolean = true): void {
     byId('clipStartTime').setAttribute('aria-invalid', String(!Number.isFinite(startSec) || startSec < 0 || startSec >= endSec || startSec >= clipTotalSeconds));
     byId('clipEndTime').setAttribute('aria-invalid', String(!Number.isFinite(endSec) || endSec <= startSec || endSec > clipTotalSeconds));
     byId<HTMLButtonElement>('clipStartEarlier').disabled = !isValid || startSec <= 0;
-    byId<HTMLButtonElement>('clipStartLater').disabled = !isValid || endSec - startSec <= .001001;
-    byId<HTMLButtonElement>('clipEndEarlier').disabled = !isValid || endSec - startSec <= .001001;
+    byId<HTMLButtonElement>('clipStartLater').disabled = !isValid || endSec - startSec <= 1;
+    byId<HTMLButtonElement>('clipEndEarlier').disabled = !isValid || endSec - startSec <= 1;
     byId<HTMLButtonElement>('clipEndLater').disabled = !isValid || endSec >= clipTotalSeconds;
     clipPlayer?.setInputValid(isValid);
     if (isValid && syncPlayer) clipPlayer?.updateRange(startSec, endSec);
@@ -1919,8 +1921,8 @@ async function confirmClipDialog(): Promise<void> {
     }
 
     if (clipOmissionState && (clipOmissionState.editing || !clipOmissionState.config || !clipOmissionState.plan?.parts.length)) return;
-    const startSec = clipOmissionState ? 0 : parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value);
-    const endSec = clipOmissionState ? clipTotalSeconds : parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value);
+    const startSec = clipOmissionState ? 0 : roundClipBoundary(parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value));
+    const endSec = clipOmissionState ? clipTotalSeconds : roundClipBoundary(parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value));
     const durationSec = endSec - startSec;
     const startPart = getClipStartPart();
     if (!Number.isInteger(startPart)) { updateClipOmissionState(); return; }

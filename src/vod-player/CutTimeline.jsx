@@ -9,11 +9,10 @@ import { FineSeekPreview } from './FineSeekPreview.jsx';
 import { Tooltip } from './Tooltip.jsx';
 
 export function cutTime(seconds) {
-  const value = Math.round(Math.max(0, seconds) * 1000);
-  return `${timeLabel(Math.floor(value / 1000))}.${String(value % 1000).padStart(3, '0')}`;
+  return timeLabel(Math.round(Math.max(0, seconds)));
 }
 
-export function RangeMarkers({ duration, range, onChange, text, from = 0, to = duration, compact = false, onInteraction, trackWidth = 1000, finePreview, onPreviewChange, limits, variant = 'excerpt', disabled = false, minimumRange = .001, format = cutTime, handleIds, onDragStart, onDragEnd, onDragCancel, trackInset = 7 }) {
+export function RangeMarkers({ duration, range, onChange, text, from = 0, to = duration, compact = false, onInteraction, trackWidth = 1000, finePreview, onPreviewChange, limits, variant = 'excerpt', disabled = false, minimumRange = .001, step = .1, format = cutTime, handleIds, onDragStart, onDragEnd, onDragCancel, trackInset = 7 }) {
   const track = useRef(null), drag = useRef(null);
   const [preview, setPreview] = useState(null), [dragging, setDragging] = useState(false);
   const alignPreview = useCallback(bounds => {
@@ -106,14 +105,14 @@ export function RangeMarkers({ duration, range, onChange, text, from = 0, to = d
       onKeyDown={event => {
         if (event.key === 'Escape' && drag.current) { event.preventDefault(); event.stopPropagation(); cancelDrag(); return; }
         if (drag.current) return;
-        const step = event.shiftKey ? 10 : event.altKey ? .001 : .1;
-        const delta = { ArrowLeft: -step, ArrowDown: -step, ArrowRight: step, ArrowUp: step }[event.key];
+        const amount = event.shiftKey ? 10 : event.altKey && step < 1 ? .001 : step;
+        const delta = { ArrowLeft: -amount, ArrowDown: -amount, ArrowRight: amount, ArrowUp: amount }[event.key];
         if (delta === undefined && event.key !== 'Home' && event.key !== 'End') return;
         event.preventDefault(); event.stopPropagation(); onInteraction?.();
         update(which, delta === undefined ? event.key === 'Home' ? minimum : maximum : Math.round((range[which] + delta) * 1000) / 1000);
       }}><span>{which === 'start' ? 'I' : 'O'}</span></button>)}
     {finePreview && <FineSeekPreview {...(drag.current?.previewContext || finePreview)} preview={preview} anchorRef={track} total={duration}
-      onAlign={alignPreview} kind="cut-start"/>}
+      onAlign={alignPreview} kind="cut-start" wholeSeconds={step >= 1}/>}
   </div>;
 }
 
@@ -150,9 +149,9 @@ export function CutTimeline({ duration, range, position, chapters, onChange, onS
       </div>
       <CategoryColors className="vod-selection-stripe" height={3} chapters={chapters} from={from} to={to}/>
       <OmissionBands ranges={omissions} from={from} to={to} onSelect={onSelectOmission} label={text.range}/>
-      {active && <RangeMarkers duration={duration} range={range} onChange={onChange} text={text} from={from} to={to} finePreview={finePreview}/>}
+      {active && <RangeMarkers duration={duration} range={range} onChange={onChange} text={text} from={from} to={to} finePreview={finePreview} minimumRange={1} step={1}/>}
       {position >= from && position <= to && <i className="vod-selection-playhead" title={cutTime(position)} style={{ left: `${(position - from) / span * 100}%` }}/>} 
     </div>
-    <div className="vod-selection-labels" aria-hidden="true">{ticks.map((value, index) => <span key={index}>{view && span < 10 ? cutTime(value) : timeLabel(value)}</span>)}</div>
+    <div className="vod-selection-labels" aria-hidden="true">{ticks.map((value, index) => <span key={index}>{timeLabel(value)}</span>)}</div>
   </div>;
 }

@@ -33,6 +33,16 @@ class WorkspaceBoundary extends React.Component {
 }
 
 
+function wholeRange(start, end, total, previous) {
+  const snap = value => value >= total - .0005 ? total : Math.max(0, Math.min(total, Math.round(value)));
+  let from = snap(start), to = snap(end);
+  if (to - from < 1) {
+    if (from !== previous?.start) from = Math.max(0, to - 1);
+    else to = Math.min(total, from + 1);
+  }
+  return { start:from, end:to };
+}
+
 function Workspace({ options, bind }) {
   const language = options.language === 'en' ? 'en' : 'de';
   const text = labels[language];
@@ -102,8 +112,9 @@ function Workspace({ options, bind }) {
     const candidates = value ? available.filter(gap => gap.end > value.start && gap.start < value.end) : available;
     const bounds = omissionGap(requested, candidates);
     if (!bounds) return;
-    const start = Math.max(bounds.start, Math.min(requested.start, bounds.end - Math.min(60, bounds.end - bounds.start)));
-    const next = boundOmission(index === -1 && !value ? { start, end:start + 60 } : requested, bounds);
+    const start = Math.max(bounds.start, Math.min(Math.round(requested.start), bounds.end - Math.min(60, bounds.end - bounds.start)));
+    const raw = index === -1 && !value ? { start, end:start + 60 } : requested;
+    const next = boundOmission(wholeRange(raw.start, raw.end, duration), bounds);
     selectedPlayback.current = false; setSelectionPlaying(false);
     setEditing(index); setRange(next); setSeekRequest({ seconds:next.start, playing:false });
   }
@@ -126,6 +137,7 @@ function Workspace({ options, bind }) {
   }, [hoveredChapter, focusedChapter, options.url]);
   const changeRange = useCallback((start, end, interaction) => {
     stopPreview();
+    ({ start, end } = wholeRange(start, end, duration, range));
     if (omitting) {
       if (!draftBounds || (interaction?.source === 'input' && !omissionFits({ start, end }, gaps))) return;
       if (interaction?.source !== 'input') ({ start, end } = boundOmission({ start, end }, draftBounds));
@@ -134,11 +146,12 @@ function Workspace({ options, bind }) {
     setRange({ start, end });
     if (!omitting) options.onRange(start, end);
     if (interaction?.source === 'pointer' && interaction.boundary === 'start') setSeekRequest({ seconds: start });
-  }, [options, omitting, draftBounds?.start, draftBounds?.end, gaps]);
+  }, [options, omitting, draftBounds?.start, draftBounds?.end, gaps, duration, range]);
   function setExcerpt(start, end) {
-    const next = { start:Math.round(start * 1000) / 1000, end:Math.round(end * 1000) / 1000 };
-    const bounds = omissionGap(range, omissionGaps(next, omissions, editing));
-    const draft = boundOmission(range, bounds || next);
+    const next = wholeRange(start, end, duration, modeRanges.current.excerpt);
+    const bounds = omissionGap(range, omissionGaps(next, omissions, editing)) || next;
+    const bounded = boundOmission(range, bounds);
+    const draft = boundOmission(wholeRange(bounded.start, bounded.end, duration, range), bounds);
     modeRanges.current.excerpt = next;
     modeRanges.current.omission = draft;
     setRange(draft);
@@ -164,7 +177,7 @@ function Workspace({ options, bind }) {
       selectedPlayback.current = false; setSelectionPlaying(false);
       options.onRange(selected.start, selected.end); seek(selected.start);
     },
-    updateRange(start, end) { stopPreview(); if (omitting) setExcerpt(start, end); else setRange({ start, end }); selectedPlayback.current = false; setSelectionPlaying(false); }, seek, refreshOutput() { setOutputRevision(value => value + 1); }, setInputValid };
+    updateRange(start, end) { stopPreview(); if (omitting) setExcerpt(start, end); else setRange(wholeRange(start, end, duration, range)); selectedPlayback.current = false; setSelectionPlaying(false); }, seek, refreshOutput() { setOutputRevision(value => value + 1); }, setInputValid };
   useEffect(() => {
     const id = requestId;
     let closed = false;
@@ -224,14 +237,14 @@ function Workspace({ options, bind }) {
     }
   }, []);
   function mark(which, excerpt = false) {
-    const value = Math.min(duration, Math.max(0, Math.round(position * 10) / 10));
+    const value = Math.min(duration, Math.max(0, Math.round(position)));
     if (omitting && (excerpt || editing === null)) {
       const current = modeRanges.current.excerpt;
-      changeExcerpt(which === 'start' ? Math.min(value, current.end - .001) : current.start, which === 'end' ? Math.max(value, current.start + .001) : current.end);
+      changeExcerpt(which === 'start' ? Math.min(value, current.end - 1) : current.start, which === 'end' ? Math.max(value, current.start + 1) : current.end);
       return;
     }
-    changeRange(which === 'start' ? Math.min(value, range.end - .001) : range.start,
-      which === 'end' ? Math.max(value, range.start + .001) : range.end);
+    changeRange(which === 'start' ? Math.min(value, range.end - 1) : range.start,
+      which === 'end' ? Math.max(value, range.start + 1) : range.end);
   }
   function playRange() {
     if (omissions.length) { preview(); return; }
@@ -243,13 +256,14 @@ function Workspace({ options, bind }) {
     if (editing !== null) setEditing(null);
     if (omitting) {
       modeRanges.current.omission = { ...range };
-      modeRanges.current.excerpt = { start:chapter.start, end:chapter.end };
       setOmitting(false);
       options.onMode?.(false);
     }
-    setRange({ start:chapter.start, end:chapter.end });
-    options.onRange(chapter.start, chapter.end);
-    seek(chapter.start);
+    const chosen = wholeRange(chapter.start, chapter.end, duration);
+    modeRanges.current.excerpt = chosen;
+    setRange(chosen);
+    options.onRange(chosen.start, chosen.end);
+    seek(chosen.start);
   }
   return <div ref={host} className="vod-player-workspace" onKeyDown={event => {
     if (event.ctrlKey || event.altKey || event.metaKey || event.target.closest('input, textarea, button, [contenteditable="true"]')) return;

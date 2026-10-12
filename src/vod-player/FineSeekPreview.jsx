@@ -12,7 +12,7 @@ import { ViewerCount } from "./ViewerHistory.jsx";
 import { projectTitles, titleAt } from "./title-history.js";
 import "./fine-seek.css";
 
-export function FineSeekPreview({ preview, anchorRef, root, total, parts = [], broadcastStarted, chapters = [], endpoint, titleHistory = [], vodTitle, viewerHistory, viewerGaps, omissions = [], t, onAlign, onWidth, kind }) {
+export function FineSeekPreview({ wholeSeconds = false, preview, anchorRef, root, total, parts = [], broadcastStarted, chapters = [], endpoint, titleHistory = [], vodTitle, viewerHistory, viewerGaps, omissions = [], t, onAlign, onWidth, kind }) {
   const lastPreview = useRef(null), ruler = useRef(null);
   const [panelWidth, setPanelWidth] = useState(480);
   const streamClock = useMemo(() => createStreamClock(t("locale")), [t("locale")]);
@@ -47,7 +47,7 @@ export function FineSeekPreview({ preview, anchorRef, root, total, parts = [], b
   const shownTitle = shown && titleAt(titleHistory,streamTimestamp(parts,broadcastStarted,shown.value));
   const viewerSample = shown && viewerSampleAt(viewerHistory,streamTimestamp(parts,broadcastStarted,shown.value));
   const shownViewerGap = shown && viewerGapAt(viewerGaps,streamTimestamp(parts,broadcastStarted,shown.value));
-  const time = shown ? timeLabel(shown.value) + (shown.fine ? (t("locale") === "de" ? "," : ".") + Math.floor((shown.value+.00001)%1*10) : "") : "";
+  const time = shown ? (wholeSeconds ? timeLabel(Math.round(shown.value)) : timeLabel(shown.value) + (shown.fine ? (t("locale") === "de" ? "," : ".") + Math.floor((shown.value+.00001)%1*10) : "")) : "";
   return <>    {isMounted && shown && <FloatingPortal root={playerPortalRoot(root?.current || anchorRef.current,document.fullscreenElement,document.body)}>
       <div ref={refs.setFloating} className="fine-seek-position" data-fine-seek-kind={kind} style={floatingStyles} aria-hidden="true">
         <div className={`fine-seek-preview${shown.fine?" is-fine":""}${shown.snapped?" is-snapped":""}`} style={styles}>

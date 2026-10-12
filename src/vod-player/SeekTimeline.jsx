@@ -86,10 +86,10 @@ export function SeekTimeline({ total:availableTotal, position, parts, broadcastS
     <OmissionBands ranges={omissions} to={total} compact/>
     <span className="timeline-title-markers" aria-hidden="true">{titleMarkers(titleEvents,total,trackWidth).map(marker=><i key={marker.id} className={marker.count>1?'is-grouped':undefined} style={{left:`${marker.fraction*100}%`}}/>)}</span>
     <ChapterRangePreview range={highlightedRange} suppressed={Boolean(preview)} chapters={chapters} fallback={t("categoryUnavailable")}/>
-    {(excerptRange || cutRange) && <RangeMarkers compact trackWidth={trackWidth - 14} duration={total} range={excerptRange || cutRange} onChange={excerptRange ? onExcerptRange : onCutRange}
+    {(excerptRange || cutRange) && <RangeMarkers compact minimumRange={1} step={1} trackWidth={trackWidth - 14} duration={total} range={excerptRange || cutRange} onChange={excerptRange ? onExcerptRange : onCutRange}
       text={{ ...cutText, start:`${cutText.excerpt}: ${cutText.start}`, end:`${cutText.excerpt}: ${cutText.end}` }} onInteraction={cancel} onPreviewChange={setRangePreviewOpen}
       finePreview={{root, parts:previewParts, broadcastStarted, chapters, endpoint, titleHistory, vodTitle, viewerHistory, viewerGaps, omissions, t}}/>}
-    {excerptRange && cutRange && <RangeMarkers variant="omission" limits={cutLimits || excerptRange} compact trackWidth={trackWidth - 14} duration={total} range={cutRange} onChange={onCutRange}
+    {excerptRange && cutRange && <RangeMarkers variant="omission" limits={cutLimits || excerptRange} compact minimumRange={1} step={1} trackWidth={trackWidth - 14} duration={total} range={cutRange} onChange={onCutRange}
       text={{ ...cutText, start:`${cutText.omission}: ${cutText.start}`, end:`${cutText.omission}: ${cutText.end}` }} onInteraction={cancel} onPreviewChange={setOmissionPreviewOpen}
       finePreview={{root, parts:previewParts, broadcastStarted, chapters, endpoint, titleHistory, vodTitle, viewerHistory, viewerGaps, omissions, t}}/>}
     <span id={hintId} className="fine-seek-instructions">{t("fineSeekInstructions")}</span>
