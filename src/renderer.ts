@@ -1703,7 +1703,6 @@ function updateClipOmissionState(): void {
     if (plan && validRange) {
         const milliseconds = Math.round(plan.duration * 1000);
         byId('clipDurationTime').textContent = formatSecondsToTime(Math.floor(milliseconds / 1000));
-        byId('clipDurationFraction').textContent = '.' + String(milliseconds % 1000).padStart(3, '0');
     }
     const invalidPart = !Number.isInteger(getClipStartPart());
     byId('clipStartPart').setAttribute('aria-invalid', String(invalidPart));
@@ -1852,7 +1851,6 @@ function updateClipDuration(syncPlayer: boolean = true): void {
     durationDisplay.classList.toggle('invalid', !isValid);
     const milliseconds = Math.round(duration * 1000);
     byId('clipDurationTime').textContent = isValid ? formatSecondsToTime(Math.floor(milliseconds / 1000)) : UI_TEXT.clips.invalidDuration;
-    byId('clipDurationFraction').textContent = isValid ? '.' + String(milliseconds % 1000).padStart(3, '0') : '';
 
     updateFilenameExamples();
     updateClipOmissionState();
