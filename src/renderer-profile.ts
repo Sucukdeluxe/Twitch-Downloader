@@ -27,7 +27,7 @@ function formatLastStreamAgo(iso: string | null): string {
     if (days < 30) return UI_TEXT.profile.agoDays.replace('{n}', String(days));
     const months = Math.floor(days / 30);
     if (months === 1) return UI_TEXT.profile.agoMonth;
-    if (months < 12) return UI_TEXT.profile.agoMonths.replace('{n}', String(months));
+    if (days < 365) return UI_TEXT.profile.agoMonths.replace('{n}', String(months));
     const years = Math.floor(days / 365);
     if (years === 1) return UI_TEXT.profile.agoYear;
     return UI_TEXT.profile.agoYears.replace('{n}', String(years));
@@ -111,7 +111,7 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
     const vodsStat = `
         <div class="streamer-profile-stat" title="${escapeHtml(UI_TEXT.profile.vodsTooltip)}">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
-            <strong>${p.vodCount}</strong> ${escapeHtml(UI_TEXT.profile.vods)}
+            <strong>${escapeHtml(formatUiNumber(p.vodCount))}</strong> ${escapeHtml(UI_TEXT.profile.vods)}
         </div>`;
     const lastStreamStat = `
         <div class="streamer-profile-stat" title="${p.lastStreamAt ? escapeHtml(new Date(p.lastStreamAt).toLocaleString()) : ''}">

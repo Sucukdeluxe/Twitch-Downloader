@@ -1395,10 +1395,10 @@ async function toggleCutterPlayback(): Promise<void> {
         video.pause();
         return;
     }
-    if (video.currentTime < cutterEditorState.trimStart || video.currentTime >= cutterEditorState.trimEnd) {
-        video.currentTime = cutterEditorState.trimStart;
-    }
-    video.currentTime = findCutterPreviewTime(video.currentTime);
+    const current = video.currentTime;
+    const bounded = current < cutterEditorState.trimStart || current >= cutterEditorState.trimEnd ? cutterEditorState.trimStart : current;
+    const target = findCutterPreviewTime(bounded);
+    if (Math.abs(target - current) > 0.000001) video.currentTime = target;
     try { await video.play(); } catch { }
 }
 

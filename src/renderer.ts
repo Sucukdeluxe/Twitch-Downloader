@@ -2044,7 +2044,7 @@ function scheduleClipBatchRender(item?: ClipBatchItem): void {
             if (index >= 0) renderClipBatchRow(dirty, index);
         }
         dirtyClipRows.clear();
-        if (clipMetadataDirty) { clipMetadataDirty = false; persistClipWorkspace(); }
+        if (clipMetadataDirty) persistClipWorkspace();
     });
 }
 
@@ -2076,6 +2076,7 @@ async function trackWorkspaceSave(kind: keyof typeof workspaceSaves, save: () =>
 
 function persistClipWorkspace(): void {
     if (workspaceLoading) return;
+    clipMetadataDirty = false;
     const items = clipBatchItems.map(({ transfer: _transfer, ...item }) => item);
     void trackWorkspaceSave('clips', () => window.api.saveClipWorkspace(items));
 }
@@ -2463,6 +2464,7 @@ function renderClipBatch(): void {
     }
     clipBatchItems.forEach(renderClipBatchRow);
     list.scrollTop = scrollTop;
+    if (clipMetadataDirty) persistClipWorkspace();
 }
 
 async function downloadClip(retryFailed = false): Promise<void> {

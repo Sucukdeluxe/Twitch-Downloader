@@ -21,7 +21,6 @@ interface PaletteCommand {
         const w = window as unknown as {
             showTab?: (tab: string) => void;
             selectStreamer?: (name: string, forceRefresh?: boolean) => Promise<void>;
-            config?: { streamers?: Array<{ name: string }> };
         };
         const showTab = w.showTab;
         if (typeof showTab !== 'function') {
@@ -51,12 +50,11 @@ interface PaletteCommand {
 
         // Streamer-Liste aus globalem config (gefuellt nach renderer-Init).
         const streamerCommands: PaletteCommand[] = [];
-        const streamers = Array.isArray(w.config?.streamers) ? w.config.streamers : [];
+        const streamers = Array.isArray(config.streamers) ? config.streamers : [];
         const selectStreamer = w.selectStreamer;
         if (typeof selectStreamer === 'function') {
-            for (const entry of streamers) {
-                if (!entry || typeof entry.name !== 'string') continue;
-                const name = entry.name;
+            for (const name of streamers) {
+                if (typeof name !== 'string' || !name) continue;
                 streamerCommands.push({
                     id: 'streamer:' + name.toLowerCase(),
                     label: name,
@@ -116,8 +114,7 @@ interface PaletteCommand {
             li.appendChild(hint);
 
             li.addEventListener('mouseenter', () => {
-                STORE.activeIndex = idx;
-                render();
+                setActiveIndex(idx);
             });
             li.addEventListener('click', () => {
                 executeAt(idx);
@@ -127,6 +124,19 @@ interface PaletteCommand {
         });
         const input = getInput();
         if (input) input.setAttribute('aria-activedescendant', STORE.filtered[STORE.activeIndex] ? `commandPaletteOption-${STORE.activeIndex}` : '');
+    }
+
+    function setActiveIndex(index: number, scroll = false): void {
+        if (index === STORE.activeIndex || !STORE.filtered[index]) return;
+        const previous = document.getElementById('commandPaletteOption-' + STORE.activeIndex);
+        previous?.classList.remove('cp-active');
+        previous?.setAttribute('aria-selected', 'false');
+        STORE.activeIndex = index;
+        const active = document.getElementById('commandPaletteOption-' + index);
+        active?.classList.add('cp-active');
+        active?.setAttribute('aria-selected', 'true');
+        getInput()?.setAttribute('aria-activedescendant', 'commandPaletteOption-' + index);
+        if (scroll) active?.scrollIntoView({ block: 'nearest' });
     }
 
     function applyFilter(query: string) {
@@ -194,15 +204,13 @@ interface PaletteCommand {
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (STORE.filtered.length === 0) return;
-            STORE.activeIndex = (STORE.activeIndex + 1) % STORE.filtered.length;
-            render();
+            setActiveIndex((STORE.activeIndex + 1) % STORE.filtered.length, true);
             return;
         }
         if (e.key === 'ArrowUp') {
             e.preventDefault();
             if (STORE.filtered.length === 0) return;
-            STORE.activeIndex = (STORE.activeIndex - 1 + STORE.filtered.length) % STORE.filtered.length;
-            render();
+            setActiveIndex((STORE.activeIndex - 1 + STORE.filtered.length) % STORE.filtered.length, true);
             return;
         }
         if (e.key === 'Enter') {
