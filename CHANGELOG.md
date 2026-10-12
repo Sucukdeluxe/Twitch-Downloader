@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.38 - 2026-10-12
+
+This update makes VOD trimming easier to read, completes the video-quality loading layout, and improves development-build reliability.
+
+### VOD trimming
+
+- Replace native chapter tooltips with animated speech bubbles showing the category and its time range on separate lines.
+- Keep tooltips within the window, including narrow views and long category names, with keyboard focus, Escape dismissal and reduced-motion support.
+- Remove milliseconds from chapter tooltips and the video-length card. Cutting precision and download boundaries remain unchanged.
+- Prevent clicks on tooltip content from moving the playback position.
+
+### Video quality and empty states
+
+- Show seven aligned loading placeholders with selection circles while available video qualities are being retrieved.
+- Hide VOD filters and sorting controls until a streamer is available, and show a centered prompt to add one.
+
+### Development reliability
+
+- Automatically rebuild and refresh changed interface code while preserving the selected view and supported inputs.
+- Defer refreshes during open dialogs, editing, playback and active operations to protect ongoing work.
+- Serialize overlapping builds and publish player assets atomically, preventing empty player files and blank trimming views.
+- Reject empty assets and repair damaged generated assets before publishing the renderer.
+
+### Verification
+
+- Local unit, interface, playback and package checks cover the release; tooltip checks include Chromium and WebKit in light and dark themes.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.37 - 2026-10-12
 
 This patch fixes quality fallback edge cases, keeps queue quality details readable, and makes CI report its actual coverage.
