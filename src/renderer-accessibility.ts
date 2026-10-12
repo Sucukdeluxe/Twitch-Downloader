@@ -115,6 +115,10 @@ const RendererAccessibility = (() => {
         if (shell) shell.inert = dialogStack.length > 0;
     }
 
+    function hasNativeDialog(): boolean {
+        return document.querySelector('dialog[open]') !== null;
+    }
+
     function isDialogOpen(id: string): boolean {
         return dialogStack.includes(id);
     }
@@ -186,6 +190,7 @@ const RendererAccessibility = (() => {
     }
 
     document.addEventListener('keydown', (event) => {
+        if (hasNativeDialog()) return;
         const id = dialogStack.at(-1);
         if (!id) return;
         const dialog = document.getElementById(id);
@@ -239,6 +244,7 @@ const RendererAccessibility = (() => {
         setDocumentLanguage,
         setBusy,
         createFixedHeightVirtualList,
+        hasNativeDialog,
         isDialogOpen,
         openDialog,
         closeDialog,

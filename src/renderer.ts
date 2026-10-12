@@ -194,6 +194,7 @@ async function init(): Promise<void> {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+        if (RendererAccessibility.hasNativeDialog()) return;
         // Esc closes any open modal — works regardless of focus, so users can dismiss
         // a modal that took focus from inside an input field
         if (e.key === 'Escape') {

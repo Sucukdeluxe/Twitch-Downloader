@@ -183,6 +183,7 @@ interface PaletteCommand {
     }
 
     function onKeydown(e: KeyboardEvent) {
+        if (RendererAccessibility.hasNativeDialog()) return;
         // Toggle: Ctrl+K (Linux/Windows) or Cmd+K (Mac)
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
             e.preventDefault();

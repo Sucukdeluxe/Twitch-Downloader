@@ -1846,6 +1846,7 @@ function initCutterEditor(): void {
     document.addEventListener('pointercancel', cancelCutterDrag);
     window.addEventListener('blur', cancelCutterDrag);
     document.addEventListener('keydown', (event) => {
+        if (RendererAccessibility.hasNativeDialog()) return;
         if (event.defaultPrevented || !byId('cutterTab').classList.contains('active') || !cutterEditorState || !cutterControlsEnabled) return;
         const target = event.target as HTMLElement;
         if (target.matches('input:not([type="range"]):not([type="checkbox"]), textarea, [contenteditable="true"]')) return;
@@ -2078,6 +2079,7 @@ function updateCutterExportPresentation(): void {
 let cutterPageSpaceHeld = false;
 
 function handleCutterPageKey(event: KeyboardEvent): void {
+    if (RendererAccessibility.hasNativeDialog()) return;
     if (!byId('cutterTab').classList.contains('active') || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target as HTMLElement;
     if (target.closest('.modal-overlay, [aria-modal="true"]')) return;
@@ -2097,6 +2099,7 @@ function handleCutterPageKey(event: KeyboardEvent): void {
 
 function handleCutterPageKeyUp(event: KeyboardEvent): void {
     if (event.code !== 'Space' && event.key !== ' ') return;
+    if (RendererAccessibility.hasNativeDialog()) { cutterPageSpaceHeld = false; return; }
     if (cutterPageSpaceHeld) {
         event.preventDefault();
         event.stopPropagation();
