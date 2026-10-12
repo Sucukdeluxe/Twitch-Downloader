@@ -144,7 +144,7 @@ export function CutTimeline({ duration, range, position, chapters, onChange, onS
     <div ref={track} className="vod-selection-track" onClick={seekAt}>
       <div className="vod-selection-chapters">
         <CategoryColors className="vod-selection-colors" chapters={chapters} from={from} to={to} opacity={.12}/>
-        {visibleChapters.map(({ chapter, start, end }) => <Tooltip key={chapter.id} content={<><strong>{chapter.name}</strong><time>{cutTime(chapter.start)} – {cutTime(chapter.end)}</time></>}>
+        {visibleChapters.map(({ chapter, start, end }) => <Tooltip key={chapter.id} content={<><strong>{chapter.name}</strong><time>{timeLabel(chapter.start)} – {timeLabel(chapter.end)}</time></>}>
           <span tabIndex={0} style={{ left: `${start * 100}%`, width: `${(end - start) * 100}%` }}><span>{chapter.name}</span></span>
         </Tooltip>)}
       </div>
