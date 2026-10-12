@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.42 - 2026-10-12
+
+This patch makes VOD trimming faster when no ranges are excluded and shows the expected output before a job is queued.
+
+### VOD trimming
+
+- Download a trimmed VOD through the regular clip path when "Exclude ranges" is open but no confirmed exclusion overlaps the excerpt. The selected filename format is kept and no additional assembly step is needed.
+- Use the exclusion pipeline only when a confirmed exclusion overlaps the excerpt or an exclusion draft is open.
+- Show the resulting number of files, the total length and the part length next to the queue button in larger text, for example "Output: 2 files · 00:01:30 · 1-minute parts".
+- Let the I and O keys set the excerpt boundaries in "Exclude ranges" mode, matching the "Set here" buttons. While an exclusion draft is open, they adjust the draft. The keys no longer create a new draft.
+
+### Verification
+
+- Download real Twitch VOD excerpts with and without an exclusion in an isolated, hidden application instance and check the resulting file lengths.
+- Check excerpt input, keyboard boundaries, exclusions and mode switches headless in Chromium in German and English, light and dark themes, and four display scales.
+- Run the full release checks and isolated Windows package tests before publication.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.41 - 2026-10-12
 
 This patch fixes VOD trimming so the entered time range is downloaded when "Exclude ranges" is active.
