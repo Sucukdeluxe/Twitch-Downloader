@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.40 - 2026-10-12
+
+This patch fixes keyboard handling in dialogs so shortcuts cannot control the video editor behind them.
+
+### Dialog controls
+
+- Keep Space and Tab available to the open dialog, including the recent-project list. Activating Close no longer starts video playback in the background.
+- Prevent background editing shortcuts, including undo and cut markers, from changing a project while a native dialog is open.
+- Prevent Ctrl+K from opening a hidden quick-search window behind a dialog.
+- Let Escape close the visible native dialog before an underlying application dialog.
+- Restore normal editor shortcuts after closing the dialog, including after releasing a held Space key.
+
+### Verification
+
+- Check dialog navigation, nested dialogs, clip search and channel rules headless in Chromium and WebKit.
+- Run the full release checks and isolated Windows package tests before publication.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.39 - 2026-10-12
 
 This patch improves video playback, restores reliable quick navigation, and protects unsaved work during development updates.
