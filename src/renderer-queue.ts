@@ -227,7 +227,9 @@ function hasActiveQueueDuplicate(url: string, streamer: string, date: string, cu
 
 let vodQualityDialogOpen = false;
 
-async function chooseVodQuality(url: string, title: string): Promise<string | null> {
+interface SelectedVodQuality { id: string; label: string }
+
+async function chooseVodQuality(url: string, title: string): Promise<SelectedVodQuality | null> {
     if (vodQualityDialogOpen) return null;
     vodQualityDialogOpen = true;
     const english = currentLanguage === 'en';
@@ -268,8 +270,9 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
     let requestId = '';
     let settled = false;
     let loadingTimer: ReturnType<typeof setTimeout> | undefined;
-    return await new Promise<string | null>(resolve => {
-        const finish = (value: string | null): void => {
+    return await new Promise<SelectedVodQuality | null>(resolve => {
+        let selectedQuality: SelectedVodQuality = { id: 'source', label: 'Source' };
+        const finish = (value: SelectedVodQuality | null): void => {
             if (settled) return;
             settled = true;
             clearTimeout(loadingTimer);
@@ -304,6 +307,7 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
                 if (settled || requestId !== id) return;
                 if (!qualities?.length) throw new Error('No qualities');
                 selected = 'source';
+                selectedQuality = qualities.find(quality => quality.id === selected) || { id: 'source', label: 'Source' };
                 options.replaceChildren();
                 for (const quality of qualities) {
                     const label = document.createElement('label');
@@ -313,7 +317,7 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
                     radio.name = 'vod-quality';
                     radio.value = quality.id;
                     radio.checked = quality.id === selected;
-                    radio.addEventListener('change', () => { selected = quality.id; });
+                    radio.addEventListener('change', () => { selected = quality.id; selectedQuality = quality; });
                     const text = document.createElement('span');
                     text.className = 'vod-quality-description';
                     const name = document.createElement('strong');
@@ -344,7 +348,7 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
             }
         };
         cancel.addEventListener('click', () => finish(null));
-        confirm.addEventListener('click', () => { if (!confirm.disabled) finish(selected); });
+        confirm.addEventListener('click', () => { if (!confirm.disabled) finish(selectedQuality); });
         retry.addEventListener('click', () => { void load(); });
         dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
         dialog.addEventListener('close', () => finish(null));
@@ -355,15 +359,15 @@ async function chooseVodQuality(url: string, title: string): Promise<string | nu
 }
 
 async function addToQueue(url: string, title: string, date: string, streamer: string, duration: string): Promise<void> {
-    const quality = await chooseVodQuality(url, title);
-    if (!quality) return;
-    if ((config.prevent_duplicate_downloads as boolean) !== false && hasActiveQueueDuplicate(url, streamer, date, undefined, quality)) {
+    const selectedQuality = await chooseVodQuality(url, title);
+    if (!selectedQuality) return;
+    if ((config.prevent_duplicate_downloads as boolean) !== false && hasActiveQueueDuplicate(url, streamer, date, undefined, selectedQuality.id)) {
         alert(UI_TEXT.queue.duplicateSkipped);
         return;
     }
 
     try {
-        const result = await window.api.addToQueueWithResult({ url, title, date, streamer, duration_str: duration, quality });
+        const result = await window.api.addToQueueWithResult({ url, title, date, streamer, duration_str: duration, quality: selectedQuality.id, qualityLabel: selectedQuality.label });
         queue = result.queue;
         renderQueue();
         if (!result.accepted) {
@@ -953,8 +957,24 @@ async function toggleDownload(): Promise<void> {
     }
 }
 
+function formatQueueQuality(source: Pick<QueueItem, 'quality' | 'qualityLabel'>): string {
+    if (source.qualityLabel) return source.qualityLabel;
+    if (!source.quality || source.quality === 'source' || source.quality === 'best') return 'Source';
+    const alternativeMarker = source.quality.indexOf('_alt');
+    const base = alternativeMarker >= 0 ? source.quality.slice(0, alternativeMarker) : source.quality;
+    const parts = base.match(/^(\d{3,4})p(\d{0,3})$/);
+    if (!parts) return source.quality;
+    const details = [parts[1] + 'p', parts[2] ? parts[2] + ' fps' : ''];
+    if (alternativeMarker >= 0) {
+        const alternative = source.quality.slice(alternativeMarker + 4);
+        if (!/^\d{0,2}$/.test(alternative)) return source.quality;
+        details.push('Alternative' + (alternative ? ' ' + alternative : ''));
+    }
+    return details.filter(Boolean).join(' · ');
+}
+
 function renderQueueDetails(item: QueueItem): string {
-    const quality = [...new Set((item.mergeGroup?.items || [item]).map(source => !source.quality || source.quality === 'source' ? 'Source' : source.quality))].join(' · ');
+    const quality = [...new Set((item.mergeGroup?.items || [item]).map(source => formatQueueQuality(source)))].join(' · ');
     return `                        <div class="queue-details-clip"><div class="queue-details-content">
                         <div class="queue-url-row"><span class="queue-detail-label">URL:</span><button class="queue-url-copy" type="button" data-queue-action="copy-url" aria-label="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}" title="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}: ${escapeHtml(item.url)}">${escapeHtml(item.url)}</button></div>
                         <div><span class="queue-detail-label">${escapeHtml(UI_TEXT.queue.detailStreamer)}</span> <span class="queue-streamer-name">${escapeHtml(getStreamerDisplayName(item.streamer))}</span></div>

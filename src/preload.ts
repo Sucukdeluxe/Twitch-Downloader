@@ -172,8 +172,8 @@ contextBridge.exposeInMainWorld('api', {
 
     // Queue
     getQueue: () => ipcRenderer.invoke('get-queue'),
-    addToQueue: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality'>) => ipcRenderer.invoke('add-to-queue', item),
-    addToQueueWithResult: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality'>): Promise<QueueAdditionResult> => ipcRenderer.invoke('add-to-queue-with-result', item),
+    addToQueue: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>) => ipcRenderer.invoke('add-to-queue', item),
+    addToQueueWithResult: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>): Promise<QueueAdditionResult> => ipcRenderer.invoke('add-to-queue-with-result', item),
     startLiveRecording: (streamerName: string) => ipcRenderer.invoke('start-live-recording', streamerName),
     removeFromQueue: (id: string) => ipcRenderer.invoke('remove-from-queue', id),
     reorderQueue: (orderIds: string[]) => ipcRenderer.invoke('reorder-queue', orderIds),

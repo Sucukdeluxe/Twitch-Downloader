@@ -177,9 +177,13 @@ export function parseVodPlaylistQualities(playlist: string, master: string): Vod
             if (url.protocol !== 'https:') continue;
             const source = current['IVS-VARIANT-SOURCE'] === 'source' || /\(source\)$/i.test(name) || /\/chunked\//.test(url.pathname);
             if (streams[id]) {
-                let suffix = 0;
                 const base = id;
-                do { id = base + '_alt' + (suffix || ''); suffix++; } while (streams[id]);
+                let alternative = '_alt';
+                if (streams[base + alternative]) {
+                    alternative = '_alt2';
+                    if (streams[base + alternative]) continue;
+                }
+                id = base + alternative;
             }
             streams[id] = { url: url.href };
             if (source) streams.source = streams[id];
@@ -223,7 +227,8 @@ async function loadDirectVodPlaylist(urlValue: string, signal?: AbortSignal): Pr
     if (!masterResponse.ok) throw new Error('VOD playlist unavailable');
     const playlist = await masterResponse.text();
     requestSignal.throwIfAborted();
-    if (playlist.length > 1048576 || !playlist.startsWith('#EXTM3U')) throw new Error('Invalid VOD playlist');
+    if (playlist.length > 1048576 || !playlist.startsWith('#EXTM3U') || !/#EXT-X-STREAM-INF:[^\r\n]*RESOLUTION=\d+x\d+/i.test(playlist)) throw new Error('Invalid VOD playlist');
+    try { parseVodPlaylistQualities(playlist, masterUrl); } catch { throw new Error('Invalid VOD playlist'); }
     const referenceUrl = playlist.split(/\r?\n/).find(line => /^https?:\/\//.test(line.trim()))?.trim();
     const variants = referenceUrl ? parseUnavailableVodVariants(playlist, referenceUrl) : [];
     const result = { expires: Date.now() + 120000, variants, playlist, master: masterUrl };

@@ -1965,11 +1965,12 @@ async function confirmClipDialog(): Promise<void> {
     clipQueueError = '';
     updateClipOmissionState();
     try {
-        const quality = await chooseVodQuality(submittingDialog.url, submittingDialog.title);
-        if (!quality || clipDialogData !== submittingDialog) return;
+        const selectedQuality = await chooseVodQuality(submittingDialog.url, submittingDialog.title);
+        if (!selectedQuality || clipDialogData !== submittingDialog) return;
         const result = await window.api.addToQueueWithResult({
             url: submittingDialog.url, title: submittingDialog.title, date: submittingDialog.date,
-            streamer: submittingDialog.streamer, duration_str: submittingDialog.duration, customClip, quality,
+            streamer: submittingDialog.streamer, duration_str: submittingDialog.duration, customClip,
+            quality: selectedQuality.id, qualityLabel: selectedQuality.label,
         });
         queue = result.queue;
         renderQueue();

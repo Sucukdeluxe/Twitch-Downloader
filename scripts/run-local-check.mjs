@@ -8,7 +8,9 @@ const args = process.argv.slice(2);
 const target = args.find((arg) => /^scripts\/[\w./-]+\.(?:c?js|mjs)$/.test(arg));
 if (!target) throw new Error('A local check script is required');
 if (!existsSync(resolve(root, target))) {
-    console.log(`Local check unavailable in this checkout: ${target}`);
+    const message = `Local-only check unavailable in this checkout: ${target}`;
+    if (process.env.TVM_STRICT_LOCAL_CHECKS === 'true') throw new Error(message);
+    console.log(`::notice::${message}`);
 } else {
     const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', windowsHide: true });
     child.once('error', (error) => { console.error(error.message); process.exitCode = 1; });

@@ -73,6 +73,7 @@ interface MergeGroupItem {
     streamer: string;
     duration_str: string;
     quality?: string;
+    qualityLabel?: string;
 }
 
 interface MergeGroup {
@@ -95,6 +96,7 @@ interface QueueItem {
     streamer: string;
     duration_str: string;
     quality?: string;
+    qualityLabel?: string;
     status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error';
     progress: number;
     currentPart?: number;
@@ -469,8 +471,8 @@ interface ApiBridge {
     getUserId(username: string): Promise<string | null>;
     getVODs(userId: string, forceRefresh?: boolean): Promise<VOD[]>;
     getQueue(): Promise<QueueItem[]>;
-    addToQueue(item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality'>): Promise<QueueItem[]>;
-    addToQueueWithResult(item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality'>): Promise<QueueAdditionResult>;
+    addToQueue(item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>): Promise<QueueItem[]>;
+    addToQueueWithResult(item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>): Promise<QueueAdditionResult>;
     startLiveRecording(streamerName: string): Promise<{ success: boolean; error?: string; streamer?: string; title?: string }>;
     removeFromQueue(id: string): Promise<QueueItem[]>;
     reorderQueue(orderIds: string[]): Promise<QueueItem[]>;

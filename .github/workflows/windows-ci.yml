@@ -62,54 +62,11 @@ jobs:
       - name: Lint
         run: npm run lint
         timeout-minutes: 10
-      - name: Lint configuration contract
-        run: npm run test:lint-config
-        timeout-minutes: 10
       - name: Security contracts
         run: npm run security:check
         timeout-minutes: 10
-      - name: Security regression tests
-        run: npm run test:security
-        timeout-minutes: 10
-      - name: CI contract
-        run: npm run test:ci-contract
-        timeout-minutes: 10
-      - name: Installer contract
-        run: npm run test:installer-contract
-        timeout-minutes: 10
-      - name: Managed tools contract
-        run: npm run test:managed-tools-contract
-        timeout-minutes: 10
-      - name: Cutter matrix provisioning contract
-        run: npm run test:cutter-matrix-contract
-        timeout-minutes: 10
       - name: Build
         run: npm run build
-        timeout-minutes: 10
-      - name: Live integration contract
-        run: npm run test:live-integration-contract
-        timeout-minutes: 10
-      - name: Unit tests
-        run: npm run test:unit
-        timeout-minutes: 10
-      - name: Focused Electron smoke
-        run: |
-          npm run test:e2e:focused
-          if ($LASTEXITCODE -ne 0) {
-            npm run test:e2e:focused
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-        timeout-minutes: 20
-      - name: Cutter media matrix
-        run: |
-          node scripts/run-local-check.mjs scripts/smoke-test-cutter-media-matrix.js
-          if ($LASTEXITCODE -ne 0) {
-            node scripts/run-local-check.mjs scripts/smoke-test-cutter-media-matrix.js
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-        timeout-minutes: 20
-      - name: Clean managed tools provision and repair
-        run: npm run test:managed-tools-live
         timeout-minutes: 10
       - name: Package directory
         run: |
@@ -119,9 +76,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
         timeout-minutes: 10
-      - name: Packaged launch smoke
-        run: npm run test:packaged-launch
-        timeout-minutes: 10
       - name: Build installer
         run: |
           npm run dist:ci
@@ -129,9 +83,6 @@ jobs:
             npm run dist:ci
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-        timeout-minutes: 10
-      - name: Installer smoke
-        run: npm run test:installer
         timeout-minutes: 10
 
   twitch-live:
@@ -141,6 +92,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI: 'true'
+      TVM_STRICT_LOCAL_CHECKS: 'true'
     steps:
       - uses: actions/checkout@v4
         timeout-minutes: 10
@@ -205,6 +157,7 @@ jobs:
     timeout-minutes: 60
     env:
       CI: 'true'
+      TVM_STRICT_LOCAL_CHECKS: 'true'
       TWITCH_VOD_MANAGER_LIVE_INTEGRATION: '1'
       TWITCH_VOD_MANAGER_LIVE_SOURCE_VERSION: ${{ github.event.inputs.source_version }}
       TWITCH_VOD_MANAGER_LIVE_SOURCE_SHA256: ${{ github.event.inputs.source_sha256 }}

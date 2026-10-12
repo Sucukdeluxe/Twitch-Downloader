@@ -2,7 +2,7 @@ import { normalizeVodQuality } from './vod-quality';
 import { parseOmissionConfig } from './vod-edit-plan';
 import type { CustomClip, QueueItem } from '../../types';
 
-export type RendererQueueInput = Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'quality'> & { customClip?: CustomClip };
+export type RendererQueueInput = Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'quality' | 'qualityLabel'> & { customClip?: CustomClip };
 
 function normalizedString(value: unknown, maximumLength: number): string | null {
     if (typeof value !== 'string') return null;
@@ -55,6 +55,8 @@ export function normalizeRendererQueueInput(value: unknown): RendererQueueInput 
     if (!title || !date || !streamer || !/^[a-z0-9_]+$/i.test(streamer) || !duration) return null;
     const quality = normalizeVodQuality(raw.quality);
     if (!quality) return null;
+    const qualityLabel = raw.qualityLabel === undefined ? undefined : normalizedString(raw.qualityLabel, 200);
+    if (raw.qualityLabel !== undefined && !qualityLabel) return null;
     const customClip = raw.customClip === undefined ? undefined : normalizeCustomClip(raw.customClip);
     if (raw.customClip !== undefined && !customClip) return null;
     return {
@@ -64,6 +66,7 @@ export function normalizeRendererQueueInput(value: unknown): RendererQueueInput 
         streamer: streamer.toLowerCase(),
         duration_str: duration,
         ...(raw.quality !== undefined ? { quality } : {}),
+        ...(qualityLabel ? { qualityLabel } : {}),
         ...(customClip ? { customClip } : {}),
     };
 }

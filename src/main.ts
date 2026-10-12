@@ -664,7 +664,7 @@ function sanitizeMergeGroup(raw: unknown): MergeGroup | undefined {
         if (typeof mi.url !== 'string' || typeof mi.title !== 'string'
             || typeof mi.date !== 'string' || typeof mi.streamer !== 'string'
             || typeof mi.duration_str !== 'string') continue;
-        items.push({ url: mi.url, title: mi.title, date: mi.date, streamer: mi.streamer, duration_str: mi.duration_str, quality: normalizeVodQuality(mi.quality) || undefined });
+        items.push({ url: mi.url, title: mi.title, date: mi.date, streamer: mi.streamer, duration_str: mi.duration_str, quality: normalizeVodQuality(mi.quality) || undefined, qualityLabel: typeof mi.qualityLabel === 'string' && mi.qualityLabel.length <= 200 ? mi.qualityLabel : undefined });
     }
     if (items.length < 2) return undefined;
 
@@ -738,6 +738,7 @@ function sanitizeQueueItem(raw: unknown): QueueItem | null {
         createdAt: new Date(createdAtMs).toISOString(),
         url: raw.url,
         quality: normalizeVodQuality(raw.quality) || undefined,
+        qualityLabel: typeof raw.qualityLabel === 'string' && raw.qualityLabel.length <= 200 ? raw.qualityLabel : undefined,
         title: typeof raw.title === 'string' ? raw.title : '',
         date: typeof raw.date === 'string' ? raw.date : '',
         streamer: typeof raw.streamer === 'string' ? raw.streamer : '',
@@ -7583,7 +7584,8 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
             date: item.date,
             streamer: item.streamer,
             duration_str: item.duration_str,
-            quality: item.quality
+            quality: item.quality,
+            qualityLabel: item.qualityLabel
         })),
         mergePhase: 'downloading',
         currentItemIndex: 0,
