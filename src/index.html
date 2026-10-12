@@ -409,9 +409,9 @@
 
             <div class="content">
                 <!-- VODs Tab -->
-                <div class="tab-content active" id="vodsTab">
+                <div class="tab-content active vod-selection-empty" id="vodsTab">
                     <div id="streamerProfileHeader" class="streamer-profile-header is-hidden"></div>
-                    <div class="vod-filter-row">
+                    <div class="vod-filter-row" id="vodFilterRow" hidden>
                         <input type="text" id="vodFilterInput" class="filter-input" placeholder="Filter VODs..." oninput="onVodFilterInput()">
                         <button type="button" id="vodFilterClearBtn" class="btn-close is-hidden" onclick="clearVodFilter()" title="Clear filter">x</button>
                         <span id="vodFilterCount" class="form-sublabel vod-filter-count"></span>
@@ -440,8 +440,8 @@
                     <div class="vod-grid" id="vodGrid">
                         <div class="empty-state">
                             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l4 4v16H6z"></path><path d="M14 2v5h5M10 11l5 3-5 3z"></path></svg>
-                            <h3 id="vodGridEmptyTitle">Keine VODs</h3>
-                            <p id="vodGridEmptyText">Wähle einen Streamer aus der Liste oder füge einen neuen hinzu.</p>
+                            <h3 id="vodGridEmptyTitle">Keine Streamer</h3>
+                            <p id="vodGridEmptyText">Füge zuerst einen Streamer hinzu.</p>
                         </div>
                     </div>
                 </div>

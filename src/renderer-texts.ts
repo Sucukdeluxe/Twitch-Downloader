@@ -384,8 +384,7 @@ function applyLanguageToStaticUI(): void {
     // Empty-state copy for the VODs grid (when no streamer is selected
     // yet) and the Merge file list (no files added yet). Both were
     // hardcoded German in the HTML — English users saw German strings.
-    setText('vodGridEmptyTitle', UI_TEXT.vods.noneTitle);
-    setText('vodGridEmptyText', UI_TEXT.vods.noneText);
+    syncVodSelectionState();
     setText('mergeEmptyText', UI_TEXT.merge.empty);
 
     // Localize the modal close-button aria-label. The buttons share a

@@ -2054,3 +2054,24 @@ body :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):foc
 .vod-quality-actions .btn-primary:active:not(:disabled) { background: #175331; color: #fff; }
 .vod-quality-actions .btn-primary:disabled { background: var(--workspace-control); color: var(--workspace-text-muted); border-color: var(--workspace-border); opacity: 1; }
 .vod-quality-actions [hidden], .vod-quality-status[hidden] { display: none; }
+
+#vodFilterRow[hidden] { display: none; }
+#vodsTab.vod-selection-empty #vodGrid {
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#vodsTab.vod-selection-empty #vodBulkBar { display: none; }
+#streamerList.streamers-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#streamerList.streamers-empty .streamer-list-empty {
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: var(--workspace-text-muted);
+    font-size: 14px;
+}

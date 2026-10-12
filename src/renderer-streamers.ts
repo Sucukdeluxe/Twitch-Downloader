@@ -616,11 +616,28 @@ function updateStreamerAvatars(login: string): void {
     }
 }
 
+function syncVodSelectionState(): void {
+    const hasStreamers = (config.streamers ?? []).length > 0;
+    const hasSelection = hasStreamers && Boolean(currentStreamer);
+    document.getElementById('vodsTab')?.classList.toggle('vod-selection-empty', !hasSelection);
+    const filters = document.getElementById('vodFilterRow');
+    if (filters) filters.hidden = !hasSelection;
+    const refresh = document.getElementById('toolbarRefreshVodsBtn') as HTMLButtonElement | null;
+    if (refresh) refresh.disabled = !hasSelection;
+    if (hasSelection) return;
+    const grid = document.getElementById('vodGrid');
+    if (grid) setVodGridEmptyState(grid,
+        hasStreamers ? UI_TEXT.vods.noneTitle : UI_TEXT.vods.noStreamersTitle,
+        hasStreamers ? UI_TEXT.vods.noneText : UI_TEXT.vods.noStreamersText);
+}
+
 function renderStreamers(): void {
+    syncVodSelectionState();
     const list = byId('streamerList');
     list.replaceChildren();
 
     const all = (config.streamers ?? []) as string[];
+    list.classList.toggle('streamers-empty', all.length === 0);
     const filterInput = document.getElementById('streamerListFilter') as HTMLInputElement | null;
     const sectionTitle = document.getElementById('streamerSectionTitle');
     const showFilter = all.length >= STREAMER_FILTER_THRESHOLD;
@@ -634,7 +651,7 @@ function renderStreamers(): void {
     if (all.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'streamer-list-empty';
-        empty.textContent = UI_TEXT.streamers.sidebarEmpty || 'No streamers yet. Add one via the top bar.';
+        empty.textContent = UI_TEXT.streamers.sidebarEmpty;
         list.appendChild(empty);
         const counter = document.getElementById('streamerSectionCounter');
         if (counter) counter.textContent = '';
@@ -781,7 +798,7 @@ function clearActiveStreamerSelection(): void {
     if (typeof hide === 'function') hide();
     updateVodBulkBar();
     updateVodFilterCount(0, 0);
-    setVodGridEmptyState(byId('vodGrid'), UI_TEXT.vods.noneTitle, UI_TEXT.vods.noneText);
+    syncVodSelectionState();
     const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
     if (typeof setTitle === 'function') setTitle(UI_TEXT.tabs.vods);
 }
