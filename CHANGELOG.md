@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.43 - 2026-10-13
+
+This patch simplifies VOD trimming to whole seconds and cleans up two controls.
+
+### VOD trimming
+
+- Show start and end times, handle labels, drag previews and excluded ranges as HH:MM:SS without milliseconds. Twitch downloads are cut on whole seconds and keyframes, so the extra precision did not change the result.
+- Snap excerpt and exclusion boundaries to whole seconds. The end of the VOD stays exact, and an excerpt is at least one second long.
+- Change the minus and plus buttons and the arrow keys to one-second steps. Typed decimals are rounded, and the shown video length matches the downloaded length.
+- The local video cutter keeps its frame-accurate time format.
+
+### Interface
+
+- Remove the dark ring and shadow around the playback knob on the chapter timeline. The keyboard focus ring remains.
+- Replace the letter used to remove a streamer with a centred close icon that turns red on hover.
+
+### Verification
+
+- Download real Twitch VOD excerpts with and without an exclusion in an isolated, hidden application instance and check the resulting file lengths.
+- Check trimming input, keyboard steps, exclusions and mode switches headless in Chromium in German and English, light and dark themes, and four display scales.
+- Run the full release checks and isolated Windows package tests before publication.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.42 - 2026-10-12
 
 This patch makes VOD trimming faster when no ranges are excluded and shows the expected output before a job is queued.
