@@ -82,7 +82,7 @@ async function init(): Promise<void> {
     initCutterEditor();
     initializeEditingWorkflows();
     initializeVodLibrary();
-    void restoreWorkspace();
+    const workspaceRestored = restoreWorkspace();
 
     // Restore last active tab from previous session (default 'vods')
     initSegmentedIndicators();
@@ -269,10 +269,10 @@ async function init(): Promise<void> {
     scheduleQueueSync(QUEUE_SYNC_DEFAULT_MS);
     performance.mark('tvm:ui-ready');
     window.api.notifyRendererReady?.();
-    setTimeout(() => { void startRendererServices().catch(error => console.error('startup-services-failed', error)); }, 0);
+    setTimeout(() => { void startRendererServices(workspaceRestored).catch(error => console.error('startup-services-failed', error)); }, 0);
 }
 
-async function startRendererServices(): Promise<void> {
+async function startRendererServices(workspaceRestored: Promise<void> = Promise.resolve()): Promise<void> {
     if (config.client_id && secretStatus.clientSecretConfigured) {
         await connect();
     } else {
@@ -282,7 +282,8 @@ async function startRendererServices(): Promise<void> {
     if (config.streamers && config.streamers.length > 0) {
         const preloader = (window as unknown as { preloadConfiguredStreamerData?: (streamers: string[]) => Promise<void> }).preloadConfiguredStreamerData;
         if (typeof preloader === 'function') void preloader(config.streamers as string[]);
-        await selectStreamer(config.streamers[0]);
+        const remembered = readDevelopmentView()?.streamer;
+        await selectStreamer(remembered && config.streamers.includes(remembered) ? remembered : config.streamers[0]);
     }
 
     const startBackgroundRefresh = (window as unknown as { startStreamerBackgroundRefresh?: () => void }).startStreamerBackgroundRefresh;
@@ -298,6 +299,8 @@ async function startRendererServices(): Promise<void> {
     validateFilenameTemplates();
     void refreshRuntimeMetrics();
 
+    await workspaceRestored;
+    restoreDevelopmentView();
     performance.mark('tvm:services-ready');
 }
 

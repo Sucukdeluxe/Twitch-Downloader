@@ -6788,12 +6788,36 @@ function createWindow(): void {
 
     if (IS_HOT_DEVELOPMENT && fs.existsSync(path.resolve(__dirname, '../scripts/dev.mjs'))) {
         const contents = mainWindow.webContents;
+        let pendingDevelopmentAction: 'reload' | 'restart' | undefined;
+        let applyingDevelopmentUpdate = false;
+        let developmentBuildFailed = false;
+        const applyDevelopmentUpdate = async () => {
+            if (pendingDevelopmentAction === 'restart' && downloadQueue.length > 0) return;
+            if (!pendingDevelopmentAction || developmentBuildFailed || applyingDevelopmentUpdate || contents.isDestroyed() || contents.isLoadingMainFrame() || applicationRestoreBusy() || applicationBackupBusy) return;
+            applyingDevelopmentUpdate = true;
+            try {
+                const prepared = await contents.executeJavaScript('typeof prepareDevelopmentRefresh === "function" && prepareDevelopmentRefresh()');
+                if (!prepared || developmentBuildFailed || contents.isDestroyed() || applicationRestoreBusy() || applicationBackupBusy) return;
+                const action = pendingDevelopmentAction;
+                pendingDevelopmentAction = undefined;
+                if (action === 'restart') {
+                    app.relaunch();
+                    app.quit();
+                } else contents.reloadIgnoringCache();
+            } catch (error) {
+                appendDebugLog('development-refresh-failed', String(error));
+            } finally { applyingDevelopmentUpdate = false; }
+        };
+        const developmentRefreshTimer = setInterval(() => { void applyDevelopmentUpdate(); }, 500);
         const live = createDevelopmentLiveUpdates(path.resolve(__dirname, '..'), update => {
+            developmentBuildFailed = update.status === 'error';
+            if (update.status === 'restart') pendingDevelopmentAction = 'restart';
+            else if (update.status === 'reload') pendingDevelopmentAction ??= 'reload';
             appendDebugLog('development-live-update', { revision: update.revision, status: update.status, styles: update.styles.length });
             if (!contents.isDestroyed() && !contents.isLoadingMainFrame()) contents.send('development-style-update', update);
         }, error => appendDebugLog('development-live-update-failed', String(error)));
         const deliverCurrent = () => {
-            if (!contents.isDestroyed()) contents.send('development-style-update', live.current());
+            if (!contents.isDestroyed()) contents.send('development-style-update', { ...live.current(), status: developmentBuildFailed ? 'error' : pendingDevelopmentAction || 'ready' });
         };
         const sendCurrent = (event: Electron.IpcMainEvent) => {
             if (event.sender === contents && isTrustedRendererEvent(event)) deliverCurrent();
@@ -6803,6 +6827,7 @@ function createWindow(): void {
         mainWindow.once('closed', () => {
             ipcMain.removeListener('development-style-ready', sendCurrent);
             contents.removeListener('did-finish-load', deliverCurrent);
+            clearInterval(developmentRefreshTimer);
             live.stop();
         });
     }

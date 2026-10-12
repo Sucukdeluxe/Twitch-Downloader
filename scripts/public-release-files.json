@@ -127,6 +127,7 @@
     "src/renderer-command-palette.ts",
     "src/renderer-components.ts",
     "src/renderer-cutter.ts",
+    "src/renderer-development.ts",
     "src/renderer-editing-workflows.ts",
     "src/renderer-globals.d.ts",
     "src/renderer-locale-de.ts",

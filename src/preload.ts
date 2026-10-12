@@ -33,9 +33,9 @@ function applyDevelopmentStyles(update: import('./main/development-live').Develo
         const de = document.documentElement.lang !== 'en';
         badge.title = update.status === 'error'
             ? (de ? 'Änderung nicht geladen. Bisheriger Stand bleibt aktiv.' : 'Change not loaded. Previous state remains active.')
-            : update.status === 'restart'
-                ? (de ? 'Layout live. Funktionsänderungen werden nach einem Neustart aktiv.' : 'Layout is live. Logic changes apply after restarting.')
-                : (de ? 'Layoutänderungen werden live übernommen.' : 'Layout changes apply live.');
+            : update.status === 'restart' || update.status === 'reload'
+                ? (de ? 'Änderung bereit. Wird automatisch übernommen, sobald keine Bearbeitung läuft.' : 'Change ready. Applies automatically when editing is idle.')
+                : (de ? 'Änderungen werden automatisch übernommen.' : 'Changes apply automatically.');
     }
 }
 

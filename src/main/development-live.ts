@@ -1,17 +1,25 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 export interface DevelopmentStyleUpdate {
     revision: number;
     styles: Array<{ name: string; css: string }>;
-    status: 'ready' | 'restart' | 'error';
+    status: 'ready' | 'reload' | 'restart' | 'error';
 }
 
 export function createDevelopmentLiveUpdates(
     root: string,
     publish: (update: DevelopmentStyleUpdate) => void,
     reportError: (error: unknown) => void,
+    rebuild = async () => {
+        await promisify(execFile)(process.execPath, [join(root, 'scripts/build.mjs'), '--development-refresh'], {
+            cwd: root, windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+            timeout: 120000, maxBuffer: 8 * 1024 * 1024,
+        });
+    },
 ) {
     let watcher: FSWatcher | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -19,14 +27,16 @@ export function createDevelopmentLiveUpdates(
     let stopped = false;
     let refreshing = false;
     let refreshAgain = false;
-    let restartPending = false;
+    let pendingBuild: 'reload' | 'restart' | undefined;
     let snapshot: DevelopmentStyleUpdate = { revision: 0, styles: [], status: 'ready' };
 
     async function refresh(): Promise<void> {
         if (refreshing) { refreshAgain = true; return; }
         refreshing = true;
         const currentRevision = ++revision;
+        const buildKind = pendingBuild;
         try {
+            if (buildKind) await rebuild();
             const { build, transform } = await import('esbuild');
             const names = ['styles', 'styles-workflows', 'styles-overlays', 'workspace', 'workspace-refinements', 'editing-workflows', 'workspace-insights'];
             const styles = await Promise.all(names.map(async name => {
@@ -54,7 +64,8 @@ export function createDevelopmentLiveUpdates(
             if (!playerCss) throw new Error('Development player stylesheet missing');
             styles.push({ name: 'renderer-vod-player', css: playerCss.text });
             if (stopped || currentRevision !== revision) return;
-            snapshot = { revision: currentRevision, styles, status: restartPending ? 'restart' : 'ready' };
+            snapshot = { revision: currentRevision, styles, status: buildKind || 'ready' };
+            pendingBuild = undefined;
             publish(snapshot);
         } catch (error) {
             if (stopped || currentRevision !== revision) return;
@@ -69,10 +80,15 @@ export function createDevelopmentLiveUpdates(
 
     function schedule(file: string): void {
         if (stopped || /\.(?:test|spec)\./.test(file) || !/\.(?:css|html|[cm]?[jt]sx?)$/.test(file)) return;
-        if (!file.endsWith('.css')) restartPending = true;
+        const normalized = file.replaceAll('\\', '/');
+        if (!file.endsWith('.css')) {
+            const rendererOnly = /^(?:renderer[^/]*\.tsx?|index\.html|preload\.ts|vod-player\/)/.test(normalized);
+            if (!rendererOnly) pendingBuild = 'restart';
+            else pendingBuild ??= 'reload';
+        }
         ++revision;
         if (timer) clearTimeout(timer);
-        timer = setTimeout(() => { timer = undefined; void refresh(); }, 80);
+        timer = setTimeout(() => { timer = undefined; void refresh(); }, 200);
     }
 
     try {
