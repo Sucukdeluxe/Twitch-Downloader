@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.41 - 2026-10-12
+
+This patch fixes VOD trimming so the entered time range is downloaded when "Exclude ranges" is active.
+
+### VOD trimming
+
+- Keep the start and end time fields, the "Set here" buttons and the timeline bound to the download excerpt while excluding ranges. Previously, times entered in this mode only changed an unconfirmed exclusion draft, so the queued job covered the whole VOD and was split into many parts.
+- Download only the selected excerpt, minus confirmed exclusions, regardless of which editing mode was active when the times were entered.
+- Edit exclusion drafts only through their own time fields and red handles. An unconfirmed draft still blocks adding the job to the queue.
+
+### Verification
+
+- Check excerpt input, "Set here", mode switches and open drafts headless in Chromium in German and English, light and dark themes, and four display scales.
+- Run the full release checks and isolated Windows package tests before publication.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.40 - 2026-10-12
 
 This patch fixes keyboard handling in dialogs so shortcuts cannot control the video editor behind them.
