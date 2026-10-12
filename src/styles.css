@@ -508,10 +508,23 @@ body {
 }
 
 .streamer-item .remove {
+    display: inline-flex;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
     margin-left: auto;
+    border-radius: 6px;
     opacity: 0;
-    color: var(--error);
+    color: var(--text-secondary);
     cursor: pointer;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.streamer-item .remove:hover {
+    color: var(--error);
+    background: color-mix(in srgb, var(--error) 14%, transparent);
 }
 
 .streamer-item:hover .remove,

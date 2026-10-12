@@ -707,7 +707,7 @@ function renderStreamers(): void {
         nameSpan.textContent = getStreamerDisplayName(streamer);
         const removeSpan = document.createElement('span');
         removeSpan.className = 'remove';
-        removeSpan.textContent = 'x';
+        removeSpan.appendChild(createStreamerRemoveIcon());
         removeSpan.setAttribute('role', 'button');
         removeSpan.setAttribute('tabindex', '0');
         removeSpan.setAttribute('aria-label', UI_TEXT.streamers.removeAria);
@@ -1092,6 +1092,23 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
     }
 
     if (!cached || !vodCollectionsMatch(cached.vods, loaded.vods)) renderVODs(loaded.vods, name, Boolean(cached));
+}
+
+function createStreamerRemoveIcon(): SVGSVGElement {
+    const namespace = 'http://www.w3.org/2000/svg';
+    const icon = document.createElementNS(namespace, 'svg');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('width', '14');
+    icon.setAttribute('height', '14');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2.2');
+    icon.setAttribute('stroke-linecap', 'round');
+    const cross = document.createElementNS(namespace, 'path');
+    cross.setAttribute('d', 'M6 6l12 12M18 6L6 18');
+    icon.appendChild(cross);
+    return icon;
 }
 
 function createVodEmptyStateIcon(): SVGSVGElement {
