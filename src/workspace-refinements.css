@@ -2041,11 +2041,12 @@ body :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):foc
 .vod-quality-option .vod-quality-description strong { color: var(--workspace-text); font-size: 15px; font-weight: 600; }
 .vod-quality-option .vod-quality-details { color: var(--workspace-text-muted); font-size: 13px; font-weight: 400; overflow-wrap: anywhere; }
 .vod-quality-placeholder { height: 64px; box-sizing: border-box; border: 1px solid var(--workspace-border); border-radius: 8px; background: var(--workspace-control); position: relative; overflow: hidden; }
+.vod-quality-placeholder-radio { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; box-sizing: border-box; border: 2px solid color-mix(in srgb, var(--workspace-text) 14%, transparent); border-radius: 50%; animation: vod-quality-loading 1.4s ease-in-out infinite; }
 .vod-quality-placeholder::before, .vod-quality-placeholder::after { content: ''; position: absolute; left: 44px; max-width: calc(100% - 60px); border-radius: 4px; background: color-mix(in srgb, var(--workspace-text) 14%, transparent); animation: vod-quality-loading 1.4s ease-in-out infinite; }
 .vod-quality-placeholder::before { top: 14px; width: 80px; height: 12px; }
 .vod-quality-placeholder::after { top: 36px; width: 170px; height: 10px; }
 @keyframes vod-quality-loading { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .vod-quality-placeholder::before, .vod-quality-placeholder::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .vod-quality-placeholder-radio, .vod-quality-placeholder::before, .vod-quality-placeholder::after { animation: none; } }
 .vod-quality-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
 .vod-quality-actions button { min-height: 40px; border-radius: 8px; font-size: 14px; }
 .vod-quality-actions .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 16px; border: 1px solid transparent; background: #247348; color: #fff; font-weight: 600; }

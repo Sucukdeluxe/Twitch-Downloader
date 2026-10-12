@@ -289,10 +289,13 @@ async function chooseVodQuality(url: string, title: string): Promise<SelectedVod
             retry.hidden = true;
             options.replaceChildren(status);
             options.setAttribute('aria-busy', 'true');
-            for (let index = 0; index < 5; index++) {
+            for (let index = 0; index < 7; index++) {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'vod-quality-placeholder';
                 placeholder.setAttribute('aria-hidden', 'true');
+                const radio = document.createElement('span');
+                radio.className = 'vod-quality-placeholder-radio';
+                placeholder.append(radio);
                 options.append(placeholder);
             }
             status.hidden = false;
