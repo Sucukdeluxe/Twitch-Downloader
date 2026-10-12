@@ -1695,12 +1695,13 @@ function updateClipOmissionState(): void {
     const isEditing = clipOmissionState !== null;
     const plan = clipOmissionState?.plan;
     byId('clipDialogDurationLabel').textContent = UI_TEXT.clips.dialogDuration;
-    byId('clipQueueHint').textContent = isEditing
-        ? plan && plan.parts.length ? (currentLanguage === 'de' ? `${formatUiNumber(plan.parts.length)} ${plan.parts.length === 1 ? 'Datei' : 'Dateien'} · ${formatClipTime(plan.duration)}` : `${formatUiNumber(plan.parts.length)} ${plan.parts.length === 1 ? 'file' : 'files'} · ${formatClipTime(plan.duration)}`)
-            : (currentLanguage === 'de' ? 'Kein gültiger Bereich.' : 'No valid range.')
-        : '';
     const start = parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value), end = parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value);
     const validRange = Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start && end <= clipTotalSeconds;
+    const partSeconds = isEditing ? clipOmissionState?.config?.partDurationSec ?? 0 : (config.part_minutes || 120) * 60;
+    const outputDuration = isEditing ? plan?.duration ?? 0 : end - start;
+    const fileCount = isEditing ? plan?.parts.length ?? 0 : outputDuration > partSeconds ? Math.ceil(outputDuration / partSeconds) : 1;
+    byId('clipQueueHint').textContent = (isEditing ? fileCount > 0 : validRange) ? formatClipOutputSummary(fileCount, outputDuration, partSeconds)
+        : isEditing ? (currentLanguage === 'de' ? 'Kein gültiger Bereich.' : 'No valid range.') : '';
     if (plan && validRange) {
         const milliseconds = Math.round(plan.duration * 1000);
         byId('clipDurationTime').textContent = formatSecondsToTime(Math.floor(milliseconds / 1000));
@@ -1712,6 +1713,14 @@ function updateClipOmissionState(): void {
     if (invalidPart) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Startnummer: 1–100.000.' : 'Starting number: 1–100,000.';
     else if (clipOmissionState?.editing) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Bereich bestätigen oder abbrechen.' : 'Confirm or cancel the range.';
     else if (clipQueueError) byId('clipQueueHint').textContent = clipQueueError;
+}
+
+function formatClipOutputSummary(fileCount: number, durationSec: number, partSeconds: number): string {
+    const duration = formatSecondsToTime(Math.floor(Math.round(durationSec * 1000) / 1000));
+    const parts = fileCount > 1 ? formatUiNumber(Math.round(partSeconds / 60)) : '';
+    return currentLanguage === 'de'
+        ? `Ergebnis: ${formatUiNumber(fileCount)} ${fileCount === 1 ? 'Datei' : 'Dateien'} · ${duration}${parts ? ` · Teile à ${parts} Min.` : ''}`
+        : `Output: ${formatUiNumber(fileCount)} ${fileCount === 1 ? 'file' : 'files'} · ${duration}${parts ? ` · ${parts}-minute parts` : ''}`;
 }
 
 function previewEditedFilename(part: import('./main/domain/vod-edit-plan').EditedVodPart): string {

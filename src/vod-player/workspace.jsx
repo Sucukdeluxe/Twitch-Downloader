@@ -51,7 +51,7 @@ function Workspace({ options, bind }) {
   const previewPlayback = useRef(false), previewPlan = useRef(null);
   const outputSettings = options.outputSettings?.() || { startPart: 1 };
   const selection = omitting ? modeRanges.current.excerpt : range;
-  const combined = omitting || omissions.length > 0 || editing !== null;
+  const combined = editing !== null || omissions.some(value => value.end > selection.start && value.start < selection.end);
   const gaps = useMemo(() => omissionGaps(selection, omissions, editing), [selection.start, selection.end, omissions, editing]);
   const draftRange = omitting ? range : modeRanges.current.omission;
   const draftBounds = omissionGap(draftRange, gaps);
@@ -225,12 +225,11 @@ function Workspace({ options, bind }) {
   }, []);
   function mark(which, excerpt = false) {
     const value = Math.min(duration, Math.max(0, Math.round(position * 10) / 10));
-    if (omitting && excerpt) {
+    if (omitting && (excerpt || editing === null)) {
       const current = modeRanges.current.excerpt;
       changeExcerpt(which === 'start' ? Math.min(value, current.end - .001) : current.start, which === 'end' ? Math.max(value, current.start + .001) : current.end);
       return;
     }
-    if (omitting && editing === null) { beginRange(); return; }
     changeRange(which === 'start' ? Math.min(value, range.end - .001) : range.start,
       which === 'end' ? Math.max(value, range.start + .001) : range.end);
   }

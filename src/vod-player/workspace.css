@@ -92,7 +92,7 @@
 .vod-filename-options .clip-radio-label { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .vod-filename-options .clip-radio-row input { flex: none; }
 .vod-cut-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border-soft); flex: none; }
-.vod-cut-footer > span { flex: 1; min-width: 0; margin-right: auto; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.vod-cut-footer > span { flex: 1; min-width: 0; margin-right: auto; font-size: 15px; font-weight: 600; line-height: 1.5; color: var(--text); }
 .vod-cut-footer button { flex: none; min-height: 40px; padding: 9px 16px; }
 .vod-player-workspace { --border: var(--border-soft); }
 .vod-player-loading { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; aspect-ratio: 16 / 9; background: #08090c; border: 1px solid var(--border-soft); border-radius: 14px; color: #ddd; text-align: center; padding: 24px; font-size: 14px; }
