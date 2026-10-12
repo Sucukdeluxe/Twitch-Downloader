@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.39 - 2026-10-12
+
+This patch improves video playback, restores reliable quick navigation, and protects unsaved work during development updates.
+
+### Playback and trimming
+
+- Resume local video playback without starting an unnecessary seek at the current position. This removes redundant decoder work during repeated play/pause actions.
+- Close an open chapter tooltip with Escape before closing the VOD trimming dialog. Existing range-editing and dialog shortcuts remain available.
+
+### Streamers and quick navigation
+
+- Accept existing Twitch channels with short usernames, including names shorter than four characters.
+- Include configured streamers in the Ctrl+K quick-navigation search.
+- Update only the highlighted search result when moving the pointer or using arrow keys. Hovering no longer repeatedly rebuilds the list or loses clicks.
+- Keep the keyboard-selected result visible when scrolling through long result lists.
+
+### Display corrections
+
+- Number alternative video-quality options consecutively when codec information is unavailable.
+- Show twelve months instead of zero years for streams from 360–364 days ago.
+- Format profile VOD counts according to the selected interface language.
+
+### Development updates
+
+- Wait for clip and merge lists to finish saving before refreshing the interface. Failed saves keep the current work open.
+- Prevent older save responses from overriding the result of a newer save.
+- Finish saving pending clip metadata when a download completes, so automatic interface updates can resume normally.
+
+### Verification
+
+- Verify the release with unit tests, Chromium/WebKit interface checks, repeated playback tests, and isolated Windows package checks with hidden windows and muted audio.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## 1.0.38 - 2026-10-12
 
 This update makes VOD trimming easier to read, completes the video-quality loading layout, and improves development-build reliability.
