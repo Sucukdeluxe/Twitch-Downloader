@@ -6,6 +6,7 @@ import { CategoryColors } from './CategoryColors.jsx';
 import { timeLabel } from './timeline.js';
 import { beginFineSeek, alignFineSeek, moveFineSeek, fineWindow } from './fine-seek.js';
 import { FineSeekPreview } from './FineSeekPreview.jsx';
+import { Tooltip } from './Tooltip.jsx';
 
 export function cutTime(seconds) {
   const value = Math.round(Math.max(0, seconds) * 1000);
@@ -141,10 +142,11 @@ export function CutTimeline({ duration, range, position, chapters, onChange, onS
       <button type="button" aria-pressed={Boolean(view)} disabled={!active} onClick={() => setView(selectionView())}><ZoomIn size={15} aria-hidden="true"/>{text.zoomSelection}</button>
     </div>, document.getElementById('clipTimelineView'))}
     <div ref={track} className="vod-selection-track" onClick={seekAt}>
-      <div className="vod-selection-chapters" aria-hidden="true">
+      <div className="vod-selection-chapters">
         <CategoryColors className="vod-selection-colors" chapters={chapters} from={from} to={to} opacity={.12}/>
-        {visibleChapters.map(({ chapter, start, end }) => <span key={chapter.id} style={{ left: `${start * 100}%`, width: `${(end - start) * 100}%` }}
-          title={`${chapter.name} · ${cutTime(chapter.start)} – ${cutTime(chapter.end)}`}><span>{chapter.name}</span></span>)}
+        {visibleChapters.map(({ chapter, start, end }) => <Tooltip key={chapter.id} content={<><strong>{chapter.name}</strong><time>{cutTime(chapter.start)} – {cutTime(chapter.end)}</time></>}>
+          <span tabIndex={0} style={{ left: `${start * 100}%`, width: `${(end - start) * 100}%` }}><span>{chapter.name}</span></span>
+        </Tooltip>)}
       </div>
       <CategoryColors className="vod-selection-stripe" height={3} chapters={chapters} from={from} to={to}/>
       <OmissionBands ranges={omissions} from={from} to={to} onSelect={onSelectOmission} label={text.range}/>
