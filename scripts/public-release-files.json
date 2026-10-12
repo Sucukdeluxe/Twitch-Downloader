@@ -13,6 +13,7 @@
     "eslint.config.mjs",
     "package-lock.json",
     "package.json",
+    "scripts/build-output.mjs",
     "scripts/build-player.mjs",
     "scripts/build-renderer.mjs",
     "scripts/build-state.mjs",

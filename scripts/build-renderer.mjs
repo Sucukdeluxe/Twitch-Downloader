@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { extname, resolve } from 'node:path';
+import { publishBuildFile } from './build-output.mjs';
 
 const rootDirectory = fileURLToPath(new URL('../', import.meta.url));
 const sourceDirectory = resolve(rootDirectory, 'src');
@@ -14,17 +15,12 @@ let rendererHtml = sourceHtml.replaceAll('../build/', '../../build/');
 for (const [, reference] of assets) {
     const file = resolve(sourceDirectory, reference);
     const content = await readFile(file);
+    if (!content.length) throw new Error('Empty renderer asset: ' + reference);
     const extension = extname(file);
     const stem = reference.split('/').at(-1).slice(0, -extension.length);
     const digest = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const name = stem + '.' + digest + extension;
-    try {
-        await writeFile(resolve(rendererDirectory, name), content, { flag: 'wx' });
-    } catch (error) {
-        if (error.code !== 'EEXIST') throw error;
-    }
+    await publishBuildFile(resolve(rendererDirectory, name), content);
     rendererHtml = rendererHtml.replaceAll('"' + reference + '"', '"./' + name + '"');
 }
-const temporaryPath = resolve(rendererDirectory, 'index.html.tmp');
-await writeFile(temporaryPath, rendererHtml);
-await rename(temporaryPath, resolve(rendererDirectory, 'index.html'));
+await publishBuildFile(resolve(rendererDirectory, 'index.html'), rendererHtml);
