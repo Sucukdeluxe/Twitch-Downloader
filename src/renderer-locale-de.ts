@@ -88,7 +88,7 @@ const UI_TEXT_DE = {
         performanceModeBalanced: 'Ausgewogen',
         performanceModeSpeed: "Schnell",
         sidebarSplitViewLabel: 'Streamer und Queue gleichzeitig anzeigen',
-        streamerInvalid: 'Twitch-Username ungültig (4-25 Zeichen, Buchstaben/Zahlen/Unterstrich).',
+        streamerInvalid: 'Twitch-Username ungültig (1-25 Zeichen, Buchstaben/Zahlen/Unterstrich).',
         apiHelpLinkText: "Zugangsdaten erstellen",
         openDebugLogFile: 'Log-Datei öffnen',
         storageCardTitle: 'Speicher',

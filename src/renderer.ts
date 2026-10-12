@@ -2048,11 +2048,36 @@ function scheduleClipBatchRender(item?: ClipBatchItem): void {
     });
 }
 
+const workspaceSaves = {
+    clips: { pending: 0, failed: false, revision: 0 },
+    merge: { pending: 0, failed: false, revision: 0 },
+};
+
+async function trackWorkspaceSave(kind: keyof typeof workspaceSaves, save: () => Promise<boolean>): Promise<void> {
+    const state = workspaceSaves[kind];
+    const revision = ++state.revision;
+    state.pending += 1;
+    let failed: boolean;
+    try {
+        failed = await save() === false;
+    } catch {
+        failed = true;
+    } finally {
+        state.pending -= 1;
+    }
+    if (revision !== state.revision) return;
+    state.failed = failed;
+    if (failed) {
+        const message = currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.';
+        if (kind === 'clips') showClipNotice(message, true);
+        else showAppToast(message, 'warn');
+    }
+}
+
 function persistClipWorkspace(): void {
     if (workspaceLoading) return;
-    void window.api.saveClipWorkspace(clipBatchItems.map(({ transfer: _transfer, ...item }) => item)).then(saved => {
-        if (saved === false) showClipNotice(currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.', true);
-    }).catch(() => showClipNotice(currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.', true));
+    const items = clipBatchItems.map(({ transfer: _transfer, ...item }) => item);
+    void trackWorkspaceSave('clips', () => window.api.saveClipWorkspace(items));
 }
 
 function receiveClipProgress(progress: ClipTransferProgress): void {
@@ -2563,9 +2588,8 @@ let draggedMergeId: string | null = null;
 
 function persistMergeWorkspace(): void {
     if (workspaceLoading) return;
-    void window.api.saveMergeWorkspace(mergeFiles.map(file => file.id)).then(saved => {
-        if (saved === false) showAppToast(currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.', 'warn');
-    }).catch(() => showAppToast(currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.', 'warn'));
+    const ids = mergeFiles.map(file => file.id);
+    void trackWorkspaceSave('merge', () => window.api.saveMergeWorkspace(ids));
 }
 
 function formatMergeDuration(seconds: number): string {

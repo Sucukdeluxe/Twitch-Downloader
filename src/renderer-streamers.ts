@@ -910,10 +910,7 @@ async function addStreamer(): Promise<void> {
         return;
     }
 
-    // Twitch usernames: 4-25 characters, alphanumeric + underscore.
-    // Catch typos / invalid input before it hits the API and silently
-    // returns "streamer not found".
-    if (!/^[a-zA-Z0-9_]{4,25}$/.test(name)) {
+    if (!/^[a-zA-Z0-9_]{1,25}$/.test(name)) {
         showAppToast(UI_TEXT.static.streamerInvalid, 'warn');
         return;
     }

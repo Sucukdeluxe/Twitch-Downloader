@@ -88,7 +88,7 @@ const UI_TEXT_EN = {
         performanceModeBalanced: 'Balanced',
         performanceModeSpeed: "Fast",
         sidebarSplitViewLabel: 'Show streamers and queue together',
-        streamerInvalid: 'Invalid Twitch username (4-25 chars, letters/digits/underscore).',
+        streamerInvalid: 'Invalid Twitch username (1-25 chars, letters/digits/underscore).',
         apiHelpLinkText: "Create credentials",
         openDebugLogFile: 'Open log file',
         storageCardTitle: 'Storage',

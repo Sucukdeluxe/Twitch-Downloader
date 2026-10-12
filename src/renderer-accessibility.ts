@@ -191,6 +191,16 @@ const RendererAccessibility = (() => {
         const dialog = document.getElementById(id);
         if (!(dialog instanceof HTMLElement)) return;
         if (event.key === 'Escape') {
+            const tooltip = Array.from(dialog.querySelectorAll('[aria-describedby]'))
+                .flatMap(reference => (reference.getAttribute('aria-describedby') || '').split(/\s+/))
+                .map(tooltipId => document.getElementById(tooltipId))
+                .find(element => element?.matches('.vod-tooltip-position[data-open="true"]'));
+            if (tooltip) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                tooltip.dispatchEvent(new Event('vod-tooltip-dismiss'));
+                return;
+            }
             if (id === 'clipModal' && (document.fullscreenElement || dialog.querySelector('.player-panel-position, .archive-player.cinema')
                 || (event.target instanceof HTMLElement && ((event.target.matches('.archive-timeline') && dialog.querySelector('.fine-seek-position'))
                     || event.target.closest('.vod-range-markers[data-dragging="true"]'))))) return;

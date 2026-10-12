@@ -102,7 +102,7 @@ function variantLabel(id: string, fps?: number, codec?: string): string {
     const [height, rate] = base.split('p');
     const resolvedFps = fps || Number(rate);
     const displayedFps = resolvedFps && Math.abs(resolvedFps - Math.round(resolvedFps)) < 0.01 ? Math.round(resolvedFps) : resolvedFps;
-    return [height + 'p', displayedFps ? displayedFps + ' fps' : '', codec || '', alternative !== undefined && !codec ? '#' + (Number(alternative || 0) + 2) : ''].filter(Boolean).join(' · ');
+    return [height + 'p', displayedFps ? displayedFps + ' fps' : '', codec || '', alternative !== undefined && !codec ? '#' + (Number(alternative || 1) + 1) : ''].filter(Boolean).join(' · ');
 }
 
 function playlistVariants(playlist: string, master: string): Map<string, { codec?: string; fps?: number }> {

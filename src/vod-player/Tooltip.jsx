@@ -1,4 +1,4 @@
-import React, { cloneElement, useRef, useState } from 'react';
+import React, { cloneElement, useEffect, useRef, useState } from 'react';
 import { arrow, autoUpdate, flip, FloatingArrow, FloatingPortal, hide, offset, safePolygon, shift, size, useDismiss, useFloating, useFocus, useHover, useInteractions, useMergeRefs, useRole, useTransitionStyles } from '@floating-ui/react';
 import './tooltip.css';
 
@@ -28,12 +28,18 @@ export function Tooltip({ children, content }) {
     open: { opacity: 1, transform: 'translateY(0) scale(1)' },
   });
   const ref = useMergeRefs([floating.refs.setReference, children.props.ref]);
+  useEffect(() => {
+    const element = floating.elements.floating;
+    const dismiss = () => setOpen(false);
+    element?.addEventListener('vod-tooltip-dismiss', dismiss);
+    return () => element?.removeEventListener('vod-tooltip-dismiss', dismiss);
+  }, [floating.elements.floating]);
   const reference = floating.elements.domReference;
   const portalRoot = reference?.closest('dialog[open]') || (document.fullscreenElement?.contains(reference) ? document.fullscreenElement : document.body);
   return <>
     {cloneElement(children, getReferenceProps({ ...children.props, ref }))}
     {isMounted && <FloatingPortal root={portalRoot}>
-      <div ref={floating.refs.setFloating} className="vod-tooltip-position" {...getFloatingProps({ onClick: event => event.stopPropagation(), onPointerDown: event => event.stopPropagation() })} style={{ ...floating.floatingStyles, visibility: !floating.isPositioned || floating.middlewareData.hide?.referenceHidden ? 'hidden' : undefined }}>
+      <div ref={floating.refs.setFloating} className="vod-tooltip-position" data-open={open} {...getFloatingProps({ onClick: event => event.stopPropagation(), onPointerDown: event => event.stopPropagation() })} style={{ ...floating.floatingStyles, visibility: !floating.isPositioned || floating.middlewareData.hide?.referenceHidden ? 'hidden' : undefined }}>
         <div className="vod-tooltip-bubble" style={{ ...styles, transformOrigin: (floating.middlewareData.arrow?.x !== undefined ? floating.middlewareData.arrow.x + 7 + 'px' : '50%') + ' ' + (floating.placement.startsWith('top') ? 'bottom' : 'top') }}>
           <div className="vod-tooltip-content">{content}</div>
           <FloatingArrow ref={arrowRef} context={floating.context} className="vod-tooltip-arrow" width={14} height={7}/>
