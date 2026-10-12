@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.37 - 2026-10-12
+
+This patch fixes quality fallback edge cases, keeps queue quality details readable, and makes CI report its actual coverage.
+
+### Video quality
+
+- Use the same alternative variant names as Streamlink (_alt and _alt2) when several codecs share one resolution.
+- Reject empty, audio-only or otherwise unusable direct Twitch playlists before caching them, so a retry can request fresh data.
+- Preserve the selected quality label with queued downloads.
+
+### Queue and testing
+
+- Show the selected resolution, frame rate and codec in queue details, with a readable fallback for older queue entries.
+- Make the queue stress test fail on real overflow at supported application widths.
+- Remove ignored local-only checks from the normal GitHub CI path and fail explicitly when a manually requested live gate lacks its required local check.
+
+### Verification
+
+- 967 local unit tests, focused Chromium/WebKit quality-dialog cases, queue stress tests, security checks, build and workflow validation passed.
+- The Windows installer remains unsigned, as in previous releases.
+
 ## Unreleased
 
 ## 1.0.36 - 2026-10-11
