@@ -154,14 +154,22 @@ function renderStreamerSearchResults(): void {
         button.className = 'streamer-search-add';
         button.dataset.streamerLogin = channel.login;
         button.disabled = added || streamerSearchAdding;
-        const icon = document.createElement('span');
-        icon.className = 'streamer-search-add-icon';
-        icon.textContent = '+';
-        icon.hidden = added;
-        icon.setAttribute('aria-hidden', 'true');
+        if (!added) {
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('class', 'streamer-search-add-icon');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '2');
+            icon.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M12 5v14M5 12h14');
+            icon.append(path);
+            button.append(icon);
+        }
         const label = document.createElement('span');
         label.textContent = added ? UI_TEXT.streamerSearch.added : UI_TEXT.streamerSearch.add;
-        button.append(icon, label);
+        button.append(label);
         button.setAttribute('aria-label', label.textContent + ': ' + channel.displayName);
         button.addEventListener('click', () => { void addStreamerSearchResult(channel); });
         row.append(copy, button);
