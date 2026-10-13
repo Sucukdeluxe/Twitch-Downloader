@@ -428,6 +428,8 @@ const UI_TEXT_DE = {
         eventRecordingResume: 'Aufnahme fortgesetzt - Part {part} startet'
     },
     profile: {
+        showLive: 'Live-Details anzeigen',
+        hideLive: 'Live-Details ausblenden',
         liveBadge: 'LIVE',
         partner: 'Partner',
         affiliate: 'Affiliate',

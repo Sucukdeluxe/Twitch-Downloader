@@ -6,6 +6,45 @@ let activeProfileRequestId = 0;
 let activeProfileLogin = '';
 const streamerProfileCache = new Map<string, StreamerProfile>();
 const streamerProfileLoads = new Map<string, Promise<StreamerProfile | null>>();
+let liveProfileExpanded: boolean | null = null;
+
+function isLiveProfileExpanded(): boolean {
+    if (liveProfileExpanded === null) {
+        try { liveProfileExpanded = localStorage.getItem('twitch-vod-manager:profile-live-expanded') === '1'; }
+        catch { liveProfileExpanded = false; }
+    }
+    return liveProfileExpanded;
+}
+
+function toggleStreamerLiveDetails(): void {
+    liveProfileExpanded = !isLiveProfileExpanded();
+    try { localStorage.setItem('twitch-vod-manager:profile-live-expanded', liveProfileExpanded ? '1' : '0'); } catch { }
+    const button = document.getElementById('streamerProfileLiveToggle');
+    const panel = document.getElementById('streamerProfileLivePanel');
+    if (!button || !panel) return;
+    button.setAttribute('aria-expanded', String(liveProfileExpanded));
+    button.setAttribute('aria-label', liveProfileExpanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive);
+    button.title = liveProfileExpanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive;
+    panel.classList.toggle('is-expanded', liveProfileExpanded);
+    panel.setAttribute('aria-hidden', String(!liveProfileExpanded));
+    panel.inert = !liveProfileExpanded;
+}
+
+function getLiveVodCover(login: string, vodId: string): string {
+    const profile = streamerProfileCache.get(login.toLowerCase());
+    return profile?.isLive && profile.currentVodId === vodId ? profile.currentStreamPreviewUrl : '';
+}
+
+function syncStreamerProfileLiveStatus(login: string, isLive: boolean): void {
+    const key = login.toLowerCase();
+    const profile = streamerProfileCache.get(key);
+    if (profile && profile.isLive !== isLive) {
+        const updated = { ...profile, isLive };
+        streamerProfileCache.set(key, updated);
+        if (activeProfileLogin === key) renderStreamerProfileCard(updated);
+    }
+    void refreshStreamerProfilesInBackground([login]);
+}
 
 function formatProfileFollowers(count: number | null): string {
     if (count == null) return '–';
@@ -46,6 +85,7 @@ function streamerProfilesMatch(left: StreamerProfile, right: StreamerProfile): b
         && left.isLive === right.isLive
         && left.currentTitle === right.currentTitle
         && left.currentGame === right.currentGame
+        && left.currentVodId === right.currentVodId
         && left.currentStreamPreviewUrl === right.currentStreamPreviewUrl
         && left.currentStreamViewers === right.currentStreamViewers
         && left.twitchUrl === right.twitchUrl;
@@ -83,6 +123,11 @@ function renderStreamerProfileSkeleton(login: string): void {
 }
 
 function renderStreamerProfileCard(p: StreamerProfile): void {
+    const statusReader = (window as unknown as { getStreamerLiveVodStatus?: (login: string) => { isLive: boolean } | undefined }).getStreamerLiveVodStatus;
+    const status = statusReader?.(p.login);
+    if (status) p = { ...p, isLive: status.isLive };
+    const expanded = isLiveProfileExpanded();
+    const focusedId = document.activeElement?.id;
     const el = document.getElementById('streamerProfileHeader');
     if (!el) return;
     el.classList.remove('streamer-profile-skeleton', 'is-hidden');
@@ -130,7 +175,9 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
     // current preview frame + viewer count + title + game + record CTA.
     const liveCard = p.isLive
         ? `
-            <div class="streamer-profile-live-card" role="button" tabindex="0" aria-label="${escapeHtml(UI_TEXT.profile.liveCardTooltip)}" onclick="triggerLiveRecordingFromProfile('${safeLogin}')" onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target===event.currentTarget){event.preventDefault();triggerLiveRecordingFromProfile('${safeLogin}');}" title="${escapeHtml(UI_TEXT.profile.liveCardTooltip)}">
+            <div class="streamer-profile-live-panel${expanded ? ' is-expanded' : ''}" id="streamerProfileLivePanel" aria-hidden="${!expanded}" ${expanded ? '' : 'inert'}>
+            <div class="streamer-profile-live-panel-inner">
+            <div class="streamer-profile-live-card">
                 ${p.currentStreamPreviewUrl
                     ? `<img class="streamer-profile-live-thumb" src="${escapeHtml(p.currentStreamPreviewUrl)}" alt="${escapeHtml(UI_TEXT.profile.liveThumbAlt)}" onerror="onProfileLivePreviewError(this)">`
                     : `<div class="streamer-profile-live-thumb-fallback"></div>`}
@@ -141,10 +188,16 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
                     </div>
                     ${p.currentTitle ? `<div class="streamer-profile-live-title">${escapeHtml(p.currentTitle)}</div>` : ''}
                     ${p.currentGame ? `<div class="streamer-profile-live-game">${escapeHtml(p.currentGame)}</div>` : ''}
-                    <button type="button" class="streamer-profile-btn primary streamer-profile-live-rec-btn" onclick="event.stopPropagation(); triggerLiveRecordingFromProfile('${safeLogin}')">${escapeHtml(UI_TEXT.profile.recordNow)}</button>
+                    <button type="button" id="streamerProfileLiveRecord" class="streamer-profile-btn primary streamer-profile-live-rec-btn" onclick="event.stopPropagation(); triggerLiveRecordingFromProfile('${safeLogin}')">${escapeHtml(UI_TEXT.profile.recordNow)}</button>
                 </div>
             </div>
+            </div>
+            </div>
         ` : '';
+
+    const liveToggle = p.isLive
+        ? `<button type="button" id="streamerProfileLiveToggle" class="streamer-profile-live-toggle" aria-controls="streamerProfileLivePanel" aria-expanded="${expanded}" aria-label="${escapeHtml(expanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive)}" title="${escapeHtml(expanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive)}" onclick="toggleStreamerLiveDetails()"><span class="vod-live-badge">${escapeHtml(UI_TEXT.vods.liveBadge)}</span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>`
+        : '';
 
     applyHtml(el, `
         ${bannerStyle ? `<div class="streamer-profile-banner-bg" style="${bannerStyle}"></div>` : ''}
@@ -167,10 +220,12 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
             </div>
             <div class="streamer-profile-actions">
                 <button type="button" class="streamer-profile-btn twitch-channel-button" onclick="openTwitchChannel('${safeUrl}')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2 2 6v15h5v3l3-3h4l8-8V2H4zm16 10-4 4h-5l-3 3v-3H5V4h15v8zM15 6h2v6h-2V6zm-5 0h2v6h-2V6z"/></svg><span>${escapeHtml(UI_TEXT.profile.openTwitch)}</span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 18 18 6M6 6h12v12"/></svg></button>
+                ${liveToggle}
             </div>
         </div>
         ${liveCard}
     `);
+    if (focusedId === 'streamerProfileLiveToggle' || focusedId === 'streamerProfileLiveRecord') document.getElementById(focusedId)?.focus({ preventScroll: true });
 }
 
 function onProfileLivePreviewError(img: HTMLImageElement): void {
@@ -224,6 +279,8 @@ async function fetchStreamerProfile(login: string, forceRefresh = false): Promis
         if (profile) {
             streamerProfileCache.set(key, profile);
             updateStreamerAvatars(login);
+            const syncCovers = (window as unknown as { syncVodCardCovers?: () => void }).syncVodCardCovers;
+            syncCovers?.();
         }
         return profile;
     });
@@ -282,3 +339,7 @@ function onProfileAvatarError(img: HTMLImageElement): void {
 (window as unknown as { triggerLiveRecordingFromProfile: typeof triggerLiveRecordingFromProfile }).triggerLiveRecordingFromProfile = triggerLiveRecordingFromProfile;
 (window as unknown as { preloadStreamerProfiles: typeof preloadStreamerProfiles }).preloadStreamerProfiles = preloadStreamerProfiles;
 (window as unknown as { refreshStreamerProfilesInBackground: typeof refreshStreamerProfilesInBackground }).refreshStreamerProfilesInBackground = refreshStreamerProfilesInBackground;
+
+(window as unknown as { toggleStreamerLiveDetails: typeof toggleStreamerLiveDetails }).toggleStreamerLiveDetails = toggleStreamerLiveDetails;
+(window as unknown as { getLiveVodCover: typeof getLiveVodCover }).getLiveVodCover = getLiveVodCover;
+(window as unknown as { syncStreamerProfileLiveStatus: typeof syncStreamerProfileLiveStatus }).syncStreamerProfileLiveStatus = syncStreamerProfileLiveStatus;

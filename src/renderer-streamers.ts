@@ -28,6 +28,8 @@ function scheduleStreamerActiveIndicatorSync(): void {
 // name was added (display-cased vs login-cased).
 const liveStatusByLogin = new Map<string, boolean>();
 const liveVodIdByLogin = new Map<string, string>();
+const lastLiveVodCovers = new Map<string, string>();
+const finishedVodCoverRefreshes = new Map<string, number>();
 const streamerDisplayNames = new Map<string, string>();
 
 function getStreamerDisplayName(login: string): string {
@@ -103,19 +105,34 @@ function applyLiveVodStatusChanges(changes: Array<{ login: string; isLive: boole
     let touched = false;
     for (const change of changes) {
         const key = change.login.toLowerCase();
+        const previousVodId = liveVodIdByLogin.get(key);
         const vodId = change.isLive && typeof change.vodId === 'string' ? change.vodId : null;
-        if (liveStatusByLogin.get(key) !== change.isLive || (liveVodIdByLogin.get(key) ?? null) !== vodId) {
+        const changed = liveStatusByLogin.get(key) !== change.isLive || (liveVodIdByLogin.get(key) ?? null) !== vodId;
+        if (changed) {
             touched = true;
+            if (previousVodId && previousVodId !== vodId) void refreshFinishedVodCover(key, previousVodId);
         }
         liveStatusByLogin.set(key, change.isLive);
         if (vodId) liveVodIdByLogin.set(key, vodId);
         else liveVodIdByLogin.delete(key);
+        if (changed) {
+            const refreshProfile = (window as unknown as { syncStreamerProfileLiveStatus?: (login: string, isLive: boolean) => void }).syncStreamerProfileLiveStatus;
+            refreshProfile?.(key, change.isLive);
+        }
     }
     if (touched) {
         renderStreamers();
         updateVodLiveBadges();
     }
 }
+
+function getStreamerLiveVodStatus(login: string): { isLive: boolean; vodId: string | null } | undefined {
+    const key = login.toLowerCase();
+    const isLive = liveStatusByLogin.get(key);
+    return isLive === undefined ? undefined : { isLive, vodId: liveVodIdByLogin.get(key) ?? null };
+}
+
+(window as unknown as { getStreamerLiveVodStatus: typeof getStreamerLiveVodStatus }).getStreamerLiveVodStatus = getStreamerLiveVodStatus;
 
 async function initLiveStatusSubscription(): Promise<void> {
     const changedWhileLoading = new Set<string>();
@@ -339,19 +356,110 @@ function renderVodLiveBadge(): string {
     return `<span class="vod-live-badge" title="${escapeHtml(UI_TEXT.vods.liveNowTooltip)}">${escapeHtml(UI_TEXT.vods.liveBadge)}</span>`;
 }
 
+function usableVodThumbnail(url: string): boolean {
+    return Boolean(url) && !/(?:^|[/_-])404(?:[/_.-]|$)|not_found|processing/i.test(url);
+}
+
+function getVodCoverUrl(vodId: string, streamer: string, thumbnail: string): string {
+    const login = streamer.toLowerCase();
+    const key = login + '/' + vodId;
+    if (liveVodIdByLogin.get(login) === vodId) {
+        const getCover = (window as unknown as { getLiveVodCover?: (login: string, vodId: string) => string }).getLiveVodCover;
+        const cover = getCover?.(login, vodId);
+        if (cover) {
+            lastLiveVodCovers.set(key, cover);
+            if (lastLiveVodCovers.size > 64) lastLiveVodCovers.delete(lastLiveVodCovers.keys().next().value!);
+            return cover;
+        }
+        return lastLiveVodCovers.get(key) || thumbnail;
+    }
+    return usableVodThumbnail(thumbnail) ? thumbnail : lastLiveVodCovers.get(key) || thumbnail;
+}
+
+function onVodThumbnailError(image: HTMLImageElement): void {
+    const card = image.closest<HTMLElement>('.vod-card');
+    const key = (card?.dataset.vodStreamer || '').toLowerCase() + '/' + card?.dataset.vodId;
+    const fallback = lastLiveVodCovers.get(key);
+    if (fallback && image.getAttribute('src') !== fallback) image.src = fallback;
+    else {
+        image.onerror = null;
+        image.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%23333" width="320" height="180"/></svg>';
+    }
+}
+
+function syncVodCardCovers(): void {
+    document.querySelectorAll<HTMLElement>('#vodGrid .vod-card[data-vod-id]').forEach(card => {
+        const image = card.querySelector<HTMLImageElement>('.vod-thumbnail');
+        if (!image) return;
+        const source = getVodCoverUrl(card.dataset.vodId || '', card.dataset.vodStreamer || '', card.dataset.vodThumbnail || '');
+        const key = (card.dataset.vodStreamer || '').toLowerCase() + '/' + card.dataset.vodId;
+        const finalCover = card.dataset.liveVod !== 'true' && source === card.dataset.vodThumbnail && usableVodThumbnail(source);
+        if (image.getAttribute('src') === source && image.complete && image.naturalWidth > 0 && finalCover) finishedVodCoverRefreshes.delete(key);
+        if (image.getAttribute('src') === source) {
+            delete image.dataset.coverRequest;
+            return;
+        }
+        if (!source || image.dataset.coverRequest === source) return;
+        image.dataset.coverRequest = source;
+        const next = new Image();
+        next.onload = () => {
+            if (!image.isConnected || image.dataset.coverRequest !== source) return;
+            image.src = source;
+            delete image.dataset.coverRequest;
+            if (finalCover) finishedVodCoverRefreshes.delete(key);
+        };
+        next.onerror = () => {
+            if (image.dataset.coverRequest === source) delete image.dataset.coverRequest;
+        };
+        next.src = source;
+    });
+}
+
+async function refreshFinishedVodCover(login: string, vodId: string, attempt = 0): Promise<void> {
+    const key = login + '/' + vodId;
+    if (attempt > 0 && !finishedVodCoverRefreshes.has(key)) return;
+    const revision = (finishedVodCoverRefreshes.get(key) ?? 0) + 1;
+    finishedVodCoverRefreshes.set(key, revision);
+    try {
+        const entry = await loadStreamerVods(login, true);
+        if (finishedVodCoverRefreshes.get(key) !== revision || !entry) return;
+        if (lastLoadedStreamer?.toLowerCase() !== login) { finishedVodCoverRefreshes.delete(key); return; }
+        const thumbnails = new Map(entry.vods.map(vod => [vod.id, vod.thumbnail_url.replace('%{width}', '320').replace('%{height}', '180')]));
+        lastLoadedVods = lastLoadedVods.map(vod => ({ ...vod, thumbnail_url: thumbnails.get(vod.id) ?? vod.thumbnail_url }));
+        document.querySelectorAll<HTMLElement>('#vodGrid .vod-card').forEach(card => {
+            if ((card.dataset.vodStreamer || '').toLowerCase() !== login) return;
+            const thumbnail = thumbnails.get(card.dataset.vodId || '');
+            if (thumbnail) card.dataset.vodThumbnail = thumbnail;
+        });
+        syncVodCardCovers();
+    } catch { }
+    finally {
+        if (finishedVodCoverRefreshes.get(key) === revision) {
+            if (attempt < 4) window.setTimeout(() => { void refreshFinishedVodCover(login, vodId, attempt + 1); }, [5000, 15000, 30000, 60000][attempt]);
+            else finishedVodCoverRefreshes.delete(key);
+        }
+    }
+}
+
+(window as unknown as { syncVodCardCovers: typeof syncVodCardCovers }).syncVodCardCovers = syncVodCardCovers;
+(window as unknown as { onVodThumbnailError: typeof onVodThumbnailError }).onVodThumbnailError = onVodThumbnailError;
+
 function updateVodLiveBadges(): void {
     document.querySelectorAll<HTMLElement>('#vodGrid .vod-card[data-vod-id]').forEach(card => {
         const badges = card.querySelector('.vod-status-badges');
         if (!badges) return;
         const isLive = liveVodIdByLogin.get((card.dataset.vodStreamer || '').toLowerCase()) === card.dataset.vodId;
+        card.dataset.liveVod = String(isLive);
         const badge = badges.querySelector('.vod-live-badge');
         if (isLive && !badge) badges.insertAdjacentHTML('afterbegin', renderVodLiveBadge());
         else if (!isLive) badge?.remove();
     });
+    syncVodCardCovers();
 }
 
 function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string>): string {
     const thumb = vod.thumbnail_url.replace('%{width}', '320').replace('%{height}', '180');
+    const cover = getVodCoverUrl(vod.id, streamer, thumb);
     const date = formatVodCardDate(vod.created_at);
     const safeDisplayTitle = escapeHtml(vod.title || UI_TEXT.vods.untitled);
     const safeUrlAttr = escapeHtml(vod.url);
@@ -380,11 +488,13 @@ function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string
              data-vod-title="${safeTitleAttr}"
              data-vod-date="${safeDateAttr}"
              data-vod-streamer="${safeStreamerAttr}"
+             data-live-vod="${liveVodIdByLogin.get(streamer.toLowerCase()) === vod.id}"
+             data-vod-thumbnail="${escapeHtml(thumb)}"
              data-vod-duration="${safeDurationAttr}">
             <input type="checkbox" class="vod-select-checkbox" data-vod-url="${safeUrlAttr}" ${isChecked ? 'checked' : ''} aria-label="${escapeHtml(UI_TEXT.vods.selectAriaLabel)}">
             <div class="vod-status-badges">${liveVodIdByLogin.get(streamer.toLowerCase()) === vod.id ? renderVodLiveBadge() : ''}${downloadedBadge}</div>
             <div class="vod-thumb-wrap">
-                <img class="vod-thumbnail" loading="lazy" decoding="async" src="${thumb}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 320 180%22><rect fill=%22%23333%22 width=%22320%22 height=%22180%22/></svg>'">
+                <img class="vod-thumbnail" loading="lazy" decoding="async" src="${escapeHtml(cover)}" alt="" onerror="onVodThumbnailError(this)">
                 <div class="vod-duration-badge">${escapeHtml(vod.duration)}</div>
             </div>
             <div class="vod-info">

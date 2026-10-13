@@ -69,6 +69,7 @@ function ensureVodHoverHandlersBound(): void {
 }
 
 function scheduleHoverPreview(card: HTMLElement, vodId: string): void {
+    if (card.dataset.liveVod === 'true') return;
     if (pendingHoverVodId === vodId) return;
     pendingHoverVodId = vodId;
     const generation = ++hoverRequestGeneration;

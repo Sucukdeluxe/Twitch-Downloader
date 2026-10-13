@@ -428,6 +428,8 @@ const UI_TEXT_EN = {
         eventRecordingResume: 'Recording resumed — starting part {part}'
     },
     profile: {
+        showLive: 'Show live details',
+        hideLive: 'Hide live details',
         liveBadge: 'LIVE',
         partner: 'Partner',
         affiliate: 'Affiliate',

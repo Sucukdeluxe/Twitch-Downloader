@@ -1600,7 +1600,10 @@ body :is(select, .select-compact) {
 
 .streamer-profile-actions {
     align-self: center;
-    padding-top: 10px;
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    padding-top: 0;
 }
 
 .streamer-profile-actions .twitch-channel-button {

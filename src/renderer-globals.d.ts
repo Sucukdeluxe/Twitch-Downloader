@@ -367,6 +367,7 @@ interface StreamerProfile {
     currentTitle: string | null;
     currentGame: string | null;
     currentStreamPreviewUrl: string;
+    currentVodId?: string | null;
     currentStreamViewers: number | null;
     twitchUrl: string;
     fetchedAt: number;

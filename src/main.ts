@@ -2182,6 +2182,7 @@ interface StreamerProfile {
     currentTitle: string | null;
     currentGame: string | null;
     currentStreamPreviewUrl: string;
+    currentVodId?: string | null;
     currentStreamViewers: number | null;
     twitchUrl: string;
     fetchedAt: number;
@@ -2268,6 +2269,7 @@ interface PublicProfileQueryResult {
             title: string | null;
             viewersCount: number | null;
             previewImageURL: string | null;
+            archiveVideo?: { id: string } | null;
             game: { name: string } | null;
         } | null;
     } | null;
@@ -2376,6 +2378,7 @@ async function getStreamerDisplayNames(logins: string[]): Promise<Record<string,
 
 interface PublicStreamInfo {
     previewUrl: string;
+    vodId: string | null;
     viewers: number | null;
     title: string | null;
     game: string | null;
@@ -2401,6 +2404,7 @@ async function fetchPublicStreamerProfile(login: string): Promise<RefreshOutcome
                     title
                     viewersCount
                     previewImageURL(width: 640, height: 360)
+                    archiveVideo { id }
                     game { name }
                 }
             }
@@ -2425,6 +2429,7 @@ async function fetchPublicStreamerProfile(login: string): Promise<RefreshOutcome
     const game = s && isPlainObject(s.game) ? s.game : null;
     const stream = (s && s.type === 'live') ? {
         previewUrl: typeof s.previewImageURL === 'string' ? s.previewImageURL : '',
+        vodId: isPlainObject(s.archiveVideo) && typeof s.archiveVideo.id === 'string' ? s.archiveVideo.id : null,
         viewers: typeof s.viewersCount === 'number' ? s.viewersCount : null,
         title: typeof s.title === 'string' ? s.title : null,
         game: typeof game?.name === 'string' ? game.name : null
@@ -2475,6 +2480,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
         let currentTitle = previousProfile?.currentTitle ?? null;
         let currentGame = previousProfile?.currentGame ?? null;
         let currentStreamPreviewRemoteUrl = previousProfile?.currentStreamPreviewUrl ?? '';
+        let currentVodId = previousProfile?.currentVodId ?? null;
         let currentStreamViewers = previousProfile?.currentStreamViewers ?? null;
         let publicLiveResolved = false;
         let hasFreshSource = false;
@@ -2495,12 +2501,14 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
                 currentTitle = publicProfile.stream.title;
                 currentGame = publicProfile.stream.game;
                 currentStreamPreviewRemoteUrl = publicProfile.stream.previewUrl;
+                currentVodId = publicProfile.stream.vodId;
                 currentStreamViewers = publicProfile.stream.viewers;
             } else {
                 isLive = false;
                 currentTitle = null;
                 currentGame = null;
                 currentStreamPreviewRemoteUrl = '';
+                currentVodId = null;
                 currentStreamViewers = null;
             }
         }
@@ -2583,6 +2591,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
             currentTitle,
             currentGame,
             currentStreamPreviewUrl: livePreviewDataUrl || currentStreamPreviewRemoteUrl,
+            currentVodId,
             currentStreamViewers,
             twitchUrl: `https://www.twitch.tv/${normalized}`,
             fetchedAt: Date.now()

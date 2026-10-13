@@ -1882,6 +1882,83 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
     transform: none;
 }
 
+.streamer-profile-live-toggle {
+    min-width: 110px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-small);
+    background: var(--workspace-control);
+    color: var(--workspace-text);
+    cursor: pointer;
+    user-select: none;
+}
+
+.streamer-profile-live-toggle .vod-live-badge {
+    font-size: 14px;
+    padding: 0;
+    background: none;
+}
+
+.streamer-profile-live-toggle > svg {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    transition: transform 180ms ease;
+}
+
+.streamer-profile-live-toggle[aria-expanded="true"] > svg {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.streamer-profile-live-toggle:focus-visible {
+    outline: 2px solid var(--workspace-text-muted);
+    outline-offset: 2px;
+}
+
+.streamer-profile-live-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 200ms cubic-bezier(.2, .7, .3, 1);
+}
+
+.streamer-profile-live-panel.is-expanded {
+    grid-template-rows: 1fr;
+}
+
+.streamer-profile-live-panel-inner {
+    min-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 160ms ease, transform 200ms cubic-bezier(.2, .7, .3, 1);
+}
+
+.streamer-profile-live-panel.is-expanded > .streamer-profile-live-panel-inner {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.streamer-profile-live-panel .streamer-profile-live-card {
+    cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .streamer-profile-live-panel,
+    .streamer-profile-live-panel-inner,
+    .streamer-profile-live-toggle > svg {
+        transition: none;
+    }
+}
+
 .clip-input,
 .merge-container {
     max-width: 760px;
