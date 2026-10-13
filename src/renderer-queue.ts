@@ -559,6 +559,17 @@ async function moveQueueItemTo(id: string, where: 'top' | 'bottom'): Promise<voi
     await window.api.reorderQueue(reordered.map((i) => i.id));
 }
 
+function renderQueueStatusIcon(status: QueueItem['status']): string {
+    const paths: Record<QueueItem['status'], string> = {
+        pending: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',
+        downloading: '<path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/>',
+        paused: '<path d="M9 5v14M15 5v14"/>',
+        completed: '<path d="m5 12 4 4L19 6"/>',
+        error: '<circle cx="12" cy="12" r="8"/><path d="M12 7v6m0 4h.01"/>'
+    };
+    return `<svg class="queue-status-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[status]}</svg>`;
+}
+
 function getQueueStatusLabel(item: QueueItem): string {
     if (item.status === 'completed') return UI_TEXT.queue.statusDone;
     if (item.status === 'error') return UI_TEXT.queue.statusFailed;
@@ -598,6 +609,70 @@ function getQueueProgressMetricsText(item: QueueItem): string {
     if (item.status === 'downloading' && item.speed) parts.push(item.speed);
     if (item.status === 'downloading' && item.eta) parts.push(item.eta);
     return parts.join(' | ');
+}
+
+interface QueueProgressDetail {
+    key: string;
+    label: string;
+    value: string;
+}
+
+function formatQueueTransferValue(value: string): string {
+    const match = value.trim().match(/^([\d.,]+)\s+(B|KB|MB|GB|TB)(\/s)?$/i);
+    if (!match) return value.trim() || '–';
+    const number = Number(match[1].replace(',', '.'));
+    return Number.isFinite(number) ? number.toLocaleString(getIntlLocale(), { maximumFractionDigits: 2 }) + ' ' + match[2] + (match[3] || '') : value;
+}
+
+function formatQueueEta(value: string): string {
+    const units: Array<[RegExp, string]> = [[/(\d+)h/, 'h'], [/(\d+)m/, 'min'], [/(\d+)s/, 's']];
+    const parts = units.flatMap(([pattern, label]) => {
+        const match = value.match(pattern);
+        return match && Number(match[1]) > 0 ? [formatUiNumber(Number(match[1])) + ' ' + label] : [];
+    });
+    return parts.join(' ') || (/\d+[hms]/.test(value) ? '0 s' : value.trim() || '–');
+}
+
+function getQueueProgressDetails(item: QueueItem): QueueProgressDetail[] {
+    if (item.status === 'pending' || item.status === 'completed') return [];
+    const de = currentLanguage === 'de';
+    if (item.status === 'error') return [{ key: 'message', label: de ? 'Fehler:' : 'Error:', value: getQueueProgressStatusText(item) }];
+    const sizeMatch = item.progressStatus?.match(/[\d.,]+\s+(?:B|KB|MB|GB|TB)\b/i);
+    const bytes = Number.isFinite(item.downloadedBytes) && item.downloadedBytes! >= 0 ? formatBytesRenderer(item.downloadedBytes!) : sizeMatch?.[0];
+    const size = bytes ? formatQueueTransferValue(bytes) : '';
+    if (item.progressPhase === 'finalizing') {
+        return [{ key: 'message', label: 'Status:', value: getQueueProgressStatusText(item) }, ...(size ? [{ key: 'size', label: de ? 'Geladen:' : 'Downloaded:', value: size }] : [])];
+    }
+    const progress = item.progress >= 0 && Number.isFinite(item.progress) ? Math.min(100, item.progress).toLocaleString(getIntlLocale(), { maximumFractionDigits: 1 }) + ' %' : '';
+    const time = item.progressStatus?.match(/\d{1,4}:\d{2}:\d{2}\s*\/\s*\d{1,4}:\d{2}:\d{2}/)?.[0];
+    const rows = [
+        { key: 'progress', label: de ? 'Fortschritt:' : 'Progress:', value: [progress, size].filter(Boolean).join(' · ') || '–' },
+        { key: 'time', label: de ? 'Videozeit:' : 'Video time:', value: time || '–' }
+    ];
+    if (item.currentPart && item.totalParts && item.totalParts > 1) rows.push({ key: 'part', label: UI_TEXT.queue.part + ':', value: formatUiNumber(item.currentPart) + ' / ' + formatUiNumber(item.totalParts) });
+    if (item.status === 'downloading') rows.push(
+        { key: 'speed', label: de ? 'Tempo:' : 'Speed:', value: formatQueueTransferValue(item.speed || '') },
+        { key: 'eta', label: de ? 'Restzeit:' : 'Remaining:', value: formatQueueEta(item.eta || '') }
+    );
+    return rows;
+}
+
+function renderQueueProgressDetails(item: QueueItem): string {
+    return getQueueProgressDetails(item).map(({ key, label, value }) => `<div class="queue-progress-row"><span class="queue-progress-label">${escapeHtml(label)}</span><span class="queue-progress-value${key === 'message' ? ' queue-progress-message queue-progress-status' : key === 'time' ? ' queue-progress-status' : key === 'progress' ? ' queue-progress-metrics' : ''}" data-queue-progress-value="${key}">${escapeHtml(value)}</span></div>`).join('');
+}
+
+function syncQueueProgressDetails(element: HTMLElement, item: QueueItem): void {
+    const container = element.querySelector<HTMLElement>('.queue-progress-info');
+    if (!container) return;
+    const rows = getQueueProgressDetails(item);
+    const values = container.querySelectorAll<HTMLElement>('[data-queue-progress-value]');
+    if (values.length !== rows.length || rows.some((row, index) => values[index].dataset.queueProgressValue !== row.key)) {
+        container.innerHTML = renderQueueProgressDetails(item);
+        return;
+    }
+    values.forEach((value, index) => {
+        if (value.textContent !== rows[index].value) value.textContent = rows[index].value;
+    });
 }
 
 function toggleQueueSelection(id: string): void {
@@ -683,8 +758,6 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
 
     const bar = el.querySelector('.queue-progress-bar') as HTMLElement | null;
     const wrap = el.querySelector('.queue-progress-wrap') as HTMLElement | null;
-    const status = el.querySelector('.queue-progress-status') as HTMLElement | null;
-    const metrics = el.querySelector('.queue-progress-metrics') as HTMLElement | null;
 
     if (bar) {
         const isDeterminate = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
@@ -697,25 +770,20 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
             wrap.setAttribute('aria-valuetext', getQueueProgressStatusText(item));
         }
     }
-    if (status) {
-        status.textContent = getQueueProgressStatusText(item);
-        status.title = item.progressStatus || status.textContent;
-    }
-    if (metrics) {
-        metrics.textContent = getQueueProgressMetricsText(item);
-        metrics.title = metrics.textContent;
-    }
+    syncQueueProgressDetails(el, item);
     el.draggable = item.status === 'pending';
     const badge = el.querySelector<HTMLElement>('.queue-status-badge');
     const label = badge?.querySelector<HTMLElement>('.queue-status-label');
     const indicator = badge?.querySelector<HTMLElement>('.status');
     if (badge) badge.title = getQueueProgressStatusText(item);
     if (label) label.textContent = getQueueStatusLabel(item);
-    if (indicator) indicator.className = 'status ' + item.status;
+    if (indicator && indicator.className !== 'status ' + item.status) {
+        indicator.className = 'status ' + item.status;
+        indicator.innerHTML = renderQueueStatusIcon(item.status);
+    }
     wrap?.setAttribute('aria-label', getQueueStatusLabel(item));
+    wrap?.setAttribute('aria-description', getQueueProgressMetricsText(item));
     el.querySelector('.queue-progress-info')?.classList.toggle('is-hidden', item.status === 'pending' || item.status === 'completed');
-    status?.classList.toggle('is-starting', item.status === 'downloading' && item.progress <= 0);
-    status?.classList.toggle('is-hidden', item.status === 'paused');
     if (item.status !== 'error') el.querySelector('.queue-retry-btn')?.remove();
     syncQueueRecordingHealth(el, item);
 }
@@ -868,7 +936,6 @@ function renderQueueItem(item: QueueItem): string {
     const safeProgressStatus = escapeHtml(getQueueProgressStatusText(item));
     const safeProgressMetrics = escapeHtml(getQueueProgressMetricsText(item));
     const safeDate = escapeHtml(formatUiDate(item.date));
-    const progressStatusClass = item.status === 'downloading' && item.progress <= 0 ? ' is-starting' : '';
     const isClip = item.customClip ? '* ' : '';
     const hasDeterminateProgress = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
     const progressValue = item.status === 'completed'
@@ -904,19 +971,16 @@ function renderQueueItem(item: QueueItem): string {
                     <button class="remove" type="button" title="${escapeHtml(UI_TEXT.queue.removeItem)}" aria-label="${escapeHtml(UI_TEXT.queue.removeItem)}" data-queue-action="remove"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
                 </div>
                 ${mergeMetaExtra ? `<div class="queue-meta">${mergeMetaExtra}</div>` : ''}
-                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${item.progressPhase === 'finalizing' ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-label="${escapeHtml(safeStatusLabel)}">
+                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${item.progressPhase === 'finalizing' ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-description="${safeProgressMetrics}" aria-label="${escapeHtml(safeStatusLabel)}">
                     <div class="queue-progress-bar${item.progressPhase === 'finalizing' ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
                 </div>
-                <div class="queue-footer">
-                    <div class="queue-summary">
-                        <button class="queue-details-toggle" type="button" aria-label="${escapeHtml(UI_TEXT.queue.toggleDetails)}" title="${escapeHtml(UI_TEXT.queue.toggleDetails)}" aria-expanded="${expandedQueueIds.has(item.id) ? 'true' : 'false'}" aria-controls="${detailsId}" data-queue-action="details"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 10 5 5 5-5"/></svg></button>
-                        <span class="queue-date">${safeDate}</span>
-                    </div>
-                    <span class="queue-status-badge" title="${safeProgressStatus}"><span class="status ${item.status}" aria-hidden="true"></span><span class="queue-status-label">${safeStatusLabel}</span></span>
-                </div>
+                <button class="queue-footer queue-details-toggle" type="button" aria-label="${escapeHtml(UI_TEXT.queue.toggleDetails)}" aria-describedby="${detailsId}-status ${detailsId}-date" aria-expanded="${expandedQueueIds.has(item.id) ? 'true' : 'false'}" aria-controls="${detailsId}" data-queue-action="details">
+                    <span class="queue-status-badge" title="${safeProgressStatus}"><span class="status ${item.status}" aria-hidden="true">${renderQueueStatusIcon(item.status)}</span><span class="queue-status-label" id="${detailsId}-status">${safeStatusLabel}</span></span>
+                    <time class="queue-date" id="${detailsId}-date" datetime="${escapeHtml(item.date)}">${safeDate}</time>
+                    <svg class="queue-details-chevron" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 10 5 5 5-5"/></svg>
+                </button>
                 <div class="queue-progress-info${item.status === 'pending' || item.status === 'completed' ? ' is-hidden' : ''}">
-                    <span class="queue-progress-status${progressStatusClass}${item.status === 'paused' ? ' is-hidden' : ''}" title="${escapeHtml(item.progressStatus || getQueueProgressStatusText(item))}">${safeProgressStatus}</span>
-                    <span class="queue-progress-metrics" title="${safeProgressMetrics}">${safeProgressMetrics}</span>
+                    ${renderQueueProgressDetails(item)}
                 </div>
                 <div class="queue-details${expandedQueueIds.has(item.id) ? ' expanded' : ''}" id="${detailsId}"${expandedQueueIds.has(item.id) ? '' : ' inert'}>
                     ${expandedQueueIds.has(item.id) || queueRowCache.get(item.id)?.element.querySelector('.queue-details-content') ? renderQueueDetails(item) : ''}

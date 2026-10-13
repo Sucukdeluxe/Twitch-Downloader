@@ -914,6 +914,7 @@ function updateStatusBarQueueSummary(): void {
 }
 
 let statsBarPollTimer: number | null = null;
+let lastQueueRuntimeMetrics: RuntimeMetricsSnapshot | null = null;
 
 function startStatsBarPolling(): void {
     stopStatsBarPolling();
@@ -928,14 +929,26 @@ function stopStatsBarPolling(): void {
     }
 }
 
+function renderStatsBar(): void {
+    const bar = document.getElementById('statsBar');
+    const metrics = lastQueueRuntimeMetrics;
+    if (!bar || !metrics) return;
+    const de = currentLanguage === 'de';
+    const number = (value: number): string => Number.isFinite(value) && value >= 0 ? formatUiNumber(value) : '–';
+    const rows = [
+        [de ? 'Übertragen:' : 'Transferred:', Number.isFinite(metrics.downloadedBytesTotal) && metrics.downloadedBytesTotal >= 0 ? formatQueueTransferValue(formatBytesRenderer(metrics.downloadedBytesTotal)) : '–'],
+        [de ? 'Ø Tempo:' : 'Avg. speed:', metrics.avgSpeedBytesPerSec > 0 ? formatQueueTransferValue(formatSpeedRenderer(metrics.avgSpeedBytesPerSec)) : '–'],
+        [de ? 'Gespeichert:' : 'Saved:', number(metrics.downloadsCompleted)],
+        [de ? 'Fehler:' : 'Failed:', number(metrics.downloadsFailed)]
+    ];
+    const markup = '<dl class="queue-stats-grid">' + rows.map(([label, value]) => '<div><dt>' + escapeHtml(label) + '</dt><dd>' + escapeHtml(value) + '</dd></div>').join('') + '</dl>';
+    if (bar.innerHTML !== markup) bar.innerHTML = markup;
+}
+
 async function updateStatsBar(): Promise<void> {
     try {
-        const metrics = await window.api.getRuntimeMetrics();
-        const bar = byId('statsBar');
-        if (!bar) return;
-        const totalDL = formatBytesRenderer(metrics.downloadedBytesTotal);
-        const avgSpeed = metrics.avgSpeedBytesPerSec > 0 ? formatSpeedRenderer(metrics.avgSpeedBytesPerSec) : '-';
-        bar.textContent = `${totalDL} | ${avgSpeed} avg | ${metrics.downloadsCompleted} done | ${metrics.downloadsFailed} failed`;
+        lastQueueRuntimeMetrics = await window.api.getRuntimeMetrics();
+        renderStatsBar();
     } catch { }
 }
 

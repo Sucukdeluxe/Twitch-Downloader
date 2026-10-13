@@ -370,7 +370,7 @@ const UI_TEXT_DE = {
         start: 'Start',
         stop: 'Pausieren',
         resume: 'Fortsetzen',
-        statusDone: 'Abgeschlossen',
+        statusDone: 'Gespeichert',
         statusFailed: 'Fehlgeschlagen',
         statusRunning: 'Läuft',
         statusPaused: 'Pausiert',

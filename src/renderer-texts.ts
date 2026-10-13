@@ -70,6 +70,7 @@ function setLanguage(lang: string): LanguageCode {
     RendererAccessibility.setDocumentLanguage(currentLanguage);
     UI_TEXT = UI_TEXTS[currentLanguage];
     applyLanguageToStaticUI();
+    if (typeof renderStatsBar === 'function') renderStatsBar();
     return currentLanguage;
 }
 
