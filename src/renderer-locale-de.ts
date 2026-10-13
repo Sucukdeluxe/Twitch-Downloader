@@ -1,5 +1,5 @@
 const UI_TEXT_DE = {
-    appName: 'Twitch VOD Manager',
+    appName: 'Twitch Downloader',
     static: {
         navVods: 'Twitch VODs',
         navClips: 'Twitch Clips',

@@ -1,22 +1,22 @@
 <div align="center">
-  <img src="build/icon.png" alt="Twitch VOD Manager icon" width="128" height="128">
+  <img src="build/icon.png" alt="Twitch Downloader icon" width="128" height="128">
 
-  # Twitch VOD Manager
+  # Twitch Downloader
 
   A focused Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
 
-  [![Latest release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-VOD-Manager?display_name=tag&sort=semver)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
-  [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
-  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-VOD-Manager)](LICENSE)
+  [![Latest release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader?display_name=tag&sort=semver)](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest)
+  [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest)
+  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-Downloader)](LICENSE)
 
-  [Download for Windows](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
+  [Download for Windows](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest)
 </div>
 
-![Twitch VOD Manager workspace](docs/images/twitch-vod-manager-overview.png)
+![Twitch Downloader workspace](docs/images/twitch-vod-manager-overview.png)
 
 ## Overview
 
-Twitch VOD Manager brings the complete VOD workflow into one desktop workspace. Add streamers, browse their public broadcasts, queue complete videos or precise ranges, and keep downloaded files organized without switching between separate tools.
+Twitch Downloader brings the complete VOD workflow into one desktop workspace. Add streamers, browse their public broadcasts, queue complete videos or precise ranges, and keep downloaded files organized without switching between separate tools.
 
 The application works in public mode without a Twitch login. Connecting a Twitch account is optional and enables access to content available to that account, including eligible subscriber-only or channel-management VODs.
 
@@ -64,10 +64,10 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 
 ## Installation
 
-1. Open the [latest GitHub release](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest).
-2. Download `Twitch-VOD-Manager-Setup-1.0.46.exe`.
+1. Open the [latest GitHub release](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest).
+2. Download `Twitch-Downloader-Setup-1.0.46.exe`.
 3. Run the installer and choose the installation directory.
-4. Start Twitch VOD Manager and add a streamer.
+4. Start Twitch Downloader and add a streamer.
 
 The current Windows installer is not code-signed, so Microsoft Defender SmartScreen may ask for confirmation before the first installation.
 
@@ -83,7 +83,7 @@ Public VODs are available immediately. Twitch authentication can be configured u
 
 ## Data and privacy
 
-Twitch VOD Manager stores its configuration, local database, queue state and history on the computer where it runs. OAuth credentials are handled through the local application flow and are never included in this repository or in release files.
+Twitch Downloader stores its configuration, local database, queue state and history on the computer where it runs. OAuth credentials are handled through the local application flow and are never included in this repository or in release files.
 
 Public mode does not require a Twitch login. It supports public VOD discovery and downloads, while authenticated access depends on the permissions of the connected Twitch account.
 
@@ -148,5 +148,5 @@ The Windows installer and updater metadata are written to `release/`. Verificati
 
 ## License
 
-Twitch VOD Manager is released under the [MIT License](LICENSE).
+Twitch Downloader is released under the [MIT License](LICENSE).
 

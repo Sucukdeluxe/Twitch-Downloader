@@ -13,6 +13,6 @@ exitCode = shell.Run(command, 0, True)
 If Err.Number <> 0 Then exitCode = 1
 On Error GoTo 0
 If exitCode <> 0 Then
-  MsgBox "Development startup failed. Install Node.js and the project dependencies, then run node scripts/dev.mjs --once for details.", 16, "Twitch VOD Manager"
+  MsgBox "Development startup failed. Install Node.js and the project dependencies, then run node scripts/dev.mjs --once for details.", 16, "Twitch Downloader"
 End If
 WScript.Quit exitCode

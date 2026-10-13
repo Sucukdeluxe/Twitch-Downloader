@@ -1,5 +1,6 @@
 !macro customInit
-  ; Kill running Twitch VOD Manager process before installation
+  ; Kill running Twitch Downloader / legacy Twitch VOD Manager process before installation
+  nsExec::ExecToLog 'taskkill /F /IM "Twitch Downloader.exe"'
   nsExec::ExecToLog 'taskkill /F /IM "Twitch VOD Manager.exe"'
 !macroend
 
@@ -24,8 +25,10 @@
 
 !macro customInstall
   StrCpy $0 "$INSTDIR\resources\app-icons\icon-${VERSION}.ico"
-  Delete "$SMPROGRAMS\Twitch VOD Manager v*.lnk"
-  Delete "$DESKTOP\Twitch VOD Manager v*.lnk"
+  Delete "$SMPROGRAMS\Twitch Downloader v*.lnk"
+  Delete "$SMPROGRAMS\Twitch VOD Manager*.lnk"
+  Delete "$DESKTOP\Twitch Downloader v*.lnk"
+  Delete "$DESKTOP\Twitch VOD Manager*.lnk"
   ${if} ${FileExists} "$newDesktopLink"
     CreateShortCut "$newDesktopLink" "$appExe" "" "$0" 0 "" "" "${APP_DESCRIPTION}"
     ClearErrors
@@ -40,6 +43,7 @@
 
 !macro customUnInstall
   ${ifNot} ${isUpdated}
+    RMDir /r "$LOCALAPPDATA\Twitch Downloader\Shortcut Icons"
     RMDir /r "$LOCALAPPDATA\Twitch VOD Manager\Shortcut Icons"
   ${endIf}
 !macroend

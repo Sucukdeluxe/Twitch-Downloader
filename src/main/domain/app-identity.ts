@@ -31,11 +31,26 @@ export interface WindowsTaskbarDetails {
 
 export function getWindowsAppIdentity(isDevelopment: boolean): WindowsAppIdentity {
     return {
-        name: isDevelopment ? 'Twitch VOD Manager · Entwickler-Version' : 'Twitch VOD Manager',
+        name: isDevelopment ? 'Twitch Downloader · Entwickler-Version' : 'Twitch Downloader',
         appUserModelId: isDevelopment
-            ? 'io.github.sucukdeluxe.twitch-vod-manager.development'
-            : 'io.github.sucukdeluxe.twitch-vod-manager'
+            ? 'io.github.sucukdeluxe.twitch-downloader.development'
+            : 'io.github.sucukdeluxe.twitch-downloader'
     };
+}
+
+export function migrateLegacyDirectory(targetDirectory: string, legacyDirectory: string): void {
+    if (!fs.existsSync(legacyDirectory)) return;
+    fs.mkdirSync(targetDirectory, { recursive: true });
+    for (const entry of fs.readdirSync(legacyDirectory, { withFileTypes: true })) {
+        if (entry.name.includes('Cache') || entry.name === 'blob_storage') continue;
+        const sourcePath = path.join(legacyDirectory, entry.name);
+        const destinationPath = path.join(targetDirectory, entry.name);
+        if (fs.existsSync(destinationPath)) continue;
+        try {
+            fs.cpSync(sourcePath, destinationPath, { recursive: true, force: false });
+        } catch {
+        }
+    }
 }
 
 export function resolveWindowsAppIconPath(options: WindowsAppIconPathOptions): string {

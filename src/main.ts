@@ -93,7 +93,7 @@ import {
     type TwitchHelixUser,
     type TwitchVod,
 } from './main/twitch';
-import { createWindowsTaskbarDetails, getWindowsAppIdentity, resolveWindowsAppIconPath } from './main/domain/app-identity';
+import { createWindowsTaskbarDetails, getWindowsAppIdentity, migrateLegacyDirectory, resolveWindowsAppIconPath } from './main/domain/app-identity';
 import {
     addCutAt,
     calculateCutterExportProgress,
@@ -189,12 +189,20 @@ const WINDOWS_APP_ICON_PATH = process.platform === 'win32'
     })
     : null;
 const GITHUB_REPO_OWNER = 'Sucukdeluxe';
-const GITHUB_REPO_NAME = 'Twitch-VOD-Manager';
-const GITHUB_RELEASES_API_LATEST_URL = 'https://api.github.com/repos/Sucukdeluxe/Twitch-VOD-Manager/releases/latest';
-const GITHUB_RELEASES_DOWNLOAD_BASE_URL = 'https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/download';
+const GITHUB_REPO_NAME = 'Twitch-Downloader';
+const GITHUB_RELEASES_API_LATEST_URL = 'https://api.github.com/repos/Sucukdeluxe/Twitch-Downloader/releases/latest';
+const GITHUB_RELEASES_DOWNLOAD_BASE_URL = 'https://github.com/Sucukdeluxe/Twitch-Downloader/releases/download';
 
 // Paths
-const APPDATA_DIR = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Twitch_VOD_Manager');
+const PROGRAMDATA_ROOT = process.env.PROGRAMDATA || 'C:\\ProgramData';
+const APPDATA_DIR = path.join(PROGRAMDATA_ROOT, 'Twitch_Downloader');
+migrateLegacyDirectory(APPDATA_DIR, path.join(PROGRAMDATA_ROOT, 'Twitch_VOD_Manager'));
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+    try {
+        migrateLegacyDirectory(app.getPath('userData'), path.join(app.getPath('appData'), 'Twitch VOD Manager'));
+    } catch {
+    }
+}
 const DEBUG_LOG_FILE = path.join(APPDATA_DIR, 'debug.log');
 const PARTIAL_DOWNLOADS_FILE = path.join(APPDATA_DIR, 'partial-downloads.json');
 const CUTTER_PROJECT_AUTOSAVE_FILE = path.join(APPDATA_DIR, 'cutter-projects.json');
@@ -4997,7 +5005,7 @@ async function sendDiscordWebhook(payload: {
     if (!isAcceptableDiscordWebhook(url)) return;
 
     const body = {
-        username: 'Twitch VOD Manager',
+        username: 'Twitch Downloader',
         embeds: [
             {
                 title: payload.title.slice(0, 256),
@@ -6468,7 +6476,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
             try {
                 if (Notification.isSupported()) {
                     const itemNotification = new Notification({
-                        title: 'Twitch VOD Manager',
+                        title: 'Twitch Downloader',
                         body: `${item.title || item.url}`,
                         icon: path.join(__dirname, '../build/icon.png')
                     });
@@ -6677,7 +6685,7 @@ async function processQueue(manualOverride = false): Promise<void> {
             const completed = downloadQueue.filter(i => i.status === 'completed').length;
             const failed = downloadQueue.filter(i => i.status === 'error').length;
             const notification = new Notification({
-                title: 'Twitch VOD Manager',
+                title: 'Twitch Downloader',
                 body: failed > 0
                     ? `${completed} Downloads fertig, ${failed} fehlgeschlagen`
                     : `${completed} Downloads abgeschlossen`,
@@ -6954,7 +6962,7 @@ async function requestUpdateCheck(source: UpdateCheckSource, force = false): Pro
                 timeout: 5000,
                 headers: {
                     'Accept': 'application/json',
-                    'User-Agent': 'Twitch-VOD-Manager'
+                    'User-Agent': 'Twitch-Downloader'
                 }
             });
             cacheLatestReleaseUpdateInfo(githubReleaseResponse.data);
@@ -8443,7 +8451,7 @@ ipcMain.handle('export-config', async (event) => {
     if (!isTrustedRendererEvent(event)) return { success: false, error: 'File access denied' };
     try {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const defaultName = `twitch-vod-manager-config-${timestamp}.json`;
+        const defaultName = `twitch-downloader-config-${timestamp}.json`;
         const preferredDir = fs.existsSync(config.download_path) ? config.download_path : app.getPath('desktop');
 
         const dialogResult = await dialog.showSaveDialog(mainWindow!, {
@@ -9148,8 +9156,8 @@ ipcMain.handle('export-application-backup', async event => {
     applicationBackupBusy = true;
     try {
         const selected = await dialog.showSaveDialog(mainWindow!, {
-            defaultPath: path.join(app.getPath('documents'), 'Twitch-VOD-Manager-' + new Date().toISOString().slice(0, 10) + '.tvmbackup'),
-            filters: [{ name: 'Twitch VOD Manager', extensions: ['tvmbackup'] }]
+            defaultPath: path.join(app.getPath('documents'), 'Twitch-Downloader-' + new Date().toISOString().slice(0, 10) + '.tvmbackup'),
+            filters: [{ name: 'Twitch Downloader', extensions: ['tvmbackup'] }]
         });
         if (selected.canceled || !selected.filePath) return { success: false, cancelled: true };
         if (applicationRestoreBusy() || !workspaceSession.flush()) return { success: false, error: 'busy' };
@@ -9167,7 +9175,7 @@ ipcMain.handle('restore-application-backup', async event => {
     if (!isTrustedRendererEvent(event) || !appDb || applicationBackupBusy || applicationRestoreBusy()) return { success: false, error: 'busy' };
     applicationBackupBusy = true;
     try {
-        const selected = await dialog.showOpenDialog(mainWindow!, { properties: ['openFile'], filters: [{ name: 'Twitch VOD Manager', extensions: ['tvmbackup'] }] });
+        const selected = await dialog.showOpenDialog(mainWindow!, { properties: ['openFile'], filters: [{ name: 'Twitch Downloader', extensions: ['tvmbackup'] }] });
         if (selected.canceled || !selected.filePaths[0]) return { success: false, cancelled: true };
         const details = await inspectApplicationBackup(selected.filePaths[0], APPDATA_DIR);
         const english = config.language === 'en';

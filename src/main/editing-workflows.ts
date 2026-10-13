@@ -69,7 +69,7 @@ export async function registerEditingWorkflows(dependencies: EditingWorkflowDepe
         let filePath = previous?.filePath;
         if (!filePath) {
             const safeName = Array.from(name).map(character => character.charCodeAt(0) < 32 ? '_' : character).join('').replace(/[<>:"/\\|?*]/g, '_').slice(0, 100);
-            const selected = await dialog.showSaveDialog(parent(), { defaultPath: path.join(path.dirname(project.source.path), safeName + '.tvmcut'), filters: [{ name: 'Twitch VOD Manager', extensions: ['tvmcut'] }] });
+            const selected = await dialog.showSaveDialog(parent(), { defaultPath: path.join(path.dirname(project.source.path), safeName + '.tvmcut'), filters: [{ name: 'Twitch Downloader', extensions: ['tvmcut'] }] });
             if (selected.canceled || !selected.filePath) return { success: false, cancelled: true };
             ensureAvailable();
             filePath = selected.filePath;
@@ -88,7 +88,7 @@ export async function registerEditingWorkflows(dependencies: EditingWorkflowDepe
             filePath = (await recent.list()).find(project => fileKey(project.filePath) === id)?.filePath;
             if (!filePath) throw new Error('Project not found');
         } else {
-            const selected = await dialog.showOpenDialog(parent(), { properties: ['openFile'], filters: [{ name: 'Twitch VOD Manager', extensions: ['tvmcut'] }] });
+            const selected = await dialog.showOpenDialog(parent(), { properties: ['openFile'], filters: [{ name: 'Twitch Downloader', extensions: ['tvmcut'] }] });
             if (selected.canceled || !selected.filePaths[0]) return { success: false, cancelled: true };
             filePath = selected.filePaths[0];
         }

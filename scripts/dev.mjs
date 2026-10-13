@@ -86,7 +86,7 @@ async function ensureDevelopmentBuild() {
             const { prepareWindowsDevExecutable } = await import(helperPath);
             electronExecutable = await prepareWindowsDevExecutable({
                 sourcePath: electronSourceExecutable,
-                destinationPath: resolve(rootDirectory, 'node_modules', 'electron', 'dist', 'Twitch VOD Manager.exe'),
+                destinationPath: resolve(rootDirectory, 'node_modules', 'electron', 'dist', 'Twitch Downloader.exe'),
                 iconPath: resolve(rootDirectory, 'build', 'icon.ico'),
                 version: developmentAppVersion,
             });

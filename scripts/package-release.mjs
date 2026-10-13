@@ -48,7 +48,7 @@ if (!ciCandidate) {
     await verifyReceipt(root);
 }
 const files = [];
-for (const name of ['Twitch-VOD-Manager-Setup-' + pkg.version + '.exe', 'Twitch-VOD-Manager-Setup-' + pkg.version + '.exe.blockmap', 'latest.yml']) {
+for (const name of ['Twitch-Downloader-Setup-' + pkg.version + '.exe', 'Twitch-Downloader-Setup-' + pkg.version + '.exe.blockmap', 'latest.yml']) {
     const bytes = await readFile(resolve(root, 'release', name));
     files.push({ name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), sha512: createHash('sha512').update(bytes).digest('base64') });
 }
