@@ -277,10 +277,9 @@
 }
 
 .queue-progress-info {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
     margin-top: 3px;
     flex-wrap: nowrap;
     font-size: 11px;
@@ -3767,4 +3766,29 @@ body.theme-light .modal {
     flex: 0 0 auto;
     width: 110px;
     cursor: default;
+}
+
+.queue-progress-bar.is-finalizing {
+    width: 40% !important;
+    animation: queue-finalizing 1.6s ease-in-out infinite;
+}
+
+@keyframes queue-finalizing {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .queue-progress-bar.is-finalizing { animation: none; transform: translateX(75%); }
+}
+
+.queue-progress-info .queue-progress-status {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+
+.queue-progress-info .queue-progress-metrics {
+    margin-left: 0;
+    text-align: left;
 }

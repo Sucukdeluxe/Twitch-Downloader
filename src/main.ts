@@ -1,3 +1,4 @@
+import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
@@ -754,6 +755,7 @@ function sanitizeQueueItem(raw: unknown): QueueItem | null {
         if (typeof raw.speed === 'string') item.speed = raw.speed;
         if (typeof raw.eta === 'string') item.eta = raw.eta;
         if (typeof raw.progressStatus === 'string') item.progressStatus = raw.progressStatus;
+        if (raw.progressPhase === 'downloading' || raw.progressPhase === 'finalizing') item.progressPhase = raw.progressPhase;
         if (raw.recordingHealth === 'ok' || raw.recordingHealth === 'stale' || raw.recordingHealth === 'unknown') {
             item.recordingHealth = raw.recordingHealth;
         }
@@ -4045,7 +4047,7 @@ async function downloadVODPart(
         const stderrBuffer: string[] = [];
         const expectedDurationSeconds = parseClockDurationSeconds(endTime)
             ?? (directSource && expectedTotalSec > 0 ? expectedTotalSec : null);
-        let lastStreamlinkPercent = 0;
+        const mediaProgress = new MediaDownloadProgress();
 
         if (!directSource && startTime) {
             args.push('--hls-start-offset', startTime);
@@ -4061,6 +4063,7 @@ async function downloadVODPart(
         const partialFilename = partialDownloadRegistry.begin(filename);
         recordManagedToolExecution(directSource ? 'ffmpeg' : 'streamlink', command);
         const proc = spawn(command, args, { windowsHide: true });
+        proc.stdout?.on('data', (data: Buffer) => mediaProgress.push(data));
         const outputStream = fs.createWriteStream(partialFilename, { flags: 'w' });
         if (!proc.stdout) {
             outputStream.destroy();
@@ -4090,6 +4093,8 @@ async function downloadVODPart(
         downloadedBytes = 0;
         let lastBytes = 0;
         let lastTime = Date.now();
+        let lastMediaSeconds = 0;
+        let mediaRate = 0;
 
         // Monitor file size for progress
         const progressInterval = setInterval(() => {
@@ -4114,46 +4119,29 @@ async function downloadVODPart(
                     lastBytes = downloadedBytes;
                     lastTime = now;
 
-                    let etaStr = '';
-                    if (downloadedBytes > 0) {
-                        const elapsedSec = (Date.now() - (itemTracking?.startTime || Date.now())) / 1000;
-                        if (elapsedSec > 5 && lastStreamlinkPercent > 1) {
-                            // Use streamlink's reported progress for accurate ETA
-                            const remainingSec = (elapsedSec / lastStreamlinkPercent) * (100 - lastStreamlinkPercent);
-                            if (remainingSec > 0 && remainingSec < 86400) {
-                                etaStr = formatETA(remainingSec);
-                            }
-                        }
+                    const seconds = mediaProgress.seconds;
+                    const totalSeconds = expectedDurationSeconds || expectedTotalSec;
+                    const knownProgress = seconds !== null && totalSeconds > 0;
+                    const mediaDelta = seconds === null ? 0 : Math.max(0, seconds - lastMediaSeconds);
+                    if (seconds !== null) lastMediaSeconds = seconds;
+                    if (timeDiff > 0 && mediaDelta > 0) {
+                        const currentRate = mediaDelta / timeDiff;
+                        mediaRate = mediaRate > 0 ? mediaRate * .6 + currentRate * .4 : currentRate;
                     }
-
-                    // Bytes-basierte Schaetzung statt progress=-1, damit die Bar
-                    // determinate bleibt + kontinuierlich waechst. Wenn streamlink
-                    // spaeter eine echte % rausgibt (Path B), wird die ueber den
-                    // bytes-Estimate gelegt (siehe lastStreamlinkPercent-Logik
-                    // im stdout-handler).
-                    // Quelle: endTime (--hls-duration arg) ODER expectedTotalSec
-                    // Param (fuer Full-VOD wo Caller die Dauer kennt).
-                    const expectedDurationSecForEstimate = parseClockDurationSeconds(endTime) || expectedTotalSec;
-                    const expectedBytes = expectedDurationSecForEstimate > 0 ? expectedDurationSecForEstimate * 625_000 : 0;
-                    let progressEstimate: number;
-                    if (lastStreamlinkPercent > 0) {
-                        // Streamlink hat % rausgegeben — vertrau dem (genauer als bytes).
-                        progressEstimate = lastStreamlinkPercent;
-                    } else if (expectedBytes > 0 && downloadedBytes > 0) {
-                        // Bytes-Fallback: cap bei 95% damit der Bar nicht 100%
-                        // vor dem tatsaechlichen Abschluss hinrennt.
-                        progressEstimate = Math.min(95, (downloadedBytes / expectedBytes) * 100);
-                    } else {
-                        // Keine Info -> echtes Unknown, Bar geht in indeterminate.
-                        progressEstimate = -1;
-                    }
+                    const remainingSeconds = knownProgress && mediaRate > 0 ? Math.max(0, totalSeconds - seconds) / mediaRate : 0;
+                    const etaStr = speed > 0 && remainingSeconds > 0 && remainingSeconds < 86400 ? formatETA(remainingSeconds) : '';
+                    const progressEstimate = knownProgress ? Math.min(100, seconds / totalSeconds * 100) : -1;
+                    const status = knownProgress && seconds >= totalSeconds ? tBackend('statusCompletingDownload')
+                        : knownProgress ? formatDuration(Math.floor(Math.min(seconds, totalSeconds))) + ' / ' + formatDuration(Math.floor(totalSeconds)) + ' · ' + formatBytes(downloadedBytes)
+                        : tBackend('statusBytesDownloaded', { bytes: formatBytes(downloadedBytes) });
 
                     onProgress({
                         id: itemId,
                         progress: progressEstimate,
+                        progressPhase: knownProgress && seconds >= totalSeconds ? 'finalizing' : 'downloading',
                         speed: formatSpeed(speed),
                         eta: etaStr,
-                        status: tBackend('statusBytesDownloaded', { bytes: formatBytes(downloadedBytes) }),
+                        status,
                         currentPart: partNum,
                         totalParts: totalParts,
                         downloadedBytes: downloadedBytes,
@@ -4167,20 +4155,6 @@ async function downloadVODPart(
             const message = data.toString();
             if (message.trim()) {
                 stderrBuffer.push(message);
-                const match = message.match(/(\d+\.\d+)%/);
-                if (match) {
-                    const percent = parseFloat(match[1]);
-                    lastStreamlinkPercent = percent;
-                    onProgress({
-                        id: itemId,
-                        progress: percent,
-                        speed: '',
-                        eta: '',
-                        status: `${percent.toFixed(1)}%`,
-                        currentPart: partNum,
-                        totalParts: totalParts
-                    });
-                }
                 // Bounded buffer — wir wollen nicht 100MB stderr in RAM bei einem
                 // streamlink-loop. 200 chunks reichen fuer normale Diagnose.
                 if (stderrBuffer.length > 200) stderrBuffer.shift();
@@ -4250,7 +4224,7 @@ async function downloadVODPart(
                     return;
                 }
 
-                onProgress({ id: itemId, progress: 99, speed: '', eta: '', status: tBackend('statusFinalizingMp4'), currentPart: partNum, totalParts });
+                onProgress({ id: itemId, progress: 100, progressPhase: 'finalizing', speed: '', eta: '', status: tBackend('statusFinalizingMp4'), currentPart: partNum, totalParts });
                 const finalized = await finalizeDownloadedMp4(partialFilename, filename, itemId, expectedDurationSeconds);
                 if (!finalized.success) { resolve(finalized); return; }
                 runtimeMetrics.downloadedBytesTotal += stats.size;
@@ -5716,7 +5690,8 @@ async function downloadVOD(
 
     if (item.customClip?.omissions) {
         const clip = item.customClip;
-        const omissions = clip.omissions!;
+        const omissions = config.download_mode === 'full'
+            ? { ...clip.omissions!, partDurationSec: Math.max(60, Math.ceil(clip.durationSec)) } : clip.omissions!;
         if (!(await ensureFfmpegInstalled())) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
         const plan = planEditedVod(clip.durationSec, omissions.partDurationSec, omissions.ranges, clip.startPart, omissions.selection);
         const editRegistration = queueProcessRegistry.register(item.id, 'post-processing', {});
@@ -5757,7 +5732,7 @@ async function downloadVOD(
                     if (!result.success) throw new Error(result.error);
                 },
                 progress(progress, phase, index, count) {
-                    onProgress({ id: item.id, progress, speed: '', eta: '', currentPart: phase === 'publish' ? index : 0, totalParts: plan.parts.length,
+                    onProgress({ id: item.id, progress, progressPhase: phase === 'download' ? 'downloading' : 'finalizing', speed: '', eta: '', currentPart: phase === 'publish' ? index : 0, totalParts: plan.parts.length,
                         status: tBackend(phase === 'download' ? 'editedVodDownloading' : phase === 'assemble' ? 'editedVodAssembling' : 'editedVodPublishing', { index, count }) });
                 },
             });
@@ -5774,7 +5749,7 @@ async function downloadVOD(
     // Custom Clip - download specific time range
     if (item.customClip) {
         const clip = item.customClip;
-        const partDuration = config.part_minutes * 60;
+        const partDuration = config.download_mode === 'full' ? clip.durationSec : config.part_minutes * 60;
 
         // Helper to generate filename based on format
         const makeClipFilename = (partNum: number, startOffset: number, clipLengthSec: number): string => {
@@ -5825,7 +5800,7 @@ async function downloadVOD(
                     partFilename,
                     formatDuration(startOffset),
                     formatDuration(thisDuration),
-                    onProgress,
+                    value => onProgress(aggregateDownloadProgress(value, i * partDuration, thisDuration, clip.durationSec)),
                     item.id,
                     i + 1,
                     numParts,
@@ -5863,9 +5838,6 @@ async function downloadVOD(
 
     // Check download mode
     if (config.download_mode === 'full' || totalDuration <= config.part_minutes * 60) {
-        // Full download — totalDuration als expectedTotalSec damit der Bar
-        // determinate-progress aus bytes/duration schaetzen kann (statt in
-        // indeterminate-Animation zu haengen).
         const filename = ensureUniqueFilename(makeTemplateFilename(
             config.filename_template_vod,
             DEFAULT_FILENAME_TEMPLATE_VOD,
@@ -5884,7 +5856,6 @@ async function downloadVOD(
         const partDuration = config.part_minutes * 60;
         const numParts = Math.ceil(totalDuration / partDuration);
         const downloadedFiles: string[] = [];
-        const partProgresses: number[] = Array(numParts).fill(0);
 
         for (let i = 0; i < numParts; i++) {
             if (cancelledItemIds.has(item.id)) break;
@@ -5906,21 +5877,7 @@ async function downloadVOD(
                 partFilename,
                 formatDuration(startSec),
                 formatDuration(duration),
-                (progress) => {
-                    // Per-part %-Update — clampen, NaN/negativ filtern
-                    if (Number.isFinite(progress.progress) && progress.progress > 0 && progress.progress <= 100) {
-                        partProgresses[i] = Math.max(partProgresses[i], progress.progress);
-                    }
-                    // Overall: avg ueber alle Parts (parts haben gleiche
-                    // Dauer per Definition, also avg = weighted avg)
-                    const overall = partProgresses.reduce((s, p) => s + p, 0) / numParts;
-                    onProgress({
-                        ...progress,
-                        progress: overall,
-                        currentPart: i + 1,
-                        totalParts: numParts
-                    });
-                },
+                value => onProgress(aggregateDownloadProgress(value, startSec, duration, totalDuration)),
                 item.id,
                 i + 1,
                 numParts,
@@ -5932,7 +5889,6 @@ async function downloadVOD(
                 return result;
             }
 
-            partProgresses[i] = 100;
             downloadedFiles.push(partFilename);
         }
 
@@ -6031,19 +5987,6 @@ async function processDownloadMergeGroup(
             const vodWeight = vodDuration / totalDurationSec;
             const priorWeight = mg.items.slice(0, i).reduce((s, v) => s + parseDuration(v.duration_str), 0) / totalDurationSec;
 
-            // Geschaetzte Bytes pro Part fuer den Fallback-Progress: Twitch-
-            // VOD Bitrate ~5 Mbit/s = ~625 KB/s. Wenn streamlink-stdout keine
-            // %-Lines emittiert (HLS ohne known total), nutzen wir
-            // downloadedBytes / estimatedTotalBytes als rough progress. Cap
-            // bei 95% damit der Bar nie 100% vorm tatsaechlichen Done erreicht.
-            const estimatedTotalBytes = Math.max(1, vodDuration * 625_000);
-
-            // Persistente per-part vodProgress. Quelle 1: streamlink stdout %
-            // (genau). Quelle 2: downloadedBytes / estimated (Fallback wenn
-            // % nicht reportet wird). Ohne den Fallback haengte der Bar auf
-            // dem indeterminate-Pattern (animierte 35%-Box) waehrend tatsaechlich
-            // schon ein paar 100 MB unten waren — User sieht das als "fest mittig
-            // links" weil die Animation schnell ist und nur Snapshots zeigen.
             let lastVodProgress = 0;
             const result = await downloadVODPart(
                 vodItem.url,
@@ -6053,14 +5996,6 @@ async function processDownloadMergeGroup(
                 (progress) => {
                     if (progress.progress > 0 && progress.progress <= 100) {
                         lastVodProgress = progress.progress;
-                    } else if (progress.downloadedBytes && progress.downloadedBytes > 0) {
-                        // Fallback: bytes-basierte Schaetzung. Streamlink-stdout-%
-                        // bleibt bevorzugt; bytes-Fallback wird nur genutzt wenn
-                        // noch nie ein echter % rein kam (lastVodProgress noch 0).
-                        if (lastVodProgress === 0) {
-                            const bytePct = Math.min(95, (progress.downloadedBytes / estimatedTotalBytes) * 100);
-                            lastVodProgress = bytePct;
-                        }
                     }
                     // Weighted progress: download phase = 0-70%
                     const overallProgress = (priorWeight + vodWeight * (lastVodProgress / 100)) * 70;
@@ -6076,7 +6011,7 @@ async function processDownloadMergeGroup(
                 item.id,
                 i + 1,
                 mg.items.length,
-                0,
+                vodDuration,
                 vodItem.quality
             );
 

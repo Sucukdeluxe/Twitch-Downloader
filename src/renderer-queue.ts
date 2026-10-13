@@ -604,7 +604,9 @@ function getQueueProgressStatusText(item: QueueItem): string {
     if (item.status === 'error') return UI_TEXT.queue.failed;
     if (item.status === 'downloading' && item.progressStatus) {
         const downloadedSize = item.progressStatus.match(/^([\d.,]+\s(?:B|KB|MB|GB|TB)) (?:downloaded|heruntergeladen)$/);
-        return downloadedSize ? downloadedSize[1] : item.progressStatus;
+        const text = downloadedSize ? downloadedSize[1] : item.progressStatus;
+        return item.progressPhase && item.currentPart && item.totalParts && item.totalParts > 1
+            ? `${UI_TEXT.queue.part} ${item.currentPart}/${item.totalParts} · ${text}` : text;
     }
     if (item.currentPart && item.totalParts) {
         return `${UI_TEXT.queue.part} ${item.currentPart}/${item.totalParts}`;
@@ -616,7 +618,7 @@ function getQueueProgressStatusText(item: QueueItem): string {
 function getQueueProgressMetricsText(item: QueueItem): string {
     const parts: string[] = [];
     if (item.status === 'completed') parts.push('100%');
-    if ((item.status === 'downloading' || item.status === 'paused') && item.progress > 0) {
+    if ((item.status === 'downloading' || item.status === 'paused') && item.progress > 0 && item.progressPhase !== 'finalizing') {
         parts.push(`${Math.max(0, Math.min(100, item.progress)).toFixed(1)}%`);
     }
     if (item.status === 'downloading' && item.speed) parts.push(item.speed);
@@ -711,11 +713,15 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
     const metrics = el.querySelector('.queue-progress-metrics') as HTMLElement | null;
 
     if (bar) {
-        const isDeterminate = item.progress > 0 && item.progress <= 100;
+        const isDeterminate = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
         const pct = isDeterminate ? Math.min(100, item.progress) : 0;
         bar.style.width = `${pct}%`;
-        bar.className = 'queue-progress-bar';
-        if (wrap) wrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+        bar.className = 'queue-progress-bar' + (item.progressPhase === 'finalizing' ? ' is-finalizing' : '');
+        if (wrap) {
+            if (isDeterminate) wrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+            else wrap.removeAttribute('aria-valuenow');
+            wrap.setAttribute('aria-valuetext', getQueueProgressStatusText(item));
+        }
     }
     if (status) {
         status.textContent = getQueueProgressStatusText(item);
@@ -890,7 +896,7 @@ function renderQueueItem(item: QueueItem): string {
     const safeDate = escapeHtml(formatUiDate(item.date));
     const progressStatusClass = item.status === 'downloading' && item.progress <= 0 ? ' is-starting' : '';
     const isClip = item.customClip ? '* ' : '';
-    const hasDeterminateProgress = item.progress > 0 && item.progress <= 100;
+    const hasDeterminateProgress = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
     const progressValue = item.status === 'completed'
         ? 100
         : (hasDeterminateProgress ? Math.max(0, Math.min(100, item.progress)) : 0);
@@ -924,8 +930,8 @@ function renderQueueItem(item: QueueItem): string {
                     <button class="remove" type="button" title="${escapeHtml(UI_TEXT.queue.removeItem)}" aria-label="${escapeHtml(UI_TEXT.queue.removeItem)}" data-queue-action="remove"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
                 </div>
                 ${mergeMetaExtra ? `<div class="queue-meta">${mergeMetaExtra}</div>` : ''}
-                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progressValue)}" aria-label="${escapeHtml(safeStatusLabel)}">
-                    <div class="queue-progress-bar" style="width: ${progressValue}%;"></div>
+                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${item.progressPhase === 'finalizing' ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-label="${escapeHtml(safeStatusLabel)}">
+                    <div class="queue-progress-bar${item.progressPhase === 'finalizing' ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
                 </div>
                 <div class="queue-footer">
                     <div class="queue-summary">

@@ -56,6 +56,7 @@ function Workspace({ options, bind }) {
   const modeRanges = useRef({ excerpt:{ start:options.start, end:options.end }, omission:{ start:0, end:options.duration } });
   const [omitting, setOmitting] = useState(false), [omissions, setOmissions] = useState([]), [editing, setEditing] = useState(null);
   const partMinutes = Number(options.partMinutes || 60);
+  const partDuration = options.downloadMode === 'full' ? Math.max(60, Math.ceil(duration)) : partMinutes * 60;
   const [outputRevision, setOutputRevision] = useState(0), [, setInputValid] = useState(true);
   const [undo, setUndo] = useState([]), [redo, setRedo] = useState([]), [previewing, setPreviewing] = useState(false);
   const previewPlayback = useRef(false), previewPlan = useRef(null);
@@ -66,11 +67,11 @@ function Workspace({ options, bind }) {
   const draftRange = omitting ? range : modeRanges.current.omission;
   const draftBounds = omissionGap(draftRange, gaps);
   const editedPlan = useMemo(() => {
-    try { return Number.isInteger(Number(partMinutes)) && Number(partMinutes) >= 1 && Number(partMinutes) <= 1440 ? planEditedVod(duration, Number(partMinutes) * 60, omissions, outputSettings.startPart, selection) : null; }
+    try { return Number.isInteger(Number(partMinutes)) && Number(partMinutes) >= 1 && Number(partMinutes) <= 1440 ? planEditedVod(duration, partDuration, omissions, outputSettings.startPart, selection) : null; }
     catch { return null; }
-  }, [duration, partMinutes, omissions, outputRevision, outputSettings.startPart, selection.start, selection.end]);
+  }, [duration, partMinutes, partDuration, omissions, outputRevision, outputSettings.startPart, selection.start, selection.end]);
   const visibleOmissions = useMemo(() => { try { return normalizeOmissions(omissions.filter((_, index) => !omitting || index !== editing), duration).map(value => ({ start:Math.max(selection.start, value.start), end:Math.min(selection.end, value.end) })).filter(value => value.end > value.start); } catch { return []; } }, [omitting, omissions, duration, editing, selection.start, selection.end]);
-  useEffect(() => { options.onOmissions?.(combined ? { editing: editing !== null, config: editedPlan ? { version: 1, partDurationSec: Number(partMinutes) * 60, ranges: editedPlan.omitted, ...(selection.start > 0 || selection.end < duration ? { selection:{ ...selection } } : {}) } : null, plan: editedPlan } : null); }, [combined, editedPlan, partMinutes, editing, options, selection.start, selection.end, duration]);
+  useEffect(() => { options.onOmissions?.(combined ? { editing: editing !== null, config: editedPlan ? { version: 1, partDurationSec: partDuration, ranges: editedPlan.omitted, ...(selection.start > 0 || selection.end < duration ? { selection:{ ...selection } } : {}) } : null, plan: editedPlan } : null); }, [combined, editedPlan, partDuration, editing, options, selection.start, selection.end, duration]);
   useEffect(() => {
     const modal = document.getElementById('clipModal');
     modal.classList.toggle('is-omitting', omitting);
@@ -170,7 +171,7 @@ function Workspace({ options, bind }) {
     applyExcerpt(value) {
       const selected = normalizeOmissions([value.range], duration)[0];
       const ranges = normalizeOmissions(value.omissions, duration);
-      if (ranges.some(item => item.start < selected.start || item.end > selected.end) || !planEditedVod(duration, partMinutes * 60, ranges, 1, selected).duration) throw new Error('Invalid excerpt');
+      if (ranges.some(item => item.start < selected.start || item.end > selected.end) || !planEditedVod(duration, partDuration, ranges, 1, selected).duration) throw new Error('Invalid excerpt');
       stopPreview(); setOmitting(false); options.onMode?.(false);
       modeRanges.current = { excerpt:selected, omission:selected };
       setRange(selected); setOmissions(ranges); setEditing(null); setUndo([]); setRedo([]);

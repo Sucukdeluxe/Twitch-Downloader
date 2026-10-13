@@ -50,6 +50,7 @@ export interface QueueItem {
     downloadedBytes?: number;
     totalBytes?: number;
     progressStatus?: string;
+    progressPhase?: 'downloading' | 'finalizing';
     last_error?: string;
     customClip?: CustomClip;
     mergeGroup?: MergeGroup;
@@ -76,6 +77,7 @@ export interface QueueItem {
 export interface DownloadProgress {
     id: string;
     progress: number;
+    progressPhase?: 'downloading' | 'finalizing';
     speed: string;
     speedBytesPerSec?: number;
     eta: string;

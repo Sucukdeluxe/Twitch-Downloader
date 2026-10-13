@@ -132,6 +132,7 @@ async function init(): Promise<void> {
         item.downloadedBytes = progress.downloadedBytes;
         item.totalBytes = progress.totalBytes;
         item.progressStatus = progress.status;
+        item.progressPhase = progress.progressPhase;
         if (progress.recordingHealth) {
             item.recordingHealth = progress.recordingHealth;
         }
@@ -1093,6 +1094,7 @@ function mergeQueueState(nextQueue: QueueItem[]): QueueItem[] {
             downloadedBytes: item.downloadedBytes === undefined ? prev.downloadedBytes : item.downloadedBytes,
             totalBytes: item.totalBytes === undefined ? prev.totalBytes : item.totalBytes,
             progressStatus: item.progressStatus === undefined ? prev.progressStatus : item.progressStatus,
+            progressPhase: item.progressPhase,
             recordingHealth: item.recordingHealth === undefined ? prev.recordingHealth : item.recordingHealth
         };
     });
@@ -1106,7 +1108,8 @@ function getQueueStateFingerprint(items: QueueItem[]): string {
         item.currentPart || 0,
         item.totalParts || 0,
         item.last_error || '',
-        item.progressStatus || ''
+        item.progressStatus || '',
+        item.progressPhase || ''
     ].join(':')).join('|');
 }
 
@@ -1699,7 +1702,8 @@ function updateClipOmissionState(): void {
     byId('clipDialogDurationLabel').textContent = UI_TEXT.clips.dialogDuration;
     const start = parseTimeToSeconds(byId<HTMLInputElement>('clipStartTime').value), end = parseTimeToSeconds(byId<HTMLInputElement>('clipEndTime').value);
     const validRange = Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start && end <= clipTotalSeconds;
-    const partSeconds = isEditing ? clipOmissionState?.config?.partDurationSec ?? 0 : (config.part_minutes || 120) * 60;
+    const partSeconds = isEditing ? clipOmissionState?.config?.partDurationSec ?? 0
+        : config.download_mode === 'full' ? clipTotalSeconds : (config.part_minutes || 120) * 60;
     const outputDuration = isEditing ? plan?.duration ?? 0 : end - start;
     const fileCount = isEditing ? plan?.parts.length ?? 0 : outputDuration > partSeconds ? Math.ceil(outputDuration / partSeconds) : 1;
     byId('clipQueueHint').textContent = (isEditing ? fileCount > 0 : validRange) ? formatClipOutputSummary(fileCount, outputDuration, partSeconds)
@@ -1761,7 +1765,7 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
     RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog });
     clipPlayer = window.VodPlayer.mount(byId('clipPlayer'), {
         url, title, date, duration: clipTotalSeconds, language: config.language || 'de', start: 0, end: clipTotalSeconds,
-        partMinutes: config.part_minutes || 60,
+        partMinutes: config.part_minutes || 60, downloadMode: config.download_mode,
         outputSettings: () => ({ startPart: getClipStartPart() }),
         filename: previewEditedFilename,
         onOmissions(state) {
