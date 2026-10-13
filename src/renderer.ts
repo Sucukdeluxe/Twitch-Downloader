@@ -972,9 +972,12 @@ function setPageTitle(text: string): void {
     const sectionTitle = activeTab
         ? ((UI_TEXT.tabs as Record<string, string>)[activeTab] || text)
         : text;
+    const devSuffix = isDevelopment
+        ? (currentLanguage === 'en' ? ' | Development version' : ' | Entwicklerversion')
+        : '';
     document.title = sectionTitle && sectionTitle !== UI_TEXT.appName
-        ? `${UI_TEXT.appName} - ${sectionTitle}`
-        : UI_TEXT.appName;
+        ? `${UI_TEXT.appName} - ${sectionTitle}${devSuffix}`
+        : `${UI_TEXT.appName}${devSuffix}`;
 }
 let queueSyncInFlight = false;
 let lastQueueActivityAt = Date.now();
