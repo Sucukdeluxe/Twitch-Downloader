@@ -24,7 +24,7 @@ export interface ArchiveSearchHit {
 }
 export interface ArchiveSearchResult {
     totalScanned: number; matchCount: number; truncated: boolean; hits: ArchiveSearchHit[];
-    scannedAt: string; rootExists: boolean; streamers: string[]; offset: number;
+    scannedAt: string; rootExists: boolean; streamers: string[]; offset: number; refreshing?: boolean;
 }
 export interface ArchiveInventoryFile { fullPath: string; relativePath: string; fileName: string; streamer: string; type: ArchiveFileType; size: number; mtimeMs: number; date: string }
 export interface ArchiveInventory { root: string; rootExists: boolean; scannedAt: string; files: ArchiveInventoryFile[]; folders?: string[] }

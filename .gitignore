@@ -23,3 +23,4 @@ test/
 tests/
 fixtures/
 artifacts/
+scripts/benchmark-archive-loading*.js

@@ -1,3 +1,4 @@
+import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
@@ -4896,7 +4897,9 @@ async function computeStorageStats(): Promise<StorageStatsResult> {
 // ==========================================
 // ARCHIVE STATS — DASHBOARD AGGREGATION
 // ==========================================
-const readArchiveInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'archive-index.json'));
+const readArchiveInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'archive-index.json'), 60000, directory => {
+    if (directory === path.resolve(config.download_path) && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('archive-index-updated');
+});
 
 // ==========================================
 // DISCORD WEBHOOK NOTIFICATIONS
@@ -7668,7 +7671,10 @@ function resolveFileCapability(event: IpcMainInvokeEvent, token: string, purpose
 
 function rememberRendererPath(purpose: FileCapabilityPurpose, filePath: string): void {
     if (typeof filePath !== 'string' || !filePath || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) return;
-    const normalized = normalizeComparablePath(filePath);
+    rememberResolvedRendererPath(purpose, normalizeComparablePath(filePath));
+}
+
+function rememberResolvedRendererPath(purpose: FileCapabilityPurpose, normalized: string): void {
     const paths = knownRendererPaths.get(purpose) ?? new Set<string>();
     paths.delete(normalized);
     paths.add(normalized);
@@ -8169,17 +8175,24 @@ ipcMain.handle('search-archive', async (event, filter: Partial<ArchiveSearchFilt
         limit: Number.isFinite(filter?.limit as number) ? Number(filter?.limit) : 200,
         offset: Number.isFinite(filter?.offset) ? Math.max(0, Math.floor(Number(filter?.offset))) : 0
     };
-    const result = searchArchiveInventory(await readArchiveInventory(config.download_path, filter?.refresh === true), normalized);
+    const directory = config.download_path;
+    const result = searchArchiveInventory(await readArchiveInventory(directory, filter?.refresh === true), normalized);
+    const paths = await resolveArchiveFilePaths(directory, result.hits.flatMap(hit => [hit.fullPath, hit.chatPath, hit.eventsPath].filter((filename): filename is string => Boolean(filename))));
     for (const hit of result.hits) {
-        rememberRendererPath('open-file', hit.fullPath);
-        rememberRendererPath('show-in-folder', hit.fullPath);
+        const canonical = paths.get(hit.fullPath);
+        if (canonical) {
+            rememberResolvedRendererPath('open-file', canonical);
+            rememberResolvedRendererPath('show-in-folder', canonical);
+        }
         for (const sidecar of [hit.chatPath, hit.eventsPath]) {
-            if (!sidecar) continue;
-            rememberRendererPath('open-file', sidecar);
-            rememberRendererPath('show-in-folder', sidecar);
-            rememberRendererPath('chat-input', sidecar);
+            const canonical = sidecar && paths.get(sidecar);
+            if (!canonical) continue;
+            rememberResolvedRendererPath('open-file', canonical);
+            rememberResolvedRendererPath('show-in-folder', canonical);
+            rememberResolvedRendererPath('chat-input', canonical);
         }
     }
+    result.refreshing = readArchiveInventory.isRefreshing(directory);
     return result;
 });
 

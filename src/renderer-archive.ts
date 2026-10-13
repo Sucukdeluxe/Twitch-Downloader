@@ -11,6 +11,7 @@ let archiveStreamerOptionsKey = '';
 const archiveKnownStreamers = new Set<string>();
 const archiveSelection = new Map<string, ArchiveSearchHit>();
 let archiveActionInFlight = false;
+let archiveUpdatesInitialized = false;
 
 function archiveDateBoundary(id: string, end: boolean): number | null {
     const value = (document.getElementById(id) as HTMLInputElement | null)?.value;
@@ -147,6 +148,7 @@ async function performArchiveSearch(refresh = false): Promise<void> {
     archiveSearchFailed = false;
     renderArchivePagination();
     results.setAttribute('aria-busy', 'true');
+    if (!lastArchiveSearchResult) results.replaceChildren(archiveElement('div', 'insights-empty archive-empty', UI_TEXT.static.archiveSearching));
     if (button) button.disabled = true;
     try {
         do {
@@ -185,6 +187,7 @@ async function performArchiveSearch(refresh = false): Promise<void> {
     } finally {
         archiveSearchInFlight = false;
         results.setAttribute('aria-busy', 'false');
+        if (archiveSearchFailed && !lastArchiveSearchResult) results.replaceChildren();
         if (button) button.disabled = false;
         renderArchivePagination();
     }
@@ -225,6 +228,7 @@ function renderArchiveSearchResults(result: ArchiveSearchResult, preserveScroll 
             .replace('{matchCount}', formatUiNumber(result.matchCount))
             .replace('{scanned}', formatUiNumber(result.totalScanned))
             .replace('{shown}', formatUiNumber(result.hits.length));
+        if (result.refreshing) summary.textContent += currentLanguage === 'de' ? ' · Wird aktualisiert …' : ' · Updating …';
     }
     if (result.hits.length === 0) {
         results.replaceChildren(archiveElement('div', 'insights-empty archive-empty', UI_TEXT.static.archiveNoMatches));
@@ -297,6 +301,12 @@ function openEventsOrChat(filePath: string, title: string, kind: 'chat' | 'event
 }
 
 function initArchiveSearchInput(): void {
+    if (!archiveUpdatesInitialized && typeof window.api.onArchiveIndexUpdated === 'function') {
+        archiveUpdatesInitialized = true;
+        window.api.onArchiveIndexUpdated(() => {
+            if (document.getElementById('archiveTab')?.classList.contains('active')) void performArchiveSearch();
+        });
+    }
     const query = document.getElementById('archiveSearchQuery') as HTMLInputElement | null;
     if (query && !query.dataset.bound) {
         query.addEventListener('input', onArchiveSearchInput);

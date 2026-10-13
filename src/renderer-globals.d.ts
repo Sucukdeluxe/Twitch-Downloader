@@ -396,6 +396,7 @@ interface ArchiveSearchHit {
     eventsPath: string | null;
 }
 interface ArchiveSearchResult {
+    refreshing?: boolean;
     offset?: number;
     streamers?: string[];
     totalScanned: number;
@@ -578,6 +579,7 @@ interface ApiBridge {
     importConfig(): Promise<{ success: boolean; cancelled?: boolean; error?: string; filePath?: string }>;
     onDownloadProgress(callback: (progress: DownloadProgress) => void): void;
     onQueueUpdated(callback: (queue: QueueItem[]) => void): void;
+    onArchiveIndexUpdated(callback: () => void): () => void;
     onQueueDuplicateSkipped(callback: (payload: { title: string; streamer: string; url: string }) => void): void;
     onDownloadStarted(callback: () => void): void;
     onDownloadPaused(callback: () => void): void;

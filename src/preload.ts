@@ -325,6 +325,11 @@ contextBridge.exposeInMainWorld('api', {
     onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
         ipcRenderer.on('download-progress', (_, progress) => callback(progress));
     },
+    onArchiveIndexUpdated: (callback: () => void) => {
+        const listener = () => callback();
+        ipcRenderer.on('archive-index-updated', listener);
+        return () => ipcRenderer.removeListener('archive-index-updated', listener);
+    },
     onQueueUpdated: (callback: (queue: QueueItem[]) => void) => {
         ipcRenderer.on('queue-updated', (_, queue) => callback(queue));
     },

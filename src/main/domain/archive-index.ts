@@ -4,8 +4,8 @@ import path from 'node:path';
 import { readJsonDocument, writeJsonDocument, createSerialExecutor } from './durable-json-store';
 import { scanArchiveInventory, classify, fileDate, type ArchiveInventory, type ArchiveInventoryFile } from './archive-inventory';
 
-interface IndexState { inventory: ArchiveInventory | null; watcher: FSWatcher | null; dirty: Set<string>; full: boolean; verified: number; active: Promise<ArchiveInventory> | null }
-export function createIndexedArchiveReader(indexFile: string, reconcileMs = 60000) {
+interface IndexState { inventory: ArchiveInventory | null; watcher: FSWatcher | null; dirty: Set<string>; full: boolean; verified: number; active: Promise<ArchiveInventory> | null; loading: Promise<void> | null; activeFull: boolean }
+export function createIndexedArchiveReader(indexFile: string, reconcileMs = 60000, onUpdated?: (root: string) => void) {
     const states = new Map<string, IndexState>();
     const persist = createSerialExecutor();
     let closing = false, lastWrite: Promise<void> = Promise.resolve();
@@ -18,14 +18,14 @@ export function createIndexedArchiveReader(indexFile: string, reconcileMs = 6000
             const files: ArchiveInventoryFile[] = [];
             for (const entry of value.files) {
                 if (typeof entry.relativePath !== 'string' || path.isAbsolute(entry.relativePath) || typeof entry.size !== 'number' || !Number.isFinite(entry.size) || entry.size < 0 || typeof entry.mtimeMs !== 'number' || !Number.isFinite(entry.mtimeMs)) return null;
-                const fullPath = path.resolve(root, entry.relativePath); if (!contained(root, fullPath)) return null;
+                const fullPath = path.resolve(root, entry.relativePath); if (!contained(root, fullPath) || entry.relativePath.split(path.sep).some(part => part.startsWith('.'))) return null;
                 files.push({ fullPath, relativePath:entry.relativePath, fileName:path.basename(fullPath), ...classify(entry.relativePath), size:entry.size, mtimeMs:entry.mtimeMs, date:fileDate(path.basename(fullPath),entry.mtimeMs) });
             }
-            return { root, rootExists:true, scannedAt:String(value.scannedAt || ''), files };
+            return { root, rootExists:value.rootExists !== false, scannedAt:String(value.scannedAt || ''), files };
         } catch { return null; }
     }
     function track(root: string, state: IndexState): void {
-        if (state.watcher || closing) return;
+        if (state.watcher || closing || states.get(root) !== state) return;
         try {
             state.watcher = watch(root, { recursive:true, persistent:false }, (_event, name) => {
                 if (!name) { state.full = true; return; }
@@ -55,9 +55,9 @@ export function createIndexedArchiveReader(indexFile: string, reconcileMs = 6000
     }
     async function update(root: string, state: IndexState, refresh: boolean): Promise<ArchiveInventory> {
         track(root,state);
-        state.inventory ??= await cached(root);
         const paths=[...state.dirty];state.dirty.clear();
-        const full=refresh || state.full || !state.inventory || !state.watcher || Date.now()-state.verified>=reconcileMs;
+        const full=refresh || state.full || !state.inventory || Date.now()-state.verified>=reconcileMs;
+        state.activeFull=full;
         state.full=false;
         let inventory: ArchiveInventory;
         try { inventory=full ? await scanArchiveInventory(root) : paths.length ? await delta(root,state.inventory!,paths) : state.inventory!; }
@@ -67,22 +67,52 @@ export function createIndexedArchiveReader(indexFile: string, reconcileMs = 6000
             state.inventory=inventory;
             lastWrite=persist(()=>writeJsonDocument(indexFile,{version:1,inventory})).catch(()=>{});
         }
-        if (!inventory.rootExists) { state.watcher?.close();state.watcher=null;state.full=true; }
+        if (!inventory.rootExists) { state.watcher?.close();state.watcher=null; }
         return inventory;
     }
+    function startUpdate(root: string, state: IndexState, refresh: boolean): Promise<ArchiveInventory> {
+        const previous = state.inventory;
+        const promise = update(root, state, refresh).finally(() => {
+            if (state.active === promise) state.active = null;
+        });
+        state.active = promise;
+        void promise.then(inventory => {
+            if (!closing && previous && (inventory.rootExists || previous.rootExists)) onUpdated?.(root);
+        }).catch(() => { state.full = true; });
+        return promise;
+    }
     const read = async (directory: string, refresh = false): Promise<ArchiveInventory> => {
-        const root=directory ? path.resolve(directory) : '';
-        if (!root || closing) return scanArchiveInventory(root);
-        let state=states.get(root);
+        const root = directory ? path.resolve(directory) : '';
+        if (!root) return scanArchiveInventory(root);
+        if (closing) return states.get(root)?.inventory ?? { root, rootExists: false, scannedAt: new Date().toISOString(), files: [] };
+        let state = states.get(root);
         if (!state) {
-            if (states.size>=4) {const key=states.keys().next().value!;states.get(key)?.watcher?.close();states.delete(key);}
-            state={inventory:null,watcher:null,dirty:new Set(),full:true,verified:0,active:null};states.set(root,state);
+            if (states.size >= 4) {
+                const key = states.keys().next().value!;
+                states.get(key)?.watcher?.close();
+                states.delete(key);
+            }
+            state = { inventory: null, watcher: null, dirty: new Set(), full: true, verified: 0, active: null, loading: null, activeFull: false };
+            states.set(root, state);
+            const current = state;
+            state.loading = cached(root).then(inventory => { current.inventory = inventory; });
         }
-        while (state.active) { await state.active; if (!refresh && !state.dirty.size && !state.full) return state.inventory!; }
-        const promise=update(root,state,refresh);state.active=promise;
-        try {return await promise;} finally {if(state.active===promise)state.active=null;}
+        await state.loading;
+        if (closing) return state.inventory ?? { root, rootExists: false, scannedAt: new Date().toISOString(), files: [] };
+        if (refresh) {
+            if (state.active) {
+                const activeWasFull = state.activeFull;
+                await state.active;
+                if (activeWasFull && !state.dirty.size && !state.full) return state.inventory!;
+            }
+            return startUpdate(root, state, true);
+        }
+        if (!state.inventory) return state.active || startUpdate(root, state, true);
+        if (!state.active && (state.full || state.dirty.size || Date.now() - state.verified >= reconcileMs)) startUpdate(root, state, false);
+        return state.inventory;
     };
+    read.isRefreshing = (directory: string): boolean => Boolean(states.get(directory ? path.resolve(directory) : '')?.active);
     read.invalidate = (directory?: string): void => { for (const [root,state] of states) if (!directory || path.resolve(directory)===root) state.full=true; };
-    read.dispose = async (): Promise<void> => { closing=true;for(const state of states.values())state.watcher?.close();await Promise.allSettled([...states.values()].map(state=>state.active));await lastWrite;states.clear(); };
+    read.dispose = async (): Promise<void> => { closing=true;for(const state of states.values())state.watcher?.close();await Promise.allSettled([...states.values()].map(async state=>{await state.loading;await state.active;}));await lastWrite;states.clear(); };
     return read;
 }
