@@ -65,7 +65,7 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 ## Installation
 
 1. Open the [latest GitHub release](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest).
-2. Download `Twitch-Downloader-Setup-1.0.46.exe`.
+2. Download `Twitch-Downloader-Setup-1.0.47.exe`.
 3. Run the installer and choose the installation directory.
 4. Start Twitch Downloader and add a streamer.
 

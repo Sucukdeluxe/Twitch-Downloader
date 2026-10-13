@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.47 - 2026-10-14
+
+This update renames the application to Twitch Downloader, reworks the Clips workspace into a two-column split layout with clip thumbnails, and updates the top navigation bar.
+
+### Application rename and migration
+
+- Rename the application, Windows shortcuts, installer (`Twitch-Downloader-Setup-1.0.47.exe`) and repository references to Twitch Downloader.
+- Format the window title as `Twitch Downloader - <Section>` (for example `Twitch Downloader - VODs` or `Twitch Downloader - Clips`), with ` | Entwicklerversion` appended in development builds.
+- Migrate existing settings, databases, tools and encrypted credentials automatically from the previous application folders on startup, and replace previous installations cleanly during installer upgrades.
+
+### Clips workspace
+
+- Rework the Clips tab into a full-width two-column split layout with link entry and batch controls on the left and the download list on the right.
+- Show a 16:9 clip thumbnail next to each row number in the download list, using public Twitch clip metadata or a local video preview with a neutral fallback icon.
+- Hide the batch progress bar track while no download is active and display active or completed batch progress in green.
+
+### Navigation and VOD toolbar
+
+- Arrange the seven top-navigation sections as equal-width tiles with the icon centered above the label and prevent descender or right-edge text clipping.
+- Remove the unused Views button from the VOD filter bar.
+
 ## 1.0.46 - 2026-10-13
 
 This update lets you choose the output filename and destination for each queued download before it starts.
