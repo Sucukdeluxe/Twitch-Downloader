@@ -1978,12 +1978,13 @@ async function getPublicUserId(username: string): Promise<string | null> {
     runtimeMetrics.cacheMisses += 1;
 
     type UserQueryResult = { user: { id: string; login: string } | null };
-    const data = await fetchPublicTwitchGql<UserQueryResult>(
+    const outcome = await fetchPublicTwitchGqlOutcome<UserQueryResult>(
         'query($login:String!){ user(login:$login){ id login } }',
         { login }
     );
+    if (outcome.status === 'unavailable') throw new Error('Twitch user lookup unavailable');
 
-    const user = data?.user;
+    const user = outcome.status === 'success' ? outcome.value?.user : null;
     if (!user?.id) return null;
 
     setCachedValue(loginToUserIdCache, login, user.id, MAX_LOGIN_TO_USER_ID_CACHE_ENTRIES);
@@ -2098,9 +2099,12 @@ async function getVODs(userId: string, forceRefresh = false, requireFresh = fals
             vodListCache.delete(cacheKey);
             return [];
         }
-        if (requireFresh) throw new Error('VOD refresh unavailable');
-        if (refreshed.source === 'last-good') appendDebugLog('vod-refresh-kept-last-good', { userId });
-        return refreshed.value ?? [];
+        if (requireFresh || !refreshed.value) {
+            appendDebugLog('vod-refresh-unavailable', { userId });
+            throw new Error('VOD refresh unavailable');
+        }
+        appendDebugLog('vod-refresh-kept-last-good', { userId });
+        return refreshed.value;
     });
 }
 
@@ -2551,7 +2555,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
 
         // Derive vod count + last stream from the already-cached VOD list
         // when we have an id. No extra network hit.
-        const userId = await getUserId(normalized);
+        const userId = await getUserId(normalized).catch(() => null);
         if (userId) {
             try {
                 const vods = await getVODs(userId);
@@ -4512,7 +4516,7 @@ async function runAutoVodPoll(): Promise<AutomationScanResult> {
         for (const streamer of list) {
             if (!config.auto_vod_download_streamers.includes(streamer)) continue;
 
-            const userId = await getUserId(streamer);
+            const userId = await getUserId(streamer).catch(() => null);
             if (!userId) {
                 result.failedCount++;
                 appendDebugLog('auto-vod-skip-no-user', { streamer });

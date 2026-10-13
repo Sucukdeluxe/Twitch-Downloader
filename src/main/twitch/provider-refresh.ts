@@ -178,7 +178,11 @@ export async function requestPublicTwitchGraphql<T>(
             });
             if (response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
                 const errors = (response.data as Record<string, unknown>).errors;
-                if (Array.isArray(errors) && errors.length > 0) return { status: 'unavailable' };
+                if (Array.isArray(errors) && errors.length > 0) {
+                    if (attempt === attempts) return { status: 'unavailable' };
+                    await delay(400 * Math.pow(2, attempt - 1));
+                    continue;
+                }
             }
             const parsed = parseGraphqlDataEnvelope(response.data);
             return parsed.status === 'success'

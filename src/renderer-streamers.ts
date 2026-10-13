@@ -166,6 +166,9 @@ const streamerVodCache = new Map<string, CachedStreamerVods>();
 const streamerVodLoads = new Map<string, Promise<CachedStreamerVods | null>>();
 let streamerBackgroundRefreshTimer: number | null = null;
 const STREAMER_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
+const VOD_LOAD_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+let vodLoadRetryTimer: number | null = null;
+let vodLoadRetryAttempt = 0;
 let vodFilterQuery = '';
 const VOD_FILTER_STORAGE_KEY = 'twitch-vod-manager:vod-filter';
 
@@ -1156,7 +1159,9 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
     const requestId = ++selectStreamerRequestId;
     const isStaleRequest = () => requestId !== selectStreamerRequestId || currentStreamer !== name;
 
+    cancelVodLoadRetry();
     if (currentStreamer !== name) {
+        vodLoadRetryAttempt = 0;
         vodRenderTaskId += 1;
         lastLoadedStreamer = null;
         lastLoadedVods = [];
@@ -1206,8 +1211,21 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
         renderVodGridLoadingState();
     }
 
-    const loaded = await loadStreamerVods(name, forceRefresh);
+    let loaded: CachedStreamerVods | null;
+    try {
+        loaded = await loadStreamerVods(name, forceRefresh);
+    } catch {
+        if (isStaleRequest()) return;
+        if (cached) {
+            showAppToast(UI_TEXT.vods.refreshFailed, 'warn');
+            return;
+        }
+        setVodGridLoadError(byId('vodGrid'), name);
+        scheduleVodLoadRetry(name);
+        return;
+    }
     if (isStaleRequest()) return;
+    vodLoadRetryAttempt = 0;
 
     if (!loaded) {
         byId('vodGrid').innerHTML = `<div class="empty-state"><h3>${UI_TEXT.vods.notFound}</h3></div>`;
@@ -1262,6 +1280,36 @@ function setVodGridEmptyState(grid: HTMLElement, title: string, text: string): v
     p.textContent = text;
     wrap.append(createVodEmptyStateIcon(), h3, p);
     grid.replaceChildren(wrap);
+}
+
+function setVodGridLoadError(grid: HTMLElement, streamer: string): void {
+    setVodGridEmptyState(grid, UI_TEXT.vods.loadFailedTitle, UI_TEXT.vods.loadFailedText);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn-secondary vod-load-retry';
+    retry.textContent = UI_TEXT.vods.loadRetry;
+    retry.addEventListener('click', () => {
+        if (currentStreamer !== streamer) return;
+        vodLoadRetryAttempt = 0;
+        void selectStreamer(streamer);
+    });
+    grid.querySelector('.empty-state')?.append(retry);
+}
+
+function cancelVodLoadRetry(): void {
+    if (vodLoadRetryTimer === null) return;
+    window.clearTimeout(vodLoadRetryTimer);
+    vodLoadRetryTimer = null;
+}
+
+function scheduleVodLoadRetry(streamer: string): void {
+    cancelVodLoadRetry();
+    const delay = VOD_LOAD_RETRY_DELAYS_MS[Math.min(vodLoadRetryAttempt, VOD_LOAD_RETRY_DELAYS_MS.length - 1)];
+    vodLoadRetryAttempt += 1;
+    vodLoadRetryTimer = window.setTimeout(() => {
+        vodLoadRetryTimer = null;
+        if (currentStreamer === streamer) void selectStreamer(streamer);
+    }, delay);
 }
 
 function renderVODs(vods: VOD[] | null | undefined, streamer: string, animateChanges = false): void {

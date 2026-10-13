@@ -586,6 +586,11 @@
     width: 100%;
 }
 
+.vod-grid > .empty-state .vod-load-retry {
+    margin-top: 16px;
+    font-size: 13px;
+}
+
 #vodsTab.active:has(> #vodGrid > .empty-state) {
     display: flex;
     flex-direction: column;
