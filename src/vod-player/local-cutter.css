@@ -125,7 +125,7 @@
   #cutterTab .cutter-workspace:not(.shown) { flex: 0 0 auto; height: auto; min-height: 0; }
   #cutterTab .cutter-source-bar, #cutterTab .cutter-recovery-panel { flex: 0 0 auto; }
   #cutterTab .cutter-preview-panel { height: 100%; }
-  #cutterTab .cutter-workspace:not(.shown) .cutter-preview-panel { width: min(1200px, 100%, calc(177.78dvh - 569px)); height: auto; margin: 0 auto; }
+  #cutterTab .cutter-workspace:not(.shown) .cutter-preview-panel { width: min(1200px, 100%, calc(177.78dvh - 602px)); height: auto; margin: 0 auto; }
   #cutterTab .cutter-workspace:not(.shown) #cutterPlayer { height: auto; }
   #cutterTab .cutter-workspace:not(.shown) #cutterPlayer .video-preview { flex: 0 0 auto; height: auto; }
 }
