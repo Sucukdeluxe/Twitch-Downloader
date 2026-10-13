@@ -512,6 +512,7 @@ interface ApiBridge {
     getStorageStats(): Promise<StorageStatsResult>;
     getArchiveStats(range?: import('./main/domain/download-history-store').DownloadHistoryRange): Promise<ArchiveStats>;
     prepareArchiveVideos(paths: string[], target: 'cutter' | 'merge'): Promise<MergeFileReference[]>;
+    getArchiveThumbnail(filename: string): Promise<string | null>;
     searchDownloadHistory(filter?: import('./main/domain/download-history-store').DownloadHistoryFilter): Promise<import('./main/domain/download-history-store').DownloadHistoryResult>;
     hasDownloadedClip(clipId: string): Promise<boolean>;
     exportStatistics(range?: import('./main/domain/download-history-store').DownloadHistoryRange): Promise<boolean>;

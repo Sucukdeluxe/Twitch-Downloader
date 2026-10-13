@@ -12,6 +12,77 @@ const archiveKnownStreamers = new Set<string>();
 const archiveSelection = new Map<string, ArchiveSearchHit>();
 let archiveActionInFlight = false;
 let archiveUpdatesInitialized = false;
+let archiveThumbnailObserver: IntersectionObserver | null = null;
+let archiveThumbnailActive = 0;
+let archiveThumbnailQueue: Array<{ element: HTMLElement; hit: ArchiveSearchHit; key: string }> = [];
+const archiveThumbnailCache = new Map<string, string | null>();
+
+function applyArchiveThumbnail(element: HTMLElement, source: string | null): void {
+    if (!source || !source.startsWith('data:image/jpeg;base64,')) return;
+    const image = document.createElement('img');
+    image.alt = '';
+    image.width = 256;
+    image.height = 144;
+    image.decoding = 'async';
+    image.addEventListener('error', () => image.remove(), { once: true });
+    image.src = source;
+    element.append(image);
+}
+
+function drainArchiveThumbnails(): void {
+    while (archiveThumbnailActive < 2 && archiveThumbnailQueue.length) {
+        const next = archiveThumbnailQueue.shift()!;
+        if (!next.element.isConnected) continue;
+        archiveThumbnailActive++;
+        void window.api.getArchiveThumbnail(next.hit.fullPath).catch(() => null).then(source => {
+            if (archiveThumbnailCache.size >= 256) archiveThumbnailCache.delete(archiveThumbnailCache.keys().next().value!);
+            if (source) archiveThumbnailCache.set(next.key, source);
+            if (next.element.isConnected) applyArchiveThumbnail(next.element, source);
+        }).finally(() => {
+            archiveThumbnailActive--;
+            drainArchiveThumbnails();
+        });
+    }
+}
+
+function createArchiveThumbnail(hit: ArchiveSearchHit): HTMLElement {
+    const element = archiveElement('div', 'archive-result-thumbnail');
+    element.setAttribute('aria-hidden', 'true');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    shape.setAttribute('d', 'M4 4h16v16H4z M10 8l6 4-6 4z');
+    icon.append(shape);
+    element.append(icon);
+    const key = JSON.stringify([hit.fullPath, hit.size, hit.mtimeMs]);
+    if (archiveThumbnailCache.has(key)) applyArchiveThumbnail(element, archiveThumbnailCache.get(key)!);
+    else if (typeof window.api.getArchiveThumbnail === 'function') {
+        const load = () => {
+            archiveThumbnailQueue.push({ element, hit, key });
+            drainArchiveThumbnails();
+        };
+        if (archiveThumbnailObserver) {
+            element.addEventListener('archive-thumbnail-visible', load, { once: true });
+            archiveThumbnailObserver.observe(element);
+        } else queueMicrotask(load);
+    }
+    return element;
+}
+
+function resetArchiveThumbnails(results: HTMLElement): void {
+    archiveThumbnailObserver?.disconnect();
+    archiveThumbnailObserver = null;
+    archiveThumbnailQueue = [];
+    if (typeof IntersectionObserver === 'function') {
+        archiveThumbnailObserver = new IntersectionObserver(entries => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                archiveThumbnailObserver?.unobserve(entry.target);
+                entry.target.dispatchEvent(new Event('archive-thumbnail-visible'));
+            }
+        }, { root: results, rootMargin: '120px' });
+    }
+}
 
 function archiveDateBoundary(id: string, end: boolean): number | null {
     const value = (document.getElementById(id) as HTMLInputElement | null)?.value;
@@ -212,6 +283,7 @@ function renderArchiveSearchResults(result: ArchiveSearchResult, preserveScroll 
     const summary = document.getElementById('archiveSearchSummary');
     const results = document.getElementById('archiveSearchResults');
     if (!results) return;
+    resetArchiveThumbnails(results);
     const scrollTop = preserveScroll ? results.scrollTop : 0;
     summary?.classList.remove('is-error');
     renderArchivePagination();
@@ -247,7 +319,7 @@ function renderArchiveSearchResults(result: ArchiveSearchResult, preserveScroll 
             else { archiveSelection.delete(hit.fullPath); selection.checked = false; }
             refreshArchiveSelection();
         });
-        row.append(selection);
+        row.append(selection, createArchiveThumbnail(hit));
         const body = archiveElement('div', 'archive-result-body');
         const meta = archiveElement('div', 'archive-result-meta');
         const kind = hit.type === 'live' ? 'LIVE' : hit.type === 'clip' ? 'CLIP' : 'VOD';

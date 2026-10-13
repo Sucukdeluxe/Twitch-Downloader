@@ -235,6 +235,7 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.on('live-status-batch-update', (_, info) => callback(info));
     },
     searchArchive: (filter: Record<string, unknown>) => ipcRenderer.invoke('search-archive', filter),
+    getArchiveThumbnail: (filename: string): Promise<string | null> => ipcRenderer.invoke('get-archive-thumbnail', filename),
     recoverStorageCleanup: () => ipcRenderer.invoke('recover-storage-cleanup'),
     runStorageCleanup: (options?: { dryRun?: boolean; token?: string }) => ipcRenderer.invoke('run-storage-cleanup', options),
     readChatFile: async (filePath: string, signal?: AbortSignal) => {

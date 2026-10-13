@@ -1,5 +1,6 @@
 import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
+import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
 import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
@@ -4947,6 +4948,7 @@ async function computeStorageStats(): Promise<StorageStatsResult> {
 const readArchiveInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'archive-index.json'), 60000, directory => {
     if (directory === path.resolve(config.download_path) && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('archive-index-updated');
 });
+const archiveThumbnails = new ArchiveThumbnailService(path.join(APPDATA_DIR, 'cache', 'archive-thumbnails'), getFFmpegPath, command => recordManagedToolExecution('ffmpeg', command));
 
 // ==========================================
 // DISCORD WEBHOOK NOTIFICATIONS
@@ -8211,6 +8213,18 @@ ipcMain.handle('prepare-archive-videos', async (event, requested: string[], targ
     return references;
 });
 
+ipcMain.handle('get-archive-thumbnail', async (event, filename: unknown): Promise<string | null> => {
+    if (!isTrustedRendererEvent(event) || appShutdownStarted || typeof filename !== 'string') return null;
+    const directory = config.download_path;
+    const inventory = await readArchiveInventory(directory);
+    const file = inventory.files.find(file => normalizeComparablePath(file.fullPath) === normalizeComparablePath(filename));
+    if (!file || !['vod', 'live', 'clip'].includes(file.type)) return null;
+    const paths = await resolveArchiveFilePaths(directory, [file.fullPath]);
+    const canonical = paths.get(file.fullPath);
+    if (!canonical || directory !== config.download_path) return null;
+    return archiveThumbnails.load({ ...file, fullPath: canonical });
+});
+
 ipcMain.handle('search-archive', async (event, filter: Partial<ArchiveSearchFilter>): Promise<ArchiveSearchResult> => {
     if (!isTrustedRendererEvent(event)) throw new Error('File access denied');
     const normalized: ArchiveSearchFilter = {
@@ -8933,6 +8947,7 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
     await runResilientSteps([
         ['storage-cleanup', async () => { cleanupAbortController.abort(); await cleanupPending; }],
         ['editing-workflows', async () => { await editingWorkflows?.dispose(); }],
+        ['archive-thumbnails', () => archiveThumbnails.dispose()],
         ['vod-playback', () => vodPlaybackService.close()],
         ['clip-playback', () => clipPlaybackService.close()],
         ['vod-timeline', () => vodTimelineService.close()],

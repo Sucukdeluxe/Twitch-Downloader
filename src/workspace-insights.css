@@ -600,11 +600,15 @@ body.theme-light .insights-workspace .is-error {
 
 .download-history-source { font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; user-select: text; }
 
-.insights-workspace .archive-result-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; }
+.insights-workspace .archive-result-row { display: grid; grid-template-columns: 20px 128px minmax(0, 1fr) auto; align-items: center; }
+.archive-result-thumbnail { position: relative; display: grid; width: 128px; aspect-ratio: 16 / 9; place-items: center; overflow: hidden; background: var(--workspace-client); border: 1px solid var(--workspace-border); border-radius: 6px; }
+.archive-result-thumbnail > svg { width: 28px; height: 28px; fill: none; stroke: var(--workspace-text-muted); stroke-width: 1.5; stroke-linejoin: round; }
+.archive-result-thumbnail > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .archive-filters { grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(140px, 1fr)); }
 .archive-filters .btn-secondary { grid-column: -2; }
 @media (max-width: 1250px) { .archive-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 850px) { .insights-workspace .archive-result-row { grid-template-columns: 20px minmax(0, 1fr); } .insights-workspace .archive-result-actions { grid-column: 2; justify-content: flex-start; max-width: none; flex-wrap: wrap; } }
+@media (max-width: 1250px) { .insights-workspace .archive-result-row { grid-template-columns: 20px 128px minmax(0, 1fr); } .insights-workspace .archive-result-actions { grid-column: 3; justify-content: flex-start; max-width: none; flex-wrap: wrap; } .archive-result-row :is(.archive-row-select, .archive-result-thumbnail) { grid-row: 1 / span 2; } }
+@media (max-width: 600px) { .insights-workspace .archive-result-row { grid-template-columns: 20px 96px minmax(0, 1fr); } .archive-result-thumbnail { width: 96px; } }
 @media (max-width: 600px) { .archive-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .archive-filters .btn-secondary { grid-column: -2; } }
 
 .archive-date-filters { grid-column: 1 / 3; display: flex; gap: 12px; flex-wrap: wrap; }
