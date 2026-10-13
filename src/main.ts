@@ -6793,11 +6793,11 @@ function createWindow(): void {
         let applyingDevelopmentUpdate = false;
         let developmentBuildFailed = false;
         const applyDevelopmentUpdate = async () => {
-            if (!pendingDevelopmentAction || developmentBuildFailed || applyingDevelopmentUpdate || contents.isDestroyed() || contents.isLoadingMainFrame() || applicationRestoreBusy() || applicationBackupBusy) return;
+            if (!pendingDevelopmentAction || developmentBuildFailed || applyingDevelopmentUpdate || contents.isDestroyed() || contents.isLoadingMainFrame() || applicationRestoreBusy(pendingDevelopmentAction === 'reload') || applicationBackupBusy) return;
             applyingDevelopmentUpdate = true;
             try {
                 const prepared = await contents.executeJavaScript('typeof prepareDevelopmentRefresh === "function" && prepareDevelopmentRefresh()');
-                if (!prepared || developmentBuildFailed || contents.isDestroyed() || applicationRestoreBusy() || applicationBackupBusy) return;
+                if (!prepared || developmentBuildFailed || contents.isDestroyed() || applicationRestoreBusy(pendingDevelopmentAction === 'reload') || applicationBackupBusy) return;
                 const action = pendingDevelopmentAction;
                 pendingDevelopmentAction = undefined;
                 if (action === 'restart') {
@@ -9135,9 +9135,12 @@ app.on('before-quit', (event) => {
     });
 });
 
-function applicationRestoreBusy(): boolean {
+function applicationRestoreBusy(allowPausedQueue = false): boolean {
     if (cleanupPending || storageCleanup.isBusy()) return true;
-    return isDownloading || activeDownloads.size > 0 || clipRequests.size > 0 || activeClipProcesses.size > 0 || cutterExportActive || workspaceMergeActive || applicationWorkflowBusy() || autoRecordPollInFlight || autoVodPollInFlight || appShutdownStarted;
+    const queueBusy = allowPausedQueue && queuePaused && !downloadQueue.some(item => item.status === 'downloading')
+        ? false
+        : isDownloading || activeDownloads.size > 0;
+    return queueBusy || clipRequests.size > 0 || activeClipProcesses.size > 0 || cutterExportActive || workspaceMergeActive || applicationWorkflowBusy() || autoRecordPollInFlight || autoVodPollInFlight || appShutdownStarted;
 }
 
 ipcMain.handle('export-application-backup', async event => {
