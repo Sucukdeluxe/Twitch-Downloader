@@ -2107,6 +2107,7 @@ interface LiveStreamInfo {
     isLive: boolean;
     title?: string;
     gameName?: string;
+    startedAt?: string | null;
 }
 
 // Returns whether the streamer is currently live + a little metadata if
@@ -2134,7 +2135,8 @@ async function getLiveStreamInfo(login: string): Promise<LiveStreamInfo | null> 
             return {
                 isLive: e.type === 'live',
                 title: typeof e.title === 'string' ? e.title : undefined,
-                gameName: typeof e.game_name === 'string' ? e.game_name : undefined
+                gameName: typeof e.game_name === 'string' ? e.game_name : undefined,
+                startedAt: typeof e.started_at === 'string' && Number.isFinite(Date.parse(e.started_at)) ? e.started_at : null
             };
         } catch (e) {
             appendDebugLog('helix-streams-failed', { login: normalized, error: projectExternalError('twitch-helix-streams', e) });
@@ -2144,11 +2146,11 @@ async function getLiveStreamInfo(login: string): Promise<LiveStreamInfo | null> 
 
     type StreamQueryResult = {
         user: {
-            stream: { id: string; type: string; title?: string; game?: { name?: string } } | null;
+            stream: { id: string; type: string; title?: string; createdAt?: string; game?: { name?: string } } | null;
         } | null;
     };
     const data = await fetchPublicTwitchGql<StreamQueryResult>(
-        'query($login:String!){ user(login:$login){ stream{ id type title game{ name } } } }',
+        'query($login:String!){ user(login:$login){ stream{ id type title createdAt game{ name } } } }',
         { login: normalized }
     );
     if (!data) return null;
@@ -2157,7 +2159,8 @@ async function getLiveStreamInfo(login: string): Promise<LiveStreamInfo | null> 
     return {
         isLive: stream.type === 'live',
         title: stream.title,
-        gameName: stream.game?.name
+        gameName: stream.game?.name,
+        startedAt: typeof stream.createdAt === 'string' && Number.isFinite(Date.parse(stream.createdAt)) ? stream.createdAt : null
     };
 }
 
@@ -2185,6 +2188,7 @@ interface StreamerProfile {
     currentStreamPreviewUrl: string;
     currentVodId?: string | null;
     currentStreamViewers: number | null;
+    currentStreamStartedAt?: string | null;
     twitchUrl: string;
     fetchedAt: number;
 }
@@ -2267,6 +2271,7 @@ interface PublicProfileQueryResult {
         stream?: {
             id: string;
             type: string;
+            createdAt?: string | null;
             title: string | null;
             viewersCount: number | null;
             previewImageURL: string | null;
@@ -2383,6 +2388,7 @@ interface PublicStreamInfo {
     viewers: number | null;
     title: string | null;
     game: string | null;
+    startedAt: string | null;
 }
 
 async function fetchPublicStreamerProfile(login: string): Promise<RefreshOutcome<PublicStreamerProfileResult>> {
@@ -2402,6 +2408,7 @@ async function fetchPublicStreamerProfile(login: string): Promise<RefreshOutcome
                 stream {
                     id
                     type
+                    createdAt
                     title
                     viewersCount
                     previewImageURL(width: 640, height: 360)
@@ -2433,7 +2440,8 @@ async function fetchPublicStreamerProfile(login: string): Promise<RefreshOutcome
         vodId: isPlainObject(s.archiveVideo) && typeof s.archiveVideo.id === 'string' ? s.archiveVideo.id : null,
         viewers: typeof s.viewersCount === 'number' ? s.viewersCount : null,
         title: typeof s.title === 'string' ? s.title : null,
-        game: typeof game?.name === 'string' ? game.name : null
+        game: typeof game?.name === 'string' ? game.name : null,
+        startedAt: typeof s.createdAt === 'string' && Number.isFinite(Date.parse(s.createdAt)) ? s.createdAt : null
     } : null;
     const followers = isPlainObject(user.followers) ? user.followers : null;
     return { status: 'success', value: {
@@ -2483,6 +2491,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
         let currentStreamPreviewRemoteUrl = previousProfile?.currentStreamPreviewUrl ?? '';
         let currentVodId = previousProfile?.currentVodId ?? null;
         let currentStreamViewers = previousProfile?.currentStreamViewers ?? null;
+        let currentStreamStartedAt = previousProfile?.currentStreamStartedAt ?? null;
         let publicLiveResolved = false;
         let hasFreshSource = false;
 
@@ -2504,6 +2513,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
                 currentStreamPreviewRemoteUrl = publicProfile.stream.previewUrl;
                 currentVodId = publicProfile.stream.vodId;
                 currentStreamViewers = publicProfile.stream.viewers;
+                currentStreamStartedAt = publicProfile.stream.startedAt;
             } else {
                 isLive = false;
                 currentTitle = null;
@@ -2511,6 +2521,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
                 currentStreamPreviewRemoteUrl = '';
                 currentVodId = null;
                 currentStreamViewers = null;
+                currentStreamStartedAt = null;
             }
         }
 
@@ -2559,6 +2570,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
                     isLive = live.isLive;
                     currentTitle = live.title || null;
                     currentGame = live.gameName || null;
+                    currentStreamStartedAt = live.isLive ? live.startedAt ?? null : null;
                 }
             } catch { /* best-effort */ }
         }
@@ -2594,6 +2606,7 @@ async function getStreamerProfile(login: string, forceRefresh = false): Promise<
             currentStreamPreviewUrl: livePreviewDataUrl || currentStreamPreviewRemoteUrl,
             currentVodId,
             currentStreamViewers,
+            currentStreamStartedAt,
             twitchUrl: `https://www.twitch.tv/${normalized}`,
             fetchedAt: Date.now()
         };

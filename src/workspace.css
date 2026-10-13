@@ -1665,18 +1665,29 @@ input[type="range"] {
     white-space: nowrap;
 }
 
+.streamer-profile-stats {
+    gap: 8px 18px;
+}
+
 .streamer-profile-stat {
-    min-height: 18px;
-    line-height: 18px;
+    min-height: 20px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--workspace-text);
+    white-space: nowrap;
 }
 
 .streamer-profile-stat strong {
+    font-size: inherit;
     line-height: inherit;
 }
 
 .streamer-profile-stat svg {
     display: block;
-    flex: 0 0 14px;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    opacity: 1;
 }
 
 .vod-bulk-bar .vod-bulk-spacer {

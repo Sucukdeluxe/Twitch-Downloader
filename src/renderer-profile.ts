@@ -4,6 +4,7 @@
 
 let activeProfileRequestId = 0;
 let activeProfileLogin = '';
+let profileTimeTimer: number | undefined;
 const streamerProfileCache = new Map<string, StreamerProfile>();
 const streamerProfileLoads = new Map<string, Promise<StreamerProfile | null>>();
 const liveProfileExpandedByLogin = new Map<string, boolean>();
@@ -43,7 +44,7 @@ function syncStreamerProfileLiveStatus(login: string, isLive: boolean): void {
     const key = login.toLowerCase();
     const profile = streamerProfileCache.get(key);
     if (profile && profile.isLive !== isLive) {
-        const updated = { ...profile, isLive };
+        const updated = { ...profile, isLive, currentStreamStartedAt: null };
         streamerProfileCache.set(key, updated);
         if (activeProfileLogin === key) renderStreamerProfileCard(updated);
     }
@@ -76,6 +77,31 @@ function formatLastStreamAgo(iso: string | null): string {
     return UI_TEXT.profile.agoYears.replace('{n}', String(years));
 }
 
+function getProfileStreamTime(profile: StreamerProfile): { label: string; value: string; title: string } {
+    if (!profile.isLive) return { label: UI_TEXT.profile.lastStream, value: formatLastStreamAgo(profile.lastStreamAt), title: profile.lastStreamAt ? new Date(profile.lastStreamAt).toLocaleString(getIntlLocale()) : '' };
+    const startedAt = Date.parse(profile.currentStreamStartedAt || '');
+    const elapsed = Date.now() - startedAt;
+    if (!Number.isFinite(elapsed) || elapsed < 0) return { label: UI_TEXT.profile.streamStatus, value: UI_TEXT.profile.liveNow, title: '' };
+    const minutes = Math.floor(elapsed / 60000);
+    const hours = Math.floor(minutes / 60);
+    const value = hours > 0 ? `${formatUiNumber(hours)} h${minutes % 60 ? ` ${formatUiNumber(minutes % 60)} min` : ''}` : minutes > 0 ? `${formatUiNumber(minutes)} min` : '< 1 min';
+    return { label: UI_TEXT.profile.liveSince, value, title: new Date(startedAt).toLocaleString(getIntlLocale()) };
+}
+
+function updateProfileStreamTime(profile: StreamerProfile): void {
+    const stat = document.querySelector<HTMLElement>('.streamer-profile-time');
+    if (!stat) return;
+    const time = getProfileStreamTime(profile);
+    stat.title = time.title;
+    stat.querySelector('.streamer-profile-time-label')!.textContent = time.label + ':';
+    stat.querySelector('strong')!.textContent = time.value;
+}
+
+function clearProfileTimeTimer(): void {
+    if (profileTimeTimer !== undefined) window.clearInterval(profileTimeTimer);
+    profileTimeTimer = undefined;
+}
+
 function streamerProfilesMatch(left: StreamerProfile, right: StreamerProfile): boolean {
     return left.login === right.login
         && left.displayName === right.displayName
@@ -92,10 +118,12 @@ function streamerProfilesMatch(left: StreamerProfile, right: StreamerProfile): b
         && left.currentVodId === right.currentVodId
         && left.currentStreamPreviewUrl === right.currentStreamPreviewUrl
         && left.currentStreamViewers === right.currentStreamViewers
+        && left.currentStreamStartedAt === right.currentStreamStartedAt
         && left.twitchUrl === right.twitchUrl;
 }
 
 function hideStreamerProfileHeader(): void {
+    clearProfileTimeTimer();
     activeProfileRequestId += 1;
     activeProfileLogin = '';
     const el = document.getElementById('streamerProfileHeader');
@@ -105,6 +133,7 @@ function hideStreamerProfileHeader(): void {
 }
 
 function renderStreamerProfileSkeleton(login: string): void {
+    clearProfileTimeTimer();
     const el = document.getElementById('streamerProfileHeader');
     if (!el) return;
     el.classList.remove('is-live', 'is-hidden');
@@ -129,7 +158,7 @@ function renderStreamerProfileSkeleton(login: string): void {
 function renderStreamerProfileCard(p: StreamerProfile): void {
     const statusReader = (window as unknown as { getStreamerLiveVodStatus?: (login: string) => { isLive: boolean } | undefined }).getStreamerLiveVodStatus;
     const status = statusReader?.(p.login);
-    if (status) p = { ...p, isLive: status.isLive };
+    if (status && p.isLive !== status.isLive) p = { ...p, isLive: status.isLive, currentStreamStartedAt: null };
     const expanded = isLiveProfileExpanded(p.login);
     const focusedId = document.activeElement?.id;
     const el = document.getElementById('streamerProfileHeader');
@@ -162,10 +191,11 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
             <strong>${escapeHtml(formatUiNumber(p.vodCount))}</strong> ${escapeHtml(UI_TEXT.profile.vods)}
         </div>`;
+    const streamTime = getProfileStreamTime(p);
     const lastStreamStat = `
-        <div class="streamer-profile-stat" title="${p.lastStreamAt ? escapeHtml(new Date(p.lastStreamAt).toLocaleString()) : ''}">
+        <div class="streamer-profile-stat streamer-profile-time" title="${escapeHtml(streamTime.title)}">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-            ${escapeHtml(UI_TEXT.profile.lastStream)}: <strong>${escapeHtml(formatLastStreamAgo(p.lastStreamAt))}</strong>
+            <span class="streamer-profile-time-label">${escapeHtml(streamTime.label)}:</span><strong>${escapeHtml(streamTime.value)}</strong>
         </div>`;
 
     // Banner-as-background — set inline so the URL stays per-streamer.
@@ -231,6 +261,8 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
         ${liveCard}
     `);
     if (focusedId === 'streamerProfileLiveToggle' || focusedId === 'streamerProfileLiveRecord') document.getElementById(focusedId)?.focus({ preventScroll: true });
+    clearProfileTimeTimer();
+    profileTimeTimer = window.setInterval(() => updateProfileStreamTime(p), 60000);
 }
 
 function onProfileLivePreviewError(img: HTMLImageElement): void {
