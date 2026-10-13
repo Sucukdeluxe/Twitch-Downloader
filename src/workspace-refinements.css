@@ -586,6 +586,25 @@
     width: 100%;
 }
 
+#vodsTab.active:has(> #vodGrid > .empty-state) {
+    display: flex;
+    flex-direction: column;
+}
+
+#vodsTab.active:has(> #vodGrid > .empty-state) > :not(#vodGrid) {
+    flex-shrink: 0;
+}
+
+#vodsTab.active:has(> #vodGrid > .empty-state) > #vodGrid {
+    flex: 1 0 auto;
+    min-height: 0;
+}
+
+#vodsTab.active > #vodGrid > .empty-state {
+    min-height: 0;
+    padding: 24px;
+}
+
 #settingsTab .settings-card h3 {
     font-size: 18px;
     line-height: 24px;
