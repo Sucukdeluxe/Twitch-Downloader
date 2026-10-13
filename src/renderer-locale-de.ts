@@ -495,7 +495,7 @@ const UI_TEXT_DE = {
         updateProgressAria: 'Update-Download-Fortschritt'
     },
     vods: {
-        liveBadge: 'Live',
+        liveBadge: 'LIVE',
         liveNowTooltip: 'Dieses VOD wird gerade live aufgezeichnet',
         selectAriaLabel: 'VOD für Bulk-Aktion auswählen',
         noStreamersTitle: 'Keine Streamer',

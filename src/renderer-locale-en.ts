@@ -495,7 +495,7 @@ const UI_TEXT_EN = {
         updateProgressAria: 'Update download progress'
     },
     vods: {
-        liveBadge: 'Live',
+        liveBadge: 'LIVE',
         liveNowTooltip: 'This VOD is currently live',
         selectAriaLabel: 'Select VOD for bulk action',
         noStreamersTitle: 'No streamers',
