@@ -1,3 +1,4 @@
+import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
 import { normalizeAutoVodRules, normalizeAutoVodRule, evaluateAutoVodRule, type AutoVodRules } from './main/domain/auto-vod-rules';
@@ -4007,10 +4008,6 @@ async function downloadVODPart(
     itemId: string,
     partNum: number,
     totalParts: number,
-    /** Erwartete Dauer in Sekunden fuer den Progress-Estimate. Wenn endTime
-        gesetzt ist, ueberschrieben aus dort. Wenn startTime und endTime null
-        sind (Full-VOD), kann Caller hier die VOD-Gesamtdauer reingeben,
-        damit der Bar nicht in indeterminate haengt. 0 = unknown. */
     expectedTotalSec: number = 0,
     quality?: string
 ): Promise<DownloadResult> {
@@ -4026,14 +4023,7 @@ async function downloadVODPart(
         const args = [...streamlinkCmd.prefixArgs, ...TWITCH_VIDEO_CODEC_ARGS, url, getStreamlinkStreamArg(quality), '--stdout'];
         if (directSource) {
             args.length = 0;
-            args.push(
-                '-hide_banner', '-loglevel', 'error',
-                ...(startTime ? ['-ss', startTime] : []),
-                '-i', directSource,
-                '-map', '0:v:0', '-map', '0:a?', '-c', 'copy',
-                ...(endTime ? ['-t', endTime] : []),
-                '-f', 'mpegts', 'pipe:1',
-            );
+            args.push(...buildVodSourceDownloadArgs(directSource, startTime, endTime, expectedTotalSec));
         }
         if (!directSource && config.streamlink_disable_ads !== false) {
             // Skips Twitch mid-roll ads which would otherwise be embedded
@@ -4053,7 +4043,8 @@ async function downloadVODPart(
         if (!directSource) args.push('--retry-max', '2');
         let lastErrorLine = '';
         const stderrBuffer: string[] = [];
-        const expectedDurationSeconds = parseClockDurationSeconds(endTime);
+        const expectedDurationSeconds = parseClockDurationSeconds(endTime)
+            ?? (directSource && expectedTotalSec > 0 ? expectedTotalSec : null);
         let lastStreamlinkPercent = 0;
 
         if (!directSource && startTime) {
