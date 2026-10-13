@@ -522,7 +522,8 @@ interface ApiBridge {
     getVodTimeline(request: { id: string; url: string }): Promise<import('./main/domain/vod-timeline').VodTimeline | null>;
     closeVodPlayback(id: string): Promise<void>;
     getLiveStatusSnapshot(): Promise<Record<string, boolean>>;
-    onLiveStatusBatchUpdate(callback: (info: { changes: Array<{ login: string; isLive: boolean }> }) => void): void;
+    getLiveVodStatusSnapshot(): Promise<Record<string, import('./types').LiveVodStatus>>;
+    onLiveStatusBatchUpdate(callback: (info: { changes: Array<import('./types').LiveVodStatus & { login: string }> }) => void): void;
     searchArchive(filter: {
         query?: string;
         type?: 'all' | 'live' | 'vod' | 'clip' | 'chat' | 'events';

@@ -229,7 +229,8 @@ contextBridge.exposeInMainWorld('api', {
     getStreamerDisplayNames: (logins: string[]) => ipcRenderer.invoke('get-streamer-display-names', logins),
     getVodStoryboard: (vodId: string) => ipcRenderer.invoke('get-vod-storyboard', vodId),
     getLiveStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot'),
-    onLiveStatusBatchUpdate: (callback: (info: { changes: Array<{ login: string; isLive: boolean }> }) => void) => {
+    getLiveVodStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot', true),
+    onLiveStatusBatchUpdate: (callback: (info: { changes: Array<import('./types').LiveVodStatus & { login: string }> }) => void) => {
         ipcRenderer.on('live-status-batch-update', (_, info) => callback(info));
     },
     searchArchive: (filter: Record<string, unknown>) => ipcRenderer.invoke('search-archive', filter),

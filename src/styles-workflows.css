@@ -833,23 +833,60 @@ input[type="checkbox"].vod-select-checkbox {
     box-shadow: 0 0 0 2px #9146FF, 0 8px 25px rgba(145, 70, 255, 0.25);
 }
 
-.vod-downloaded-badge {
+.vod-status-badges {
     position: absolute;
     top: 8px;
     right: 8px;
-    background: rgba(0, 200, 83, 0.92);
-    color: white;
-    border-radius: 50%;
-    width: 22px;
-    height: 22px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
+    gap: 6px;
     z-index: 2;
     pointer-events: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.vod-status-badges:empty {
+    display: none;
+}
+
+.vod-live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 22px;
+    padding: 2px 7px;
+    box-sizing: border-box;
+    border-radius: 4px;
+    background: rgba(22, 22, 22, 0.9);
+    color: #ff6464;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: nowrap;
+}
+
+.vod-live-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.vod-downloaded-badge {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.vod-downloaded-badge img {
+    display: block;
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 
 .vod-card.already-downloaded .vod-thumbnail {

@@ -11,6 +11,7 @@ const rendererDirectory = resolve(outputDirectory, 'renderer');
 const sourceHtml = await readFile(resolve(sourceDirectory, 'index.html'), 'utf8');
 const assets = [...sourceHtml.matchAll(/(?:href|src)="((?:\.\/|\.\.\/dist\/)[^"/]+\.(?:css|js))"/g)];
 await mkdir(rendererDirectory, { recursive: true });
+await publishBuildFile(resolve(rendererDirectory, 'vod-downloaded-check.webp'), await readFile(resolve(sourceDirectory, 'vod-downloaded-check.webp')));
 let rendererHtml = sourceHtml.replaceAll('../build/', '../../build/');
 for (const [, reference] of assets) {
     const file = resolve(sourceDirectory, reference);

@@ -76,7 +76,7 @@ import {
     DEFAULT_PERFORMANCE_MODE,
     type PerformanceMode,
 } from './main/domain/config-normalize';
-import { CustomClip, MergeGroupItem, MergeGroup, QueueItem, DownloadProgress, DownloadResult, AutomationScanResult } from './types';
+import { CustomClip, MergeGroupItem, MergeGroup, QueueItem, DownloadProgress, DownloadResult, AutomationScanResult, LiveVodStatus } from './types';
 import {
     buildVodPreviewFrameUrls,
     parseGraphqlUser,
@@ -4567,13 +4567,14 @@ async function runAutoVodPoll(): Promise<AutomationScanResult> {
 // poller — that one only watches a small subset and needs title/game,
 // this one just needs the boolean and covers everyone.
 const liveStatusByLogin = new Map<string, boolean>();
+const liveVodIdByLogin = new Map<string, string>();
 let liveStatusPollTimer: NodeJS.Timeout | null = null;
 let liveStatusPollInFlight = false;
 const LIVE_STATUS_POLL_INTERVAL_MS = 60_000;
 const LIVE_STATUS_BATCH_CHUNK_SIZE = 50;
 
-async function fetchLiveStatusBatch(logins: string[]): Promise<Map<string, boolean>> {
-    const result = new Map<string, boolean>();
+async function fetchLiveStatusBatch(logins: string[]): Promise<Map<string, LiveVodStatus>> {
+    const result = new Map<string, LiveVodStatus>();
     if (logins.length === 0) return result;
 
     for (let i = 0; i < logins.length; i += LIVE_STATUS_BATCH_CHUNK_SIZE) {
@@ -4585,18 +4586,22 @@ async function fetchLiveStatusBatch(logins: string[]): Promise<Map<string, boole
             const varName = `l${idx}`;
             vars[varName] = login;
             varDecls.push(`$${varName}:String!`);
-            aliases.push(`u${idx}:user(login:$${varName}){login stream{type}}`);
+            aliases.push(`u${idx}:user(login:$${varName}){login stream{type archiveVideo{id}}}`);
         });
         const query = `query(${varDecls.join(',')}){${aliases.join(' ')}}`;
         try {
-            const data = await fetchPublicTwitchGql<Record<string, { login: string; stream: { type: string } | null } | null>>(
+            const data = await fetchPublicTwitchGql<Record<string, { login: string; stream: { type: string; archiveVideo?: { id?: string } | null } | null } | null>>(
                 query, vars
             );
             if (!data) continue;
             for (const key of Object.keys(data)) {
                 const user = data[key];
                 if (!user || !user.login) continue;
-                result.set(normalizeLogin(user.login), user.stream?.type === 'live');
+                const isLive = user.stream?.type === 'live';
+                result.set(normalizeLogin(user.login), {
+                    isLive,
+                    vodId: isLive && typeof user.stream?.archiveVideo?.id === 'string' ? user.stream.archiveVideo.id : null,
+                });
             }
         } catch (e) {
             appendDebugLog('live-status-batch-failed', { chunkStart: i, error: String(e) });
@@ -4613,7 +4618,7 @@ async function runLiveStatusBatchPoll(): Promise<void> {
             .map((s) => normalizeLogin(s))
             .filter((s): s is string => Boolean(s));
 
-        const changes: Array<{ login: string; isLive: boolean }> = [];
+        const changes: Array<LiveVodStatus & { login: string }> = [];
         const watchedSet = new Set(logins);
 
         // Always run the eviction pass FIRST — entries left over from a
@@ -4625,16 +4630,20 @@ async function runLiveStatusBatchPoll(): Promise<void> {
         for (const oldLogin of Array.from(liveStatusByLogin.keys())) {
             if (!watchedSet.has(oldLogin)) {
                 liveStatusByLogin.delete(oldLogin);
-                changes.push({ login: oldLogin, isLive: false });
+                liveVodIdByLogin.delete(oldLogin);
+                changes.push({ login: oldLogin, isLive: false, vodId: null });
             }
         }
 
         if (logins.length > 0) {
             const fresh = await fetchLiveStatusBatch(logins);
-            for (const [login, isLive] of fresh.entries()) {
-                const prev = liveStatusByLogin.get(login);
-                if (prev !== isLive) changes.push({ login, isLive });
-                liveStatusByLogin.set(login, isLive);
+            for (const [login, status] of fresh.entries()) {
+                if (liveStatusByLogin.get(login) !== status.isLive || (liveVodIdByLogin.get(login) ?? null) !== status.vodId) {
+                    changes.push({ login, ...status });
+                }
+                liveStatusByLogin.set(login, status.isLive);
+                if (status.vodId) liveVodIdByLogin.set(login, status.vodId);
+                else liveVodIdByLogin.delete(login);
             }
         }
 
@@ -8133,9 +8142,11 @@ ipcMain.handle('get-vod-storyboard', async (_, vodId: string): Promise<VodStoryb
     return await getVodStoryboard(vodId);
 });
 
-ipcMain.handle('get-live-status-snapshot', (): Record<string, boolean> => {
-    const snap: Record<string, boolean> = {};
-    for (const [k, v] of liveStatusByLogin.entries()) snap[k] = v;
+ipcMain.handle('get-live-status-snapshot', (_, includeVodIds = false): Record<string, boolean | LiveVodStatus> => {
+    const snap: Record<string, boolean | LiveVodStatus> = {};
+    for (const [login, isLive] of liveStatusByLogin.entries()) {
+        snap[login] = includeVodIds ? { isLive, vodId: liveVodIdByLogin.get(login) ?? null } : isLive;
+    }
     return snap;
 });
 

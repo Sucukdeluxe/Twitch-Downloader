@@ -1,3 +1,8 @@
+export interface LiveVodStatus {
+    isLive: boolean;
+    vodId: string | null;
+}
+
 export interface CustomClip {
     startSec: number;
     durationSec: number;
