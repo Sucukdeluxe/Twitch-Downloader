@@ -228,6 +228,7 @@ contextBridge.exposeInMainWorld('api', {
     getStreamerProfile: (login: string, forceRefresh?: boolean) => ipcRenderer.invoke('get-streamer-profile', login, forceRefresh),
     getStreamerDisplayNames: (logins: string[]) => ipcRenderer.invoke('get-streamer-display-names', logins),
     getVodStoryboard: (vodId: string) => ipcRenderer.invoke('get-vod-storyboard', vodId),
+    searchTwitchChannels: (query: string) => ipcRenderer.invoke('search-twitch-channels', query),
     getLiveStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot'),
     getLiveVodStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot', true),
     onLiveStatusBatchUpdate: (callback: (info: { changes: Array<import('./types').LiveVodStatus & { login: string }> }) => void) => {

@@ -427,6 +427,24 @@ const UI_TEXT_DE = {
         },
         eventRecordingResume: 'Aufnahme fortgesetzt - Part {part} startet'
     },
+    streamerSearch: {
+        "title": "Streamer hinzufügen",
+        "description": "Twitch-Kanal suchen und zur Streamerliste hinzufügen.",
+        "placeholder": "Kanalname oder Twitch-Link",
+        "label": "Twitch-Kanal suchen",
+        "results": "Suchergebnisse von Twitch",
+        "empty": "Keine Kanäle gefunden.",
+        "idle": "Kanalname oder Twitch-Link eingeben.",
+        "loading": "Kanäle werden gesucht …",
+        "unavailable": "Suche fehlgeschlagen. Bitte erneut versuchen.",
+        "invalid": "Bitte einen Twitch-Kanal oder Kanallink eingeben.",
+        "add": "Streamer hinzufügen",
+        "added": "Hinzugefügt",
+        "adding": "Streamer wird hinzugefügt …",
+        "close": "Schließen",
+        "clear": "Suche leeren",
+        "failed": "Streamer konnte nicht hinzugefügt werden."
+    },
     profile: {
         showLive: 'Live-Details anzeigen',
         hideLive: 'Live-Details ausblenden',

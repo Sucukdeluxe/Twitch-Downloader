@@ -792,7 +792,7 @@ function renderStreamers(): void {
         empty.textContent = UI_TEXT.streamers.sidebarEmpty;
         list.appendChild(empty);
         const counter = document.getElementById('streamerSectionCounter');
-        if (counter) counter.textContent = '';
+        if (counter) counter.textContent = '0';
         const bulkBtn = document.getElementById('btnStreamerBulkRemove') as HTMLButtonElement | null;
         if (bulkBtn) bulkBtn.classList.add('is-hidden');
         scheduleStreamerActiveIndicatorSync();
@@ -1040,36 +1040,21 @@ function initStreamerDragDrop(): void {
     });
 }
 
-async function addStreamer(): Promise<void> {
-    if (streamerAddInFlight) return;
+async function addStreamer(selectedLogin?: string): Promise<boolean> {
+    if (streamerAddInFlight) return false;
     const input = byId<HTMLInputElement>('newStreamer');
-    const name = input.value.trim().toLowerCase();
-    if (!name) {
-        return;
-    }
-
-    if (!/^[a-zA-Z0-9_]{1,25}$/.test(name)) {
-        showAppToast(UI_TEXT.static.streamerInvalid, 'warn');
-        return;
-    }
-
-    if ((config.streamers ?? []).includes(name)) {
-        return;
-    }
-
+    const name = (selectedLogin ?? input.value).trim().toLowerCase();
+    if (!/^[a-zA-Z0-9_]{1,25}$/.test(name)) return false;
+    if ((config.streamers ?? []).includes(name)) return true;
     streamerAddInFlight = true;
-    const button = byId<HTMLButtonElement>('btnAddStreamer');
-    button.disabled = true;
     try {
-        if (!await persistStreamerList(current => current.includes(name) ? current : [...current, name])) return;
-        if (input.value.trim().toLowerCase() === name) input.value = '';
+        if (!await persistStreamerList(current => current.includes(name) ? current : [...current, name])) return false;
     } finally {
         streamerAddInFlight = false;
-        button.disabled = false;
     }
     void hydrateStreamerDisplayNames();
-    try { await selectStreamer(name); }
-    catch { showAppToast(currentLanguage === 'de' ? 'VODs konnten nicht geladen werden.' : 'Could not load VODs.', 'warn'); }
+    void selectStreamer(name).catch(() => showAppToast(currentLanguage === 'de' ? 'VODs konnten nicht geladen werden.' : 'Could not load VODs.', 'warn'));
+    return true;
 }
 
 async function removeStreamer(name: string): Promise<void> {
@@ -1861,12 +1846,21 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
     renderChunk(0);
 }
 
-async function refreshVODs(): Promise<void> {
-    if (!currentStreamer) {
-        return;
-    }
+let vodRefreshInFlight = false;
 
-    await selectStreamer(currentStreamer, true);
+async function refreshVODs(): Promise<void> {
+    if (!currentStreamer || vodRefreshInFlight) return;
+    vodRefreshInFlight = true;
+    syncVodRefreshButton();
+    try { await selectStreamer(currentStreamer, true); }
+    finally { vodRefreshInFlight = false; syncVodRefreshButton(); }
+}
+
+function syncVodRefreshButton(): void {
+    const button = document.getElementById('toolbarRefreshVodsBtn') as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = vodRefreshInFlight || !currentStreamer;
+    button.classList.toggle('is-loading', vodRefreshInFlight);
 }
 
 (window as unknown as {

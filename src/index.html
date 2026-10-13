@@ -284,7 +284,7 @@
                         <span class="section-title-label">
                             <span id="streamerSectionTitleText">Streamer</span>
                         </span>
-                        <span id="streamerSectionCounter" class="streamer-section-counter"></span>
+                        <span class="streamer-heading-actions"><button id="btnAddStreamer" class="streamer-add-button" type="button" onclick="openStreamerSearchDialog()" aria-label="Streamer hinzufügen" title="Streamer hinzufügen"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button><span id="streamerSectionCounter" class="streamer-section-counter"></span></span>
                         <button id="btnStreamerBulkRemove" class="btn-close is-hidden" type="button" onclick="bulkRemoveStreamers()" title="Bulk remove">x</button>
                     </div>
                     <input type="text" id="streamerListFilter" class="filter-input compact is-hidden" placeholder="Filter..." oninput="onStreamerListFilterChange()">
@@ -367,11 +367,6 @@
 
         <main class="main workspace-main">
             <header class="header workspace-toolbar">
-                <div class="toolbar-context" data-toolbar-for="vods">
-                    <div class="header-search workspace-search">
-                        <input type="text" id="newStreamer" placeholder="Streamer hinzufügen…" aria-label="Streamer hinzufügen" onkeydown="if(event.key==='Enter')addStreamer()">
-                    </div>
-                </div>
                 <div class="toolbar-context" data-toolbar-for="clips" hidden>
                     <button type="button" class="toolbar-primary" onclick="focusWorkspaceTarget('clipUrl')"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span data-label-source="clipsHeading">Clip</span></button>
                     <button type="button" class="toolbar-icon-button" id="toolbarClipDownloadBtn" onclick="downloadClip()" aria-label="Download clip" title="Download clip"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 20h16"></path></svg></button>
@@ -400,11 +395,6 @@
                     <button type="button" class="toolbar-icon-button" id="toolbarCheckUpdateBtn" onclick="checkUpdate()" aria-label="Check for updates" title="Check for updates"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 7M5.5 15A7 7 0 0 0 18 17"></path></svg></button>
                 </div>
                 <h1 class="workspace-title" id="pageTitle">VODs</h1>
-                <div class="header-actions workspace-toolbar-actions" data-toolbar-search-for="vods">
-                    <button id="btnAddStreamer" class="toolbar-add-streamer" type="button" onclick="addStreamer()"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Streamer</span></button>
-                    <button type="button" class="toolbar-icon-button" id="toolbarRefreshVodsBtn" onclick="refreshVODs()" aria-label="Refresh VODs" title="Refresh VODs"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 7M5.5 15A7 7 0 0 0 18 17"></path></svg></button>
-                    <span id="refreshText" class="sr-only">Aktualisieren</span>
-                </div>
             </header>
 
             <div class="content">
@@ -1128,6 +1118,21 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
         </div>
     </div>
 
+    <dialog id="streamerSearchDialog" class="streamer-search-dialog" aria-labelledby="streamerSearchTitle" aria-describedby="streamerSearchDescription">
+        <header class="streamer-search-header">
+            <span class="streamer-search-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 3h17v12l-5 5h-4l-3 3v-3H4V3zM8 7v6m5-6v6"/></svg></span>
+            <div><h2 id="streamerSearchTitle">Streamer hinzufügen</h2><p id="streamerSearchDescription">Twitch-Kanal suchen und zur Streamerliste hinzufügen.</p></div>
+            <button type="button" class="streamer-search-close" onclick="closeStreamerSearchDialog()" aria-label="Schließen"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        </header>
+        <div class="streamer-search-field">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+            <input id="newStreamer" type="search" autocomplete="off" spellcheck="false" maxlength="100" placeholder="Kanalname oder Twitch-Link" aria-label="Twitch-Kanal suchen" oninput="scheduleStreamerSearch()" onkeydown="handleStreamerSearchKey(event)">
+            <button type="button" class="streamer-search-clear" onclick="clearStreamerSearch()" aria-label="Suche leeren"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+        </div>
+        <p id="streamerSearchStatus" class="streamer-search-status" role="status" aria-live="polite"></p>
+        <div id="streamerSearchResults" class="streamer-search-results"></div>
+    </dialog>
+
     <script defer src="../dist/renderer-locale-de.js"></script>
     <script defer src="../dist/renderer-locale-en.js"></script>
     <script defer src="../dist/renderer-texts.js"></script>
@@ -1140,6 +1145,7 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
     <script defer src="../dist/renderer-stats.js"></script>
     <script defer src="../dist/renderer-archive.js"></script>
     <script defer src="../dist/renderer-profile.js"></script>
+    <script defer src="../dist/renderer-streamer-search.js"></script>
     <script defer src="../dist/renderer-vod-hover.js"></script>
     <script defer src="../dist/renderer-command-palette.js"></script>
     <script defer src="../dist/renderer-cutter.js"></script>

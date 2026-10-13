@@ -425,8 +425,8 @@ function applyLanguageToStaticUI(): void {
     setText('updateChangelogLabel', UI_TEXT.updates.changelogLabel);
     setText('updateChangelogToggle', UI_TEXT.updates.showChangelog);
     setText('updateChangelogEmpty', UI_TEXT.updates.noChangelog);
-    setPlaceholder('newStreamer', UI_TEXT.static.streamerPlaceholder);
-    setAriaLabel('newStreamer', UI_TEXT.static.streamerAddAriaLabel);
+    setPlaceholder('newStreamer', UI_TEXT.streamerSearch.placeholder);
+    setAriaLabel('newStreamer', UI_TEXT.streamerSearch.label);
     setPlaceholder('vodFilterInput', UI_TEXT.vods.filterPlaceholder);
     setAriaLabel('vodFilterInput', UI_TEXT.vods.filterAria);
     setTitle('vodFilterClearBtn', UI_TEXT.vods.filterClearTitle);

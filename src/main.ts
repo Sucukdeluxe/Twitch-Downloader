@@ -1,3 +1,4 @@
+import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
@@ -7284,6 +7285,9 @@ ipcMain.handle('login', async (event) => {
     if (!isTrustedRendererEvent(event)) return false;
     return (await ensureTwitchAuth(true)) !== null;
 });
+
+const searchTwitchChannels = createTwitchChannelSearch(query => requestTwitchChannelSearch(axios, query));
+ipcMain.handle('search-twitch-channels', (_, query: unknown) => searchTwitchChannels(query));
 
 ipcMain.handle('get-user-id', async (_, username: string) => {
     return await getUserId(username);

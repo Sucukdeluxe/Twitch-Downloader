@@ -427,6 +427,24 @@ const UI_TEXT_EN = {
         },
         eventRecordingResume: 'Recording resumed — starting part {part}'
     },
+    streamerSearch: {
+        "title": "Add streamer",
+        "description": "Find a Twitch channel and add it to your streamer list.",
+        "placeholder": "Channel name or Twitch link",
+        "label": "Find Twitch channel",
+        "results": "Search results from Twitch",
+        "empty": "No channels found.",
+        "idle": "Enter a channel name or Twitch link.",
+        "loading": "Searching channels …",
+        "unavailable": "Search failed. Please try again.",
+        "invalid": "Enter a Twitch channel or channel link.",
+        "add": "Add streamer",
+        "added": "Added",
+        "adding": "Adding streamer …",
+        "close": "Close",
+        "clear": "Clear search",
+        "failed": "Could not add streamer."
+    },
     profile: {
         showLive: 'Show live details',
         hideLive: 'Hide live details',
