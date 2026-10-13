@@ -447,7 +447,6 @@ function applyLanguageToStaticUI(): void {
     setTitle('toolbarCheckUpdateBtn', UI_TEXT.static.checkUpdates);
     setText('autoVodRulesBtn', currentLanguage === 'de' ? 'Kanalregeln' : 'Channel rules');
     setText('vodMarkersButton', currentLanguage === 'de' ? 'Markierungen' : 'Markers');
-    setText('vodLibraryButton', RendererVodLibrary.groupName() || (currentLanguage === 'de' ? 'Ansichten' : 'Views'));
     setText('vodSortLabel', UI_TEXT.vods.sortLabel);
     if (typeof refreshVodSortSelectLabels === 'function') {
         refreshVodSortSelectLabels();

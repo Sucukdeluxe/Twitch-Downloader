@@ -1689,7 +1689,7 @@ body :is(select, .select-compact) {
     min-width: 0;
 }
 
-.vod-filter-row :is(.vod-sort-label, .vod-hide-downloaded, #vodSortSelect, .vod-filter-count, #vodLibraryButton) {
+.vod-filter-row :is(.vod-sort-label, .vod-hide-downloaded, #vodSortSelect, .vod-filter-count) {
     font-size: 14px;
 }
 
@@ -1709,20 +1709,7 @@ body :is(select, .select-compact) {
     border-color: var(--workspace-success);
 }
 
-.vod-filter-row #vodLibraryButton {
-    min-height: 38px;
-    padding: 8px 12px;
-    color: var(--workspace-text);
-    background: var(--workspace-panel);
-    border: 1px solid var(--workspace-border);
-    border-radius: 6px;
-    line-height: 20px;
-    white-space: nowrap;
-    transform: none;
-    box-shadow: none;
-}
-
-.vod-filter-row :is(.vod-hide-downloaded, #vodLibraryButton):hover {
+.vod-filter-row .vod-hide-downloaded:hover {
     background: var(--workspace-control);
     transform: none;
 }
