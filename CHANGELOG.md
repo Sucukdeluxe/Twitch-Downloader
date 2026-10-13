@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.0.44 - 2026-10-13
+
+This update improves downloads from ongoing public VODs, makes download and MP4-writing progress clearer, and adds video thumbnails to the archive.
+
+### Downloads and MP4 output
+
+- Improve 1440p/HEVC downloads from ongoing public Twitch VODs, including anonymous access where Twitch makes the VOD available publicly.
+- Respect Full VOD mode when downloading a selected excerpt. An inactive part-length setting no longer splits the output into unintended parts.
+- Calculate progress from the actual requested video range and distinguish downloading, writing, optimizing and verifying the MP4 file.
+- Show measured MP4-writing progress, video time, written size, speed and remaining time. Optimization and verification show their own status and elapsed time when a reliable percentage is unavailable.
+
+### Archive
+
+- Add local video thumbnails to archive rows, with a neutral fallback for unavailable or unreadable files.
+- Load thumbnails only near the visible rows and cache them between sessions. Changed videos receive a new preview, while background work is limited to keep browsing responsive.
+- Remove repeated blocking file lookups and show cached archive results while the index refreshes in the background.
+
+### Streamers and live VODs
+
+- Move Add streamer into the sidebar and provide a searchable Twitch-channel dialog with profile images. Close the dialog after a successful addition without rebuilding or flickering the results.
+- Place Refresh VODs next to the channel actions and keep the button stationary when clicked.
+- Add collapsible live details beside Open on Twitch. New channels start collapsed; transitions, contrast and alignment have been refined.
+- Use the current live preview while an ongoing VOD has no cover, then switch to the finished VOD cover when available.
+- Show uppercase LIVE badges with a red status dot, readable recording controls and improved profile statistics.
+- Show the current stream's running time while live instead of presenting it as the last completed stream.
+
+### Queue and filtering
+
+- Rework download details with readable channel, copyable video URL, actual excerpt duration, date, quality and adjacent file actions.
+- Align saved/running status icons and group progress, file details and transfer totals into clearer sections.
+- Remove the artificial asterisk from trimmed-download titles.
+- Group VOD search, filters and sorting into a consistent bordered toolbar with responsive spacing.
+- Center empty VOD states in the available content area.
+
+### Development builds
+
+- Apply supported interface and backend changes automatically while preserving ongoing work and deferring disruptive refreshes when necessary.
+
+### Verification
+
+- Run the complete local release checks and headless Chromium/WebKit interface regressions before packaging.
+- Verify the packaged Windows application in an isolated, hidden instance, including real thumbnail extraction and restricted archive file access.
+
 ## 1.0.43 - 2026-10-13
 
 This patch simplifies VOD trimming to whole seconds and cleans up two controls.

@@ -36,7 +36,7 @@ if (fingerprint !== await releaseFingerprint(root)) throw new Error('Sources cha
 const { listPackage, extractFile } = await import('@electron/asar');
 const archive = resolve(root, 'release/win-unpacked/resources/app.asar');
 const entries = listPackage(archive).map(name => name.replaceAll('\\', '/').replace(/^\//, ''));
-const actual = entries.filter(name => name.startsWith('dist/') && /\.(js|css|html)$/.test(name)).sort();
+const actual = entries.filter(name => name.startsWith('dist/') && /\.(js|css|html|webp)$/.test(name)).sort();
 if (JSON.stringify(actual) !== JSON.stringify(runtime)) throw new Error('Package runtime file list differs from the verified build');
 for (const name of runtime) if (!extractFile(archive, normalize(name)).equals(await readFile(resolve(root, name)))) throw new Error('Package file mismatch: ' + name);
 if (JSON.parse(extractFile(archive, 'package.json')).version !== pkg.version) throw new Error('Package version mismatch');

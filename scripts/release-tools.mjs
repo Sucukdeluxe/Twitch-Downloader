@@ -14,8 +14,8 @@ export async function runtimeFiles(root) {
             if (entry.isSymbolicLink()) throw new Error('Unexpected runtime symlink');
             if (entry.isDirectory()) { await visit(full); continue; }
             const name = relative(root, full).replaceAll('\\', '/');
-            if (!/\.(js|css|html)$/.test(name) || /\.(test|spec)\./.test(name)) continue;
-            if (name.startsWith('dist/renderer/') && name !== 'dist/renderer/index.html' && !assets.has(name.slice('dist/renderer/'.length))) continue;
+            if (!/\.(js|css|html|webp)$/.test(name) || /\.(test|spec)\./.test(name)) continue;
+            if (name.startsWith('dist/renderer/') && name !== 'dist/renderer/index.html' && !name.endsWith('.webp') && !assets.has(name.slice('dist/renderer/'.length))) continue;
             if (['dist/main/dev-executable.js', 'dist/main/index.js', 'dist/types.js'].includes(name)) continue;
             files.push(name);
         }
