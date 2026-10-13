@@ -2037,6 +2037,8 @@ interface ClipBatchItem {
 interface ClipBatchRow {
     row: HTMLLIElement;
     number: HTMLSpanElement;
+    thumb: HTMLSpanElement;
+    thumbImg: HTMLImageElement;
     label: HTMLSpanElement;
     streamer: HTMLSpanElement;
     status: HTMLSpanElement;
@@ -2052,6 +2054,8 @@ let clipBatchItems: ClipBatchItem[] = [];
 let clipBatchLimitExceeded = false;
 let clipNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 const clipMetadataRequests = new Set<string>();
+const clipThumbnails = new Map<string, string>();
+const clipThumbnailsChecked = new Set<string>();
 const clipBatchRows = new Map<string, ClipBatchRow>();
 let clipBatchRenderFrame: number | null = null;
 
@@ -2237,15 +2241,19 @@ function showClipNotice(message: string, error = false): void {
     if (message) clipNoticeTimer = setTimeout(() => notice.classList.remove('visible'), 5000);
 }
 
-function completeClipMetadata(url: string, info: { title: string; broadcaster_name: string } | null | undefined): void {
+function completeClipMetadata(url: string, info: { title: string; broadcaster_name: string; thumbnail_url?: string } | null | undefined): void {
     clipMetadataRequests.delete(url);
+    clipThumbnailsChecked.add(url);
     const item = clipBatchItems.find(candidate => candidate.url === url && candidate.state !== 'invalid');
     if (item) {
         if (info && typeof info.title === 'string' && typeof info.broadcaster_name === 'string') {
             item.label = info.title.trim();
             item.streamer = info.broadcaster_name.trim();
             item.metadataState = 'ready';
-        } else {
+            if (typeof info.thumbnail_url === 'string' && info.thumbnail_url.trim()) {
+                clipThumbnails.set(url, info.thumbnail_url.trim());
+            }
+        } else if (item.metadataState !== 'ready') {
             item.metadataState = info === null ? 'missing' : 'unavailable';
             if (info === null && (item.state === 'ready' || item.state === 'stopped')) {
                 item.state = 'failed';
@@ -2260,14 +2268,15 @@ function completeClipMetadata(url: string, info: { title: string; broadcaster_na
 
 function requestClipMetadata(): void {
     for (const item of clipBatchItems) {
-        if (item.state === 'invalid' || item.metadataState !== 'pending') continue;
+        const needsThumbnailOnly = item.metadataState === 'ready' && !clipThumbnails.has(item.url) && !clipThumbnailsChecked.has(item.url);
+        if (item.state === 'invalid' || (item.metadataState !== 'pending' && !needsThumbnailOnly)) continue;
         if (clipMetadataRequests.has(item.url)) {
-            item.metadataState = 'loading';
+            if (!needsThumbnailOnly) item.metadataState = 'loading';
             continue;
         }
         if (clipMetadataRequests.size >= 4) continue;
         const url = item.url;
-        item.metadataState = 'loading';
+        if (!needsThumbnailOnly) item.metadataState = 'loading';
         clipMetadataRequests.add(url);
         scheduleClipBatchRender(item);
         void Promise.resolve().then(() => window.api.getClipInfo(url)).then(
@@ -2323,6 +2332,21 @@ function createClipBatchRow(url: string): ClipBatchRow {
         return element;
     };
     const number = span('clip-result-number');
+    const thumb = span('clip-result-thumb');
+    thumb.setAttribute('aria-hidden', 'true');
+    const thumbPlaceholder = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    thumbPlaceholder.setAttribute('viewBox', '0 0 24 24');
+    thumbPlaceholder.setAttribute('aria-hidden', 'true');
+    const thumbPlaceholderPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    thumbPlaceholderPath.setAttribute('d', 'm10 8 6 4-6 4V8z');
+    thumbPlaceholder.append(thumbPlaceholderPath);
+    const thumbImg = document.createElement('img');
+    thumbImg.className = 'clip-result-thumb-img';
+    thumbImg.alt = '';
+    thumbImg.hidden = true;
+    thumbImg.addEventListener('load', () => { thumbImg.hidden = false; });
+    thumbImg.addEventListener('error', () => { thumbImg.hidden = true; });
+    thumb.append(thumbPlaceholder);
     const label = span('clip-result-label');
     const streamer = span('clip-result-streamer');
     const status = span('clip-result-status');
@@ -2354,8 +2378,8 @@ function createClipBatchRow(url: string): ClipBatchRow {
     const open = action('m8 5 11 7-11 7z', () => { void openClipFile(url, false); });
     const folder = action('M3 7V4h6l2 3h10v13H3z', () => { void openClipFile(url, true); });
     const remove = action('M6 6l12 12M6 18 18 6', () => removeClipLink(url));
-    row.append(number, content, symbol, actions);
-    return { row, number, label, streamer, status, symbol, open, folder, remove };
+    row.append(number, thumb, content, symbol, actions);
+    return { row, number, thumb, thumbImg, label, streamer, status, symbol, open, folder, remove };
 }
 
 function updateClipBatchSymbol(elements: ClipBatchRow, kind: string): void {
@@ -2415,6 +2439,7 @@ function renderClipBatchSummary(): void {
     const progress = clipBatchItems.length ? Math.round((done + failed) * 100 / clipBatchItems.length) : 0;
     const gauge = byId<HTMLElement>('clipsBatchProgress');
     gauge.setAttribute('aria-valuenow', String(progress));
+    gauge.dataset.active = String(clipDownloadInFlight || progress > 0);
     gauge.querySelector<HTMLElement>('span')!.style.transition = clipDownloadInFlight ? '' : 'none';
     gauge.querySelector<HTMLElement>('span')!.style.width = progress + '%';
     byId<HTMLTextAreaElement>('clipUrl').disabled = clipDownloadInFlight || workspaceLoading;
@@ -2444,6 +2469,27 @@ function renderClipBatchRow(item: ClipBatchItem, index: number): void {
     const rowClass = 'clip-result-row ' + item.state;
     if (elements.row.className !== rowClass) elements.row.className = rowClass;
     setClipText(elements.number, formatUiNumber(index + 1));
+    const thumbUrl = clipThumbnails.get(item.url) || '';
+    if (!thumbUrl && item.filename && !clipThumbnailsChecked.has('file:' + item.filename)) {
+        clipThumbnailsChecked.add('file:' + item.filename);
+        void Promise.resolve().then(() => window.api.getArchiveThumbnail(item.filename!)).then(localThumb => {
+            if (typeof localThumb === 'string' && localThumb && !clipThumbnails.has(item.url)) {
+                clipThumbnails.set(item.url, localThumb);
+                scheduleClipBatchRender(item);
+            }
+        }).catch(() => undefined);
+    }
+    if (elements.thumbImg.dataset.src !== thumbUrl) {
+        elements.thumbImg.dataset.src = thumbUrl;
+        if (thumbUrl) {
+            if (!elements.thumbImg.isConnected) elements.thumb.append(elements.thumbImg);
+            elements.thumbImg.src = thumbUrl;
+        } else {
+            elements.thumbImg.hidden = true;
+            elements.thumbImg.removeAttribute('src');
+            elements.thumbImg.remove();
+        }
+    }
     const title = clipBatchTitle(item);
     setClipText(elements.label, title);
     elements.label.title = item.metadataState === 'ready' ? title : item.url;

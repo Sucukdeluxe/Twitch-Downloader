@@ -2771,7 +2771,7 @@ async function getVodStoryboard(vodId: string): Promise<VodStoryboard | null> {
     });
 }
 
-async function getClipInfo(clipId: string): Promise<{ title: string; broadcaster_name: string } | null> {
+async function getClipInfo(clipId: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null> {
     const cachedClip = getCachedValue(clipInfoCache, clipId);
     if (cachedClip !== undefined) {
         runtimeMetrics.cacheHits += 1;

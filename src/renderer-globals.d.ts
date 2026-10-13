@@ -499,7 +499,7 @@ interface ApiBridge {
     saveClipWorkspace(items: ClipBatchItem[]): Promise<boolean>;
     saveMergeWorkspace(ids: string[]): Promise<boolean>;
     getMergeVideoInfo(id: string): Promise<{ durationSeconds?: number; missing?: boolean }>;
-    getClipInfo(url: string): Promise<{ title: string; broadcaster_name: string } | null>;
+    getClipInfo(url: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null>;
     selectFolder(): Promise<(FileCapabilityReference & { displayPath: string }) | null>;
     saveQueueOutputDialog(defaultName: string): Promise<FileCapabilityReference | null>;
     setQueueOutput(id: string, capability: string): Promise<QueueItem[]>;

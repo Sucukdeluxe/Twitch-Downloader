@@ -197,7 +197,7 @@ contextBridge.exposeInMainWorld('api', {
     saveClipWorkspace: (items: import('./main/domain/workspace-session').WorkspaceClip[]) => ipcRenderer.invoke('save-clip-workspace', items),
     saveMergeWorkspace: (ids: string[]) => ipcRenderer.invoke('save-merge-workspace', ids),
     getMergeVideoInfo: (id: string) => ipcRenderer.invoke('get-merge-video-info', id),
-    getClipInfo: (url: string): Promise<{ title: string; broadcaster_name: string } | null> => ipcRenderer.invoke('get-clip-info', url),
+    getClipInfo: (url: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null> => ipcRenderer.invoke('get-clip-info', url),
 
     // Files
     selectFolder: () => ipcRenderer.invoke('select-folder'),
