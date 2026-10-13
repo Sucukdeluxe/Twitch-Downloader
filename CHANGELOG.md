@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.46 - 2026-10-13
+
+This update lets you choose the output filename and destination for each queued download before it starts.
+
+### Queue output
+
+- Choose a filename and target folder for an individual queued VOD or clip through the download details or context menu.
+- Persist the selected output path with the queue item so it survives application restarts and does not change the global download settings.
+- Add predictable `_PartNN` suffixes when the selected output is split into multiple files.
+- Apply the selected destination consistently to VODs, clips, edited excerpts, omission downloads and live recordings.
+
 ## 1.0.45 - 2026-10-13
 
 This update makes sure VODs load reliably after adding a streamer.
