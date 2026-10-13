@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.45 - 2026-10-13
+
+This update makes sure VODs load reliably after adding a streamer.
+
+### Streamers and VODs
+
+- Load the VOD list immediately after adding a streamer. A temporary Twitch error during the first request no longer shows "No VODs found" until Refresh VODs is clicked.
+- Retry temporary Twitch errors automatically. If Twitch still does not respond, the VOD area shows a clear loading error with a Try again button and keeps retrying in the background.
+- Keep the existing VOD list visible when a later refresh fails instead of replacing it with an empty list.
+
 ## 1.0.44 - 2026-10-13
 
 This update improves downloads from ongoing public VODs, makes download and MP4-writing progress clearer, and adds video thumbnails to the archive.
