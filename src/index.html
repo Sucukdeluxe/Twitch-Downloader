@@ -402,22 +402,31 @@
                 <div class="tab-content active vod-selection-empty" id="vodsTab">
                     <div id="streamerProfileHeader" class="streamer-profile-header is-hidden"></div>
                     <div class="vod-filter-row" id="vodFilterRow" hidden>
-                        <input type="text" id="vodFilterInput" class="filter-input" placeholder="Filter VODs..." oninput="onVodFilterInput()">
-                        <button type="button" id="vodFilterClearBtn" class="btn-close is-hidden" onclick="clearVodFilter()" title="Clear filter">x</button>
-                        <span id="vodFilterCount" class="form-sublabel vod-filter-count"></span>
-                        <label id="vodHideDownloadedLabel" class="inline-toggle vod-hide-downloaded" title="">
-                            <input type="checkbox" id="vodHideDownloadedToggle" onchange="onVodHideDownloadedChange()">
-                            <span id="vodHideDownloadedText">Hide downloaded</span>
-                        </label>
-                        <button type="button" class="btn-secondary" id="vodLibraryButton" onclick="RendererVodLibrary.open('views')">Ansichten</button>
-                        <label id="vodSortLabel" for="vodSortSelect" class="form-sublabel vod-sort-label">Sort:</label>
-                        <select id="vodSortSelect" class="select-compact" onchange="onVodSortChange()">
-                            <option value="date_desc">Newest first</option>
-                            <option value="date_asc">Oldest first</option>
-                            <option value="views_desc">Most viewed</option>
-                            <option value="duration_desc">Longest first</option>
-                            <option value="duration_asc">Shortest first</option>
-                        </select>
+                        <div class="vod-filter-search-group">
+                            <div class="vod-filter-search">
+                                <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+                                <input type="text" id="vodFilterInput" class="filter-input" placeholder="Filter VODs..." oninput="onVodFilterInput()">
+                                <button type="button" id="vodFilterClearBtn" class="btn-close is-hidden" onclick="clearVodFilter()" title="Clear filter"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"></path></svg></button>
+                            </div>
+                            <span id="vodFilterCount" class="form-sublabel vod-filter-count"></span>
+                        </div>
+                        <div class="vod-filter-actions">
+                            <label id="vodHideDownloadedLabel" class="inline-toggle vod-hide-downloaded" title="">
+                                <input type="checkbox" id="vodHideDownloadedToggle" onchange="onVodHideDownloadedChange()">
+                                <span id="vodHideDownloadedText">Hide downloaded</span>
+                            </label>
+                            <button type="button" class="btn-secondary" id="vodLibraryButton" onclick="RendererVodLibrary.open('views')">Ansichten</button>
+                            <div class="vod-filter-sort">
+                                <label id="vodSortLabel" for="vodSortSelect" class="form-sublabel vod-sort-label">Sort:</label>
+                                <select id="vodSortSelect" class="select-compact" onchange="onVodSortChange()">
+                                    <option value="date_desc">Newest first</option>
+                                    <option value="date_asc">Oldest first</option>
+                                    <option value="views_desc">Most viewed</option>
+                                    <option value="duration_desc">Longest first</option>
+                                    <option value="duration_asc">Shortest first</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <div id="vodBulkBar" class="vod-bulk-bar">
                         <span id="vodBulkCount" class="vod-bulk-count">0 selected</span>
