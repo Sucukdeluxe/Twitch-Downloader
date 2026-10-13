@@ -789,6 +789,11 @@ function sanitizeQueueItem(raw: unknown): QueueItem | null {
     if (mergeGroup) item.mergeGroup = mergeGroup;
     if (raw.mergeRecoveryBlocked === true) item.mergeRecoveryBlocked = true;
     if (typeof raw.artifactRoot === 'string' && path.isAbsolute(raw.artifactRoot)) item.artifactRoot = path.resolve(raw.artifactRoot);
+    if (typeof raw.outputPath === 'string' && path.isAbsolute(raw.outputPath)
+        && path.extname(raw.outputPath).toLowerCase() === '.mp4'
+        && path.basename(raw.outputPath).length <= 240) {
+        item.outputPath = path.resolve(raw.outputPath);
+    }
 
     return item;
 }
@@ -1753,7 +1758,8 @@ function getQueueBroadcastFingerprint(queueData: QueueItem[] = downloadQueue): s
         item.speed || '',
         item.eta || '',
         item.last_error || '',
-        item.recordingHealth || ''
+        item.recordingHealth || '',
+        item.outputPath || ''
     ].join(':')).join('|');
 }
 
@@ -5367,11 +5373,11 @@ async function downloadLiveStream(
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     const timeStr = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-    const folder = path.join(config.download_path, safeStreamer, 'live');
+    const folder = item.outputPath ? path.dirname(item.outputPath) : path.join(config.download_path, safeStreamer, 'live');
     fs.mkdirSync(folder, { recursive: true });
 
     const baseFilename = ensureUniqueFilename(
-        path.join(folder, `${safeStreamer}_LIVE_${dateStr}_${timeStr}.mp4`),
+        item.outputPath || path.join(folder, `${safeStreamer}_LIVE_${dateStr}_${timeStr}.mp4`),
         item.id
     );
 
@@ -5648,10 +5654,20 @@ async function downloadLiveStream(
 }
 
 function editedVodFolder(item: QueueItem): string | null {
-    if (!item.customClip?.omissions || !item.artifactRoot) return null;
+    if (!item.customClip?.omissions) return null;
+    if (item.outputPath) return path.dirname(item.outputPath);
+    if (!item.artifactRoot) return null;
     const date = new Date(item.date);
     const dateStr = String(date.getDate()).padStart(2, '0') + '.' + String(date.getMonth() + 1).padStart(2, '0') + '.' + date.getFullYear();
     return path.join(item.artifactRoot, item.streamer.replace(/[^a-zA-Z0-9_-]/g, ''), dateStr);
+}
+
+function queueOutputPathForPart(item: QueueItem, partNumber: number, multiple: boolean, fallback: string): string {
+    if (!item.outputPath) return fallback;
+    if (!multiple) return item.outputPath;
+    const extension = path.extname(item.outputPath) || '.mp4';
+    const stem = path.basename(item.outputPath, extension);
+    return path.join(path.dirname(item.outputPath), `${stem}_Part${String(partNumber).padStart(2, '0')}${extension}`);
 }
 
 async function downloadVOD(
@@ -5705,11 +5721,13 @@ async function downloadVOD(
     const date = new Date(item.date);
     const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
 
-    if (item.customClip?.omissions && !item.artifactRoot) {
+    if (item.customClip?.omissions && !item.artifactRoot && !item.outputPath) {
         item.artifactRoot = path.resolve(config.download_path);
         saveQueue(downloadQueue);
     }
-    const folder = path.join(item.customClip?.omissions ? item.artifactRoot! : config.download_path, streamer, dateStr);
+    const folder = item.outputPath
+        ? path.dirname(item.outputPath)
+        : path.join(item.customClip?.omissions ? item.artifactRoot! : config.download_path, streamer, dateStr);
     fs.mkdirSync(folder, { recursive: true });
 
     const totalDuration = parseDuration(item.duration_str);
@@ -5757,7 +5775,7 @@ async function downloadVOD(
         try {
             const outputFiles = await downloadEditedVod({
                 id: item.id, url: item.url, folder, duration: clip.durationSec, startPart: clip.startPart, omissions,
-                namingIdentity: JSON.stringify([clip.filenameFormat, clip.filenameTemplate, item.title, item.date, item.streamer]),
+                namingIdentity: JSON.stringify([clip.filenameFormat, clip.filenameTemplate, item.title, item.date, item.streamer, item.outputPath]),
                 ffmpegPath: await getFFmpegPath(), ffprobePath: await getFFprobePath(), wait,
                 onProcess(process) {
                     const command = process.spawnfile;
@@ -5781,7 +5799,7 @@ async function downloadVOD(
                     const relativeName = renderClipFilenameTemplate({ template: normalizeFilenameTemplate(template, DEFAULT_FILENAME_TEMPLATE_PARTS),
                         title: item.title, vodId, channel: item.streamer, date, part: part.number, partPadded: String(part.number).padStart(2, '0'),
                         trimStartSec: part.ranges[0].start, trimEndSec: part.ranges[part.ranges.length - 1].end, trimLengthSec: part.duration, fullLengthSec: clip.durationSec });
-                    return ensureUniqueFilename(path.join(folder, relativeName), item.id);
+                    return ensureUniqueFilename(queueOutputPathForPart(item, part.number, plan.parts.length > 1, path.join(folder, relativeName)), item.id);
                 },
                 checkSpace(bytes) {
                     const result = ensureDiskSpace(folder, bytes, 'MP4');
@@ -5809,14 +5827,15 @@ async function downloadVOD(
 
         // Helper to generate filename based on format
         const makeClipFilename = (partNum: number, startOffset: number, clipLengthSec: number): string => {
+            const multiple = clip.durationSec > partDuration;
             if (clip.filenameFormat === 'template') {
-                return makeTemplateFilename(
+                return queueOutputPathForPart(item, partNum, multiple, makeTemplateFilename(
                     clip.filenameTemplate || config.filename_template_clip,
                     DEFAULT_FILENAME_TEMPLATE_CLIP,
                     partNum,
                     startOffset,
                     clipLengthSec
-                );
+                ));
             }
 
             if (clip.filenameFormat === 'timestamp') {
@@ -5824,16 +5843,16 @@ async function downloadVOD(
                 const m = Math.floor((startOffset % 3600) / 60);
                 const s = Math.floor(startOffset % 60);
                 const timeStr = `${h.toString().padStart(2, '0')}-${m.toString().padStart(2, '0')}-${s.toString().padStart(2, '0')}`;
-                return path.join(folder, `${dateStr}_CLIP_${timeStr}_${partNum}.mp4`);
+                return queueOutputPathForPart(item, partNum, multiple, path.join(folder, `${dateStr}_CLIP_${timeStr}_${partNum}.mp4`));
             }
 
             if (clip.filenameFormat === 'parts') {
                 // Mirrors the global filename_template_parts default:
                 // `{date}_Part{part_padded}.mp4` -> e.g. 08.05.2026_Part07.mp4
-                return path.join(folder, `${dateStr}_Part${partNum.toString().padStart(2, '0')}.mp4`);
+                return queueOutputPathForPart(item, partNum, multiple, path.join(folder, `${dateStr}_Part${partNum.toString().padStart(2, '0')}.mp4`));
             }
 
-            return path.join(folder, `${dateStr}_${partNum}.mp4`);
+            return queueOutputPathForPart(item, partNum, multiple, path.join(folder, `${dateStr}_${partNum}.mp4`));
         };
 
         // If clip is longer than part duration, split into parts
@@ -5894,13 +5913,13 @@ async function downloadVOD(
 
     // Check download mode
     if (config.download_mode === 'full' || totalDuration <= config.part_minutes * 60) {
-        const filename = ensureUniqueFilename(makeTemplateFilename(
+        const filename = ensureUniqueFilename(queueOutputPathForPart(item, 1, false, makeTemplateFilename(
             config.filename_template_vod,
             DEFAULT_FILENAME_TEMPLATE_VOD,
             1,
             0,
             totalDuration
-        ), item.id);
+        )), item.id);
         const result = await downloadVODPart(item.url, filename, null, null, onProgress, item.id, 1, 1, totalDuration, item.quality);
         return result.success ? { ...result, outputFiles: [filename] } : result;
     } else {
@@ -5920,13 +5939,13 @@ async function downloadVOD(
             const endSec = Math.min((i + 1) * partDuration, totalDuration);
             const duration = endSec - startSec;
 
-            const partFilename = ensureUniqueFilename(makeTemplateFilename(
+            const partFilename = ensureUniqueFilename(queueOutputPathForPart(item, i + 1, true, makeTemplateFilename(
                 config.filename_template_parts,
                 DEFAULT_FILENAME_TEMPLATE_PARTS,
                 i + 1,
                 startSec,
                 duration
-            ), item.id);
+            )), item.id);
 
             const result = await downloadVODPart(
                 item.url,
@@ -7764,6 +7783,38 @@ ipcMain.handle('select-folder', async (event) => {
     if (!selectedPath) return null;
     const capability = issueFileCapability(event, 'selected-folder', selectedPath, 'directory');
     return { ...capability, displayPath: selectedPath };
+});
+
+ipcMain.handle('save-queue-output-dialog', async (event, defaultName: unknown) => {
+    if (!isTrustedRendererEvent(event)) return null;
+    const requestedName = typeof defaultName === 'string' ? path.basename(defaultName) : '';
+    const safeName = Array.from(requestedName.replace(/[<>:"/\\|?*]/g, ' '), character => character.charCodeAt(0) < 32 ? ' ' : character).join('').trim() || 'VOD.mp4';
+    const filename = path.extname(safeName).toLowerCase() === '.mp4' ? safeName : `${safeName}.mp4`;
+    const result = await dialog.showSaveDialog(mainWindow!, {
+        defaultPath: path.join(config.download_path, filename),
+        filters: [{ name: 'MP4-Video', extensions: ['mp4'] }],
+        properties: ['showOverwriteConfirmation']
+    });
+    if (!result.filePath) return null;
+    const outputPath = path.extname(result.filePath).toLowerCase() === '.mp4' ? result.filePath : `${result.filePath}.mp4`;
+    try {
+        return issueFileCapability(event, 'queue-output', outputPath, 'output-file', ['mp4']);
+    } catch {
+        return null;
+    }
+});
+
+ipcMain.handle('set-queue-output', async (event, id: unknown, capability: unknown) => {
+    if (!isTrustedRendererEvent(event) || typeof id !== 'string' || !id || typeof capability !== 'string') return downloadQueue;
+    const item = downloadQueue.find(candidate => candidate.id === id);
+    if (!item || item.status !== 'pending' || item.mergeGroup) return downloadQueue;
+    const outputPath = resolveFileCapability(event, capability, 'queue-output', true);
+    if (!outputPath || path.extname(outputPath).toLowerCase() !== '.mp4') return downloadQueue;
+    downloadQueue = persistStateChange(downloadQueue, current => current.map(candidate => candidate.id === id
+        ? { ...candidate, outputPath: path.resolve(outputPath) }
+        : candidate), saveQueue);
+    emitQueueUpdated();
+    return downloadQueue;
 });
 
 ipcMain.handle('select-video-file', async (event) => {

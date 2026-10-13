@@ -62,6 +62,7 @@ export interface QueueItem {
     mergeGroup?: MergeGroup;
     mergeRecoveryBlocked?: boolean;
     artifactRoot?: string;
+    outputPath?: string;
     // File paths produced by the download (single file for VOD/clip, multiple
     // for parts/merge-group splits). Persisted with the queue so completed
     // items keep their "Open file" / "Show in folder" actions across restarts.

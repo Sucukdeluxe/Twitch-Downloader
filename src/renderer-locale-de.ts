@@ -391,6 +391,8 @@ const UI_TEXT_DE = {
         duplicateSkipped: 'Dieser Eintrag ist bereits aktiv in der Warteschlange.',
         openFile: 'Datei öffnen',
         showInFolder: 'Im Ordner zeigen',
+        chooseOutput: 'Dateiname und Ordner festlegen',
+        outputPath: 'Ausgabe:',
         openFileFailed: 'Datei konnte nicht geöffnet werden (evtl. verschoben oder gelöscht).',
         outputFilesLabel: '{count} Ausgabedateien',
         retryItem: 'Diesen Eintrag erneut versuchen',

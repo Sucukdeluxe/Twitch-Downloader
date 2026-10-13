@@ -201,6 +201,8 @@ contextBridge.exposeInMainWorld('api', {
 
     // Files
     selectFolder: () => ipcRenderer.invoke('select-folder'),
+    saveQueueOutputDialog: (defaultName: string) => ipcRenderer.invoke('save-queue-output-dialog', defaultName),
+    setQueueOutput: (id: string, capability: string) => ipcRenderer.invoke('set-queue-output', id, capability),
     selectVideoFile: () => ipcRenderer.invoke('select-video-file'),
     selectMultipleVideos: () => ipcRenderer.invoke('select-multiple-videos'),
     selectDroppedVideo: (file: File) => ipcRenderer.invoke('grant-dropped-video', webUtils.getPathForFile(file)),

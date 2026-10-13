@@ -391,6 +391,8 @@ const UI_TEXT_EN = {
         duplicateSkipped: 'This item is already active in the queue.',
         openFile: 'Open file',
         showInFolder: 'Show in folder',
+        chooseOutput: 'Choose filename and folder',
+        outputPath: 'Output:',
         openFileFailed: 'Could not open the file (it may have been moved or deleted).',
         outputFilesLabel: '{count} output files',
         retryItem: 'Retry this item',

@@ -84,7 +84,20 @@ async function invokeQueueItemAction(action: string, id: string): Promise<void> 
     } else if (action === 'copy-url') {
         const item = queue.find((candidate) => candidate.id === id);
         if (item) await copyQueueUrl(item.url);
+    } else if (action === 'output') {
+        await chooseQueueOutput(id);
     }
+}
+
+async function chooseQueueOutput(id: string): Promise<void> {
+    const item = queue.find(candidate => candidate.id === id);
+    if (!item || item.status !== 'pending' || item.mergeGroup) return;
+    const date = formatUiDate(item.date).replace(/[^0-9.]/g, '') || 'VOD';
+    const title = (item.title || item.streamer || 'VOD').trim() || 'VOD';
+    const reference = await window.api.saveQueueOutputDialog(`${date} - ${title}.mp4`);
+    if (!reference) return;
+    queue = await window.api.setQueueOutput(id, reference.token);
+    renderQueue();
 }
 
 async function invokeQueueActionSafely(action: () => void | Promise<void>): Promise<void> {
@@ -493,6 +506,10 @@ function showQueueContextMenu(x: number, y: number, item: QueueItem, invoker: HT
     }
 
     if (isPending) {
+        if (!item.mergeGroup) {
+            menu.appendChild(makeItem(UI_TEXT.queue.chooseOutput, () => chooseQueueOutput(item.id)));
+            menu.appendChild(makeSeparator());
+        }
         menu.appendChild(makeItem(UI_TEXT.queue.ctxMoveTop, () => moveQueueItemTo(item.id, 'top')));
         menu.appendChild(makeItem(UI_TEXT.queue.ctxMoveBottom, () => moveQueueItemTo(item.id, 'bottom')));
         menu.appendChild(makeSeparator());
@@ -1085,12 +1102,19 @@ function renderQueueDetails(item: QueueItem): string {
     const quality = [...new Set((item.mergeGroup?.items || [item]).map(source => formatQueueQuality(source)))].join(' · ');
     const row = (label: string, value: string, className = ''): string =>
         `<div class="queue-detail-row"><span class="queue-detail-label">${escapeHtml(label)}</span><span class="queue-detail-value ${className}" title="${escapeHtml(value)}">${escapeHtml(value)}</span></div>`;
+    const output = item.outputPath
+        ? row(UI_TEXT.queue.outputPath, item.outputPath, 'queue-output-path')
+        : '';
+    const outputAction = item.status === 'pending' && !item.mergeGroup
+        ? `<div class="queue-output-row"><button type="button" class="queue-detail-btn" data-queue-action="output">${escapeHtml(UI_TEXT.queue.chooseOutput)}</button></div>`
+        : '';
     return `<div class="queue-details-clip"><div class="queue-details-content">
         ${row(UI_TEXT.queue.detailStreamer, getStreamerDisplayName(item.streamer), 'queue-streamer-name')}
         <div class="queue-detail-row queue-url-row"><span class="queue-detail-label">URL:</span><button class="queue-url-copy" type="button" data-queue-action="copy-url" aria-label="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}" title="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}: ${escapeHtml(item.url)}">${escapeHtml(formatQueueUrl(item.url))}</button></div>
         ${row(UI_TEXT.queue.detailDuration, formatQueueDuration(item))}
         ${row(UI_TEXT.queue.detailDate, formatQueueDate(item.date))}
         ${row(currentLanguage === 'en' ? 'Quality:' : 'Qualität:', quality)}
+        ${output}${outputAction}
         ${renderQueueOmissions(item)}
         ${renderQueueItemFileActions(item)}
     </div></div>`;

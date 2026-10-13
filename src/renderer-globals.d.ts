@@ -113,6 +113,7 @@ interface QueueItem {
     mergeGroup?: MergeGroup;
     mergeRecoveryBlocked?: boolean;
     artifactRoot?: string;
+    outputPath?: string;
     outputFiles?: string[];
     isLive?: boolean;
     recordingHealth?: 'ok' | 'stale' | 'unknown';
@@ -500,6 +501,8 @@ interface ApiBridge {
     getMergeVideoInfo(id: string): Promise<{ durationSeconds?: number; missing?: boolean }>;
     getClipInfo(url: string): Promise<{ title: string; broadcaster_name: string } | null>;
     selectFolder(): Promise<(FileCapabilityReference & { displayPath: string }) | null>;
+    saveQueueOutputDialog(defaultName: string): Promise<FileCapabilityReference | null>;
+    setQueueOutput(id: string, capability: string): Promise<QueueItem[]>;
     selectVideoFile(): Promise<FileCapabilityReference | null>;
     selectMultipleVideos(): Promise<MergeFileReference[] | null>;
     selectDroppedVideo(file: File): Promise<FileCapabilityReference | null>;
