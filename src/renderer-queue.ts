@@ -14,52 +14,26 @@ function renderQueueOmissions(item: QueueItem): string {
         const label = currentLanguage === 'de' ? 'Auslassungen' : 'Exclusions';
         const selection = clip.omissions.selection;
         const selected = selection ? `<div>${currentLanguage === 'de' ? 'Ausschnitt' : 'Excerpt'}: ${escapeHtml(formatClipTime(selection.start))}–${escapeHtml(formatClipTime(selection.end))}</div>` : '';
-        const summary = formatUiNumber(plan.parts.length) + (currentLanguage === 'de' ? ' Dateien · ' : ' files · ') + formatUiNumber(clip.omissions.partDurationSec / 60) + (currentLanguage === 'de' ? ' Minuten pro Part · ' : ' minutes per part · ') + formatClipTime(plan.duration);
-        return `<div class="queue-omissions">${selected}<strong>${escapeHtml(label)}: ${formatUiNumber(plan.omitted.length)}</strong><div>${escapeHtml(summary)}</div><div>${escapeHtml(plan.omitted.map(range => formatClipTime(range.start) + "–" + formatClipTime(range.end)).join(" · "))}</div></div>`;
+        return `<div class="queue-omissions">${selected}<strong>${escapeHtml(label)}:</strong> ${escapeHtml(plan.omitted.map(range => formatClipTime(range.start) + "–" + formatClipTime(range.end)).join(" · "))}</div>`;
     } catch { return ''; }
 }
 
 function renderQueueItemFileActions(item: QueueItem): string {
-    if (item.status !== 'completed' || !item.outputFiles || item.outputFiles.length === 0) {
-        return '';
-    }
-
-    const first = item.outputFiles[0];
-    if (typeof first !== 'string' || !first) return '';
-    const safeFirst = escapeHtml(first);
-    const buttons: string[] = [];
-
-    // "Open file" only makes sense when there's exactly one output (a clip /
-    // full VOD download). For multi-part downloads "open the first part" is
-    // surprising — the user almost always wants the folder.
-    if (item.outputFiles.length === 1) {
-        buttons.push(`<button type="button" class="queue-detail-btn" data-queue-file-action="open" data-queue-file-path="${escapeHtml(first)}">${escapeHtml(UI_TEXT.queue.openFile)}</button>`);
-    }
-    buttons.push(`<button type="button" class="queue-detail-btn" data-queue-file-action="folder" data-queue-file-path="${escapeHtml(first)}">${escapeHtml(UI_TEXT.queue.showInFolder)}</button>`);
-
-    // Surface a "View chat" button when a sibling chat file exists in the
-    // outputs list. Single click opens the in-app viewer modal.
-    const chatFile = item.outputFiles.find((f) => /\.chat\.json(l)?$/i.test(f));
-    if (chatFile) {
-        buttons.push(`<button type="button" class="queue-detail-btn" data-queue-file-action="chat" data-queue-file-path="${escapeHtml(chatFile)}" data-queue-file-title="${escapeHtml(item.title || item.streamer || '')}">${escapeHtml(UI_TEXT.queue.viewChat)}</button>`);
-    }
-
-    // Same pattern for the .events.jsonl sidecar — title/game change timeline.
-    const eventsFile = item.outputFiles.find((f) => /\.events\.jsonl$/i.test(f));
-    if (eventsFile) {
-        buttons.push(`<button type="button" class="queue-detail-btn" data-queue-file-action="events" data-queue-file-path="${escapeHtml(eventsFile)}" data-queue-file-title="${escapeHtml(item.title || item.streamer || '')}">${escapeHtml(UI_TEXT.queue.viewEvents)}</button>`);
-    }
-
-    const fileLabel = item.outputFiles.length === 1
-        ? safeFirst
-        : `${escapeHtml(UI_TEXT.queue.outputFilesLabel.replace('{count}', String(item.outputFiles.length)))}`;
-
-    return `
-        <div class="queue-output-row">
-            ${buttons.join('')}
-            <span class="queue-output-label">${fileLabel}</span>
-        </div>
-    `;
+    if (item.status !== 'completed' || !item.outputFiles?.length) return '';
+    const files = item.outputFiles.filter((file) => typeof file === 'string' && file.length > 0);
+    const mediaFiles = files.filter((file) => !/\.(?:chat\.jsonl?|events\.jsonl)$/i.test(file));
+    const first = mediaFiles[0] || files[0];
+    if (!first) return '';
+    const button = (action: string, file: string, label: string): string =>
+        `<button type="button" class="queue-detail-btn" data-queue-file-action="${action}" data-queue-file-path="${escapeHtml(file)}" data-queue-file-title="${escapeHtml(item.title || item.streamer || '')}">${escapeHtml(label)}</button>`;
+    const primary = mediaFiles.length === 1 ? [button('open', first, UI_TEXT.queue.openFile)] : [];
+    primary.push(button('folder', first, UI_TEXT.queue.showInFolder));
+    const secondary: string[] = [];
+    const chatFile = files.find((file) => /\.chat\.jsonl?$/i.test(file));
+    if (chatFile) secondary.push(button('chat', chatFile, UI_TEXT.queue.viewChat));
+    const eventsFile = files.find((file) => /\.events\.jsonl$/i.test(file));
+    if (eventsFile) secondary.push(button('events', eventsFile, UI_TEXT.queue.viewEvents));
+    return `<div class="queue-output-row">${primary.join('')}</div>${secondary.length ? `<div class="queue-output-row queue-output-secondary">${secondary.join('')}</div>` : ''}`;
 }
 
 async function invokeOpenFile(filePath: string): Promise<void> {
@@ -967,30 +941,60 @@ async function toggleDownload(): Promise<void> {
 }
 
 function formatQueueQuality(source: Pick<QueueItem, 'quality' | 'qualityLabel'>): string {
-    if (source.qualityLabel) return source.qualityLabel;
-    if (!source.quality || source.quality === 'source' || source.quality === 'best') return 'Source';
-    const alternativeMarker = source.quality.indexOf('_alt');
-    const base = alternativeMarker >= 0 ? source.quality.slice(0, alternativeMarker) : source.quality;
-    const parts = base.match(/^(\d{3,4})p(\d{0,3})$/);
-    if (!parts) return source.quality;
-    const details = [parts[1] + 'p', parts[2] ? parts[2] + ' fps' : ''];
-    if (alternativeMarker >= 0) {
-        const alternative = source.quality.slice(alternativeMarker + 4);
-        if (!/^\d{0,2}$/.test(alternative)) return source.quality;
-        details.push('Alternative' + (alternative ? ' ' + alternative : ''));
+    const id = source.quality || 'source';
+    const isSource = id === 'source' || id === 'best';
+    const label = source.qualityLabel || '';
+    const resolution = (isSource ? label : id).match(/(\d{3,4})p/i) || label.match(/(\d{3,4})p/i);
+    const suffix = resolution ? resolution.input!.slice(resolution.index! + resolution[0].length) : '';
+    const fps = suffix.match(/^\d{1,3}/)?.[0] || label.match(/[\d.]+ ?fps/i)?.[0].replace(/ ?fps/i, '');
+    const details = resolution ? resolution[1] + 'p' + (fps ? ' ' + fps + 'fps' : '') : '';
+    if (isSource) return details ? 'Source / ' + details : 'Source';
+    return details || label || id;
+}
+
+function formatQueueDuration(item: QueueItem): string {
+    const clip = item.customClip;
+    let duration = clip?.durationSec;
+    if (clip?.omissions) {
+        try {
+            duration = window.VodPlayer.planEditedVod(clip.durationSec, clip.omissions.partDurationSec, clip.omissions.ranges, clip.startPart, clip.omissions.selection).duration;
+        } catch {
+            return '–';
+        }
     }
-    return details.filter(Boolean).join(' · ');
+    if (duration === undefined) {
+        const sources = item.mergeGroup?.items || [item];
+        duration = sources.reduce((total, source) => total + parseDurationToSeconds(source.duration_str || ''), 0);
+    }
+    return Number.isFinite(duration) && duration > 0 ? formatSecondsToTime(Math.round(duration)) : item.duration_str || '–';
+}
+
+function formatQueueDate(value: string): string {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '–';
+    return formatUiDate(date) + ' | ' + date.toLocaleTimeString(getIntlLocale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+
+function formatQueueUrl(value: string): string {
+    try {
+        const url = new URL(value);
+        return /^(?:www\.)?twitch\.tv$/i.test(url.hostname) ? url.pathname : value;
+    } catch {
+        return value;
+    }
 }
 
 function renderQueueDetails(item: QueueItem): string {
     const quality = [...new Set((item.mergeGroup?.items || [item]).map(source => formatQueueQuality(source)))].join(' · ');
-    return `                        <div class="queue-details-clip"><div class="queue-details-content">
-                        <div class="queue-url-row"><span class="queue-detail-label">URL:</span><button class="queue-url-copy" type="button" data-queue-action="copy-url" aria-label="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}" title="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}: ${escapeHtml(item.url)}">${escapeHtml(item.url)}</button></div>
-                        <div><span class="queue-detail-label">${escapeHtml(UI_TEXT.queue.detailStreamer)}</span> <span class="queue-streamer-name">${escapeHtml(getStreamerDisplayName(item.streamer))}</span></div>
-                        <div><span class="queue-detail-label">${escapeHtml(UI_TEXT.queue.detailDuration)}</span> ${escapeHtml(item.duration_str)}</div>
-                        <div><span class="queue-detail-label">${escapeHtml(UI_TEXT.queue.detailDate)}</span> ${escapeHtml(formatUiDateTime(item.date))}</div>
-                        <div><span class="queue-detail-label">${currentLanguage === 'en' ? 'Quality:' : 'Qualität:'}</span> ${escapeHtml(quality)}</div>
-                        ${renderQueueOmissions(item)}
-                        ${renderQueueItemFileActions(item)}
-                        </div></div>`;
+    const row = (label: string, value: string, className = ''): string =>
+        `<div class="queue-detail-row"><span class="queue-detail-label">${escapeHtml(label)}</span><span class="queue-detail-value ${className}" title="${escapeHtml(value)}">${escapeHtml(value)}</span></div>`;
+    return `<div class="queue-details-clip"><div class="queue-details-content">
+        ${row(UI_TEXT.queue.detailStreamer, getStreamerDisplayName(item.streamer), 'queue-streamer-name')}
+        <div class="queue-detail-row queue-url-row"><span class="queue-detail-label">URL:</span><button class="queue-url-copy" type="button" data-queue-action="copy-url" aria-label="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}" title="${escapeHtml(UI_TEXT.queue.ctxCopyUrl)}: ${escapeHtml(item.url)}">${escapeHtml(formatQueueUrl(item.url))}</button></div>
+        ${row(UI_TEXT.queue.detailDuration, formatQueueDuration(item))}
+        ${row(UI_TEXT.queue.detailDate, formatQueueDate(item.date))}
+        ${row(currentLanguage === 'en' ? 'Quality:' : 'Qualität:', quality)}
+        ${renderQueueOmissions(item)}
+        ${renderQueueItemFileActions(item)}
+    </div></div>`;
 }

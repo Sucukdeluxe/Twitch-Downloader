@@ -498,6 +498,10 @@ textarea:disabled,
     border-radius: 50%;
 }
 
+:root:has(.workspace-shell[data-active-workspace="vods"]) {
+    --workspace-sidebar-width: 310px;
+}
+
 .workspace-shell.app {
     display: grid;
     grid-template-columns: var(--workspace-sidebar-width) minmax(0, 1fr);

@@ -364,7 +364,7 @@ const UI_TEXT_EN = {
     },
     queue: {
         empty: 'No downloads in queue',
-        detailStreamer: 'Streamer:',
+        detailStreamer: 'Channel:',
         detailDuration: 'Duration:',
         detailDate: 'Date:',
         start: 'Start',

@@ -6718,7 +6718,6 @@ function createWindow(): void {
         let applyingDevelopmentUpdate = false;
         let developmentBuildFailed = false;
         const applyDevelopmentUpdate = async () => {
-            if (pendingDevelopmentAction === 'restart' && downloadQueue.length > 0) return;
             if (!pendingDevelopmentAction || developmentBuildFailed || applyingDevelopmentUpdate || contents.isDestroyed() || contents.isLoadingMainFrame() || applicationRestoreBusy() || applicationBackupBusy) return;
             applyingDevelopmentUpdate = true;
             try {
@@ -6740,7 +6739,7 @@ function createWindow(): void {
             if (update.status === 'restart') pendingDevelopmentAction = 'restart';
             else if (update.status === 'reload') pendingDevelopmentAction ??= 'reload';
             appendDebugLog('development-live-update', { revision: update.revision, status: update.status, styles: update.styles.length });
-            if (!contents.isDestroyed() && !contents.isLoadingMainFrame()) contents.send('development-style-update', update);
+            if (!contents.isDestroyed() && !contents.isLoadingMainFrame()) contents.send('development-style-update', { ...update, status: developmentBuildFailed ? 'error' : pendingDevelopmentAction || update.status });
         }, error => appendDebugLog('development-live-update-failed', String(error)));
         const deliverCurrent = () => {
             if (!contents.isDestroyed()) contents.send('development-style-update', { ...live.current(), status: developmentBuildFailed ? 'error' : pendingDevelopmentAction || 'ready' });

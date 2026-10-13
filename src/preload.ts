@@ -6,6 +6,17 @@ let developmentStyleRevision = -1;
 function applyDevelopmentStyles(update: import('./main/development-live').DevelopmentStyleUpdate): void {
     if (new URLSearchParams(window.location.search).get('development') !== '1') return;
     if (update.revision <= developmentStyleRevision) return;
+    document.documentElement.dataset.developmentUpdate = update.status;
+    const badge = document.getElementById('developmentBadge');
+    if (badge) {
+        const de = document.documentElement.lang !== 'en';
+        badge.title = update.status === 'error'
+            ? (de ? 'Änderung nicht geladen. Bisheriger Stand bleibt aktiv.' : 'Change not loaded. Previous state remains active.')
+            : update.status === 'restart' || update.status === 'reload'
+                ? (de ? 'Änderung bereit. Wird automatisch übernommen, sobald keine Bearbeitung läuft.' : 'Change ready. Applies automatically when editing is idle.')
+                : (de ? 'Änderungen werden automatisch übernommen.' : 'Changes apply automatically.');
+    }
+    if (update.status !== 'ready') return;
     const replacements = update.styles.map(({ name, css }) => {
         const link = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).find(element => {
             const filename = new URL(element.href).pathname.split('/').pop() || '';
@@ -27,16 +38,6 @@ function applyDevelopmentStyles(update: import('./main/development-live').Develo
         link!.disabled = true;
     }
     developmentStyleRevision = update.revision;
-    document.documentElement.dataset.developmentUpdate = update.status;
-    const badge = document.getElementById('developmentBadge');
-    if (badge) {
-        const de = document.documentElement.lang !== 'en';
-        badge.title = update.status === 'error'
-            ? (de ? 'Änderung nicht geladen. Bisheriger Stand bleibt aktiv.' : 'Change not loaded. Previous state remains active.')
-            : update.status === 'restart' || update.status === 'reload'
-                ? (de ? 'Änderung bereit. Wird automatisch übernommen, sobald keine Bearbeitung läuft.' : 'Change ready. Applies automatically when editing is idle.')
-                : (de ? 'Änderungen werden automatisch übernommen.' : 'Changes apply automatically.');
-    }
 }
 
 ipcRenderer.on('development-style-update', (_event, update: import('./main/development-live').DevelopmentStyleUpdate) => {

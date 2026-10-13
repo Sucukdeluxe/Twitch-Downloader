@@ -6,6 +6,7 @@ interface DevelopmentViewState {
     inputs: Record<string, string>;
     focus?: string;
     scroll: Record<string, number>;
+    expandedQueue?: string[];
 }
 
 const developmentViewKey = 'tvm:development-view';
@@ -27,6 +28,7 @@ function readDevelopmentView(): DevelopmentViewState | null {
         if (!state.inputs || typeof state.inputs !== 'object' || !Object.values(state.inputs).every(value => typeof value === 'string')) return null;
         if (!state.scroll || typeof state.scroll !== 'object' || !Object.values(state.scroll).every(value => typeof value === 'number' && Number.isFinite(value))) return null;
         if (state.focus !== undefined && typeof state.focus !== 'string') return null;
+        if (state.expandedQueue !== undefined && (!Array.isArray(state.expandedQueue) || !state.expandedQueue.every((id: unknown) => typeof id === 'string'))) return null;
         return state;
     } catch { return null; }
 }
@@ -54,7 +56,7 @@ async function prepareDevelopmentRefresh(): Promise<boolean> {
         if (element.scrollTop) scroll[element.id] = element.scrollTop;
     }
     try {
-        localStorage.setItem(developmentViewKey, JSON.stringify({ savedAt: Date.now(), tab: document.querySelector('.tab-content.active')?.id.replace(/Tab$/, '') || 'vods', streamer: currentStreamer, settingsPane: document.getElementById('settingsTab')?.dataset.settingsPane || 'general', focus: document.activeElement?.id, inputs, scroll }));
+        localStorage.setItem(developmentViewKey, JSON.stringify({ savedAt: Date.now(), tab: document.querySelector('.tab-content.active')?.id.replace(/Tab$/, '') || 'vods', streamer: currentStreamer, settingsPane: document.getElementById('settingsTab')?.dataset.settingsPane || 'general', focus: document.activeElement?.id, inputs, scroll, expandedQueue: [...expandedQueueIds] }));
         return true;
     } catch { return false; }
 }
@@ -72,6 +74,8 @@ function restoreDevelopmentView(): void {
         filterSettings(state.inputs.settingsSearchInput || '');
         setSettingsPane(state.settingsPane);
         showTab(state.tab);
+        for (const id of state.expandedQueue || []) expandedQueueIds.add(id);
+        renderQueue();
         if (state.focus) document.getElementById(state.focus)?.focus({ preventScroll: true });
         requestAnimationFrame(() => {
             for (const [id, top] of Object.entries(state.scroll)) {

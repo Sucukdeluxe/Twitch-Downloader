@@ -364,7 +364,7 @@ const UI_TEXT_DE = {
     },
     queue: {
         empty: 'Keine Downloads in der Warteschlange',
-        detailStreamer: 'Streamer:',
+        detailStreamer: 'Kanal:',
         detailDuration: 'Dauer:',
         detailDate: 'Datum:',
         start: 'Start',

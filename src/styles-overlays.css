@@ -1310,24 +1310,6 @@ input[type="number"]::-webkit-outer-spin-button {
     background: var(--border-soft);
 }
 
-/* Output-row appended to the queue-item detail panel when a job
-   completed. Lists the file actions (Open file / Show in folder /
-   View chat / View events) followed by a tiny secondary-colour file
-   label. */
-.queue-output-row {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.queue-output-label {
-    color: var(--text-secondary);
-    font-size: 11px;
-    word-break: break-all;
-}
-
 /* Command Palette (Pillar 5 — added in 5.1.0-alpha.1) */
 .command-palette {
     max-width: 540px;
