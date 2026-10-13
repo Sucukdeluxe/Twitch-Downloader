@@ -1174,14 +1174,6 @@ input[type="number"]::-webkit-outer-spin-button {
 .streamer-profile-live-rec-btn {
     margin-top: 6px;
     align-self: flex-start;
-    background: #e91916 !important;
-    border-color: #e91916 !important;
-}
-
-.streamer-profile-live-rec-btn:hover {
-    background: #ff3733 !important;
-    border-color: #ff3733 !important;
-    box-shadow: 0 4px 14px rgba(233, 25, 22, 0.4);
 }
 
 @media (max-width: 720px) {

@@ -1645,6 +1645,38 @@ body :is(select, .select-compact) {
     height: 18px;
 }
 
+.streamer-profile-btn.streamer-profile-live-rec-btn {
+    min-height: 38px;
+    padding: 8px 12px;
+    color: #fff;
+    background: #c83228;
+    border-color: #c83228;
+    font-size: 14px;
+    line-height: 20px;
+    transform: none;
+    box-shadow: none;
+}
+
+.streamer-profile-btn.streamer-profile-live-rec-btn:hover:not(:disabled) {
+    color: #fff;
+    background: #b62922;
+    border-color: #b62922;
+    transform: none;
+    box-shadow: none;
+}
+
+.streamer-profile-btn.streamer-profile-live-rec-btn:active:not(:disabled) {
+    color: #fff;
+    background: #a3231d;
+    border-color: #a3231d;
+}
+
+.streamer-profile-btn.streamer-profile-live-rec-btn:focus-visible {
+    outline: 2px solid var(--workspace-text-muted);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+
 #settingsTab.active {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
