@@ -24,7 +24,6 @@ async function init(): Promise<void> {
 
     byId('versionText').textContent = `v${version}`;
     byId('versionInfo').textContent = `Version: v${version}`;
-    appVersion = version;
     setPageTitle(UI_TEXT.appName);
 
     byId<HTMLInputElement>('clientId').value = config.client_id ?? '';
@@ -955,13 +954,7 @@ async function updateStatsBar(): Promise<void> {
 
 let toastHideTimer: number | null = null;
 let queueSyncTimer: number | null = null;
-let appVersion = '';
 
-// Single source of truth for what the user is looking at — keeps the
-// visible H1, the document title (which drives the OS task bar / Alt+Tab
-// label), and the app version pill in sync. Previously document.title was
-// stamped once at boot, so the OS task bar always read "Twitch VOD
-// Manager v4.6.76" no matter what tab or streamer was active.
 (window as unknown as { setPageTitle: (text: string) => void }).setPageTitle = setPageTitle;
 
 function setPageTitle(text: string): void {
@@ -974,11 +967,14 @@ function setPageTitle(text: string): void {
         badge.hidden = !isDevelopment;
         badge.textContent = developmentLabel;
     }
-    const appName = UI_TEXT.appName + (isDevelopment ? ' · ' + developmentLabel : '');
-    const versionSuffix = appVersion ? ` v${appVersion}` : '';
-    document.title = text && text !== UI_TEXT.appName
-        ? `${text} - ${appName}${versionSuffix}`
-        : `${appName}${versionSuffix}`;
+    const activeTabId = document.querySelector('.tab-content.active')?.id || '';
+    const activeTab = activeTabId.replace(/Tab$/, '');
+    const sectionTitle = activeTab
+        ? ((UI_TEXT.tabs as Record<string, string>)[activeTab] || text)
+        : text;
+    document.title = sectionTitle && sectionTitle !== UI_TEXT.appName
+        ? `${UI_TEXT.appName} - ${sectionTitle}`
+        : UI_TEXT.appName;
 }
 let queueSyncInFlight = false;
 let lastQueueActivityAt = Date.now();
