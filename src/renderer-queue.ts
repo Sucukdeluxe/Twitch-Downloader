@@ -971,7 +971,6 @@ function renderQueueItem(item: QueueItem): string {
     const safeProgressStatus = escapeHtml(getQueueProgressStatusText(item));
     const safeProgressMetrics = escapeHtml(getQueueProgressMetricsText(item));
     const safeDate = escapeHtml(formatUiDate(item.date));
-    const isClip = item.customClip ? '* ' : '';
     const displayedProgress = getQueueDisplayedProgress(item);
     const progressValue = displayedProgress ?? 0;
     const isFinalizing = item.progressPhase === 'finalizing' && displayedProgress === null;
@@ -1000,7 +999,7 @@ function renderQueueItem(item: QueueItem): string {
             ${isSelected ? `<span class="queue-selection-order" title="${selectionTitle}" aria-label="${selectionTitle}">${selectionPosition}</span>` : ''}
             <div class="queue-main">
                 <div class="queue-title-row">
-                    <div class="title" title="${safeTitle}">${liveBadge}${healthBadge}${mergeIcon}${isClip}${safeTitle}</div>
+                    <div class="title" title="${safeTitle}">${liveBadge}${healthBadge}${mergeIcon}${safeTitle}</div>
                     ${item.status === 'error' && !item.mergeRecoveryBlocked ? `<button class="queue-retry-btn" type="button" title="${escapeHtml(UI_TEXT.queue.retryItem)}" aria-label="${escapeHtml(UI_TEXT.queue.retryItem)}" data-queue-action="retry">&#x21bb;</button>` : ''}
                     <button class="remove" type="button" title="${escapeHtml(UI_TEXT.queue.removeItem)}" aria-label="${escapeHtml(UI_TEXT.queue.removeItem)}" data-queue-action="remove"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
                 </div>
