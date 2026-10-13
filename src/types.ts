@@ -56,6 +56,7 @@ export interface QueueItem {
     totalBytes?: number;
     progressStatus?: string;
     progressPhase?: 'downloading' | 'finalizing';
+    finalization?: Mp4FinalizationProgress;
     last_error?: string;
     customClip?: CustomClip;
     mergeGroup?: MergeGroup;
@@ -79,10 +80,22 @@ export interface QueueItem {
     recordingHealth?: 'ok' | 'stale' | 'unknown';
 }
 
+export interface Mp4FinalizationProgress {
+    stage: 'writing' | 'optimizing' | 'verifying';
+    percent?: number;
+    processedSeconds?: number;
+    durationSeconds?: number;
+    writtenBytes?: number;
+    speedBytesPerSec?: number;
+    etaSeconds?: number;
+    elapsedSeconds: number;
+}
+
 export interface DownloadProgress {
     id: string;
     progress: number;
     progressPhase?: 'downloading' | 'finalizing';
+    finalization?: Mp4FinalizationProgress;
     speed: string;
     speedBytesPerSec?: number;
     eta: string;

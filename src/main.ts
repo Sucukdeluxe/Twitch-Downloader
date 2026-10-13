@@ -77,7 +77,7 @@ import {
     DEFAULT_PERFORMANCE_MODE,
     type PerformanceMode,
 } from './main/domain/config-normalize';
-import { CustomClip, MergeGroupItem, MergeGroup, QueueItem, DownloadProgress, DownloadResult, AutomationScanResult, LiveVodStatus } from './types';
+import { CustomClip, MergeGroupItem, MergeGroup, QueueItem, DownloadProgress, DownloadResult, AutomationScanResult, LiveVodStatus, Mp4FinalizationProgress } from './types';
 import {
     buildVodPreviewFrameUrls,
     parseGraphqlUser,
@@ -3976,17 +3976,31 @@ async function splitMergedFile(
 // ==========================================
 // DOWNLOAD FUNCTIONS
 // ==========================================
-async function finalizeDownloadedMp4(partialFilename: string, filename: string, itemId: string | null, expectedDuration: number | null, clipTracking?: ActiveClipDownloadTracking): Promise<DownloadResult> {
+async function finalizeDownloadedMp4(partialFilename: string, filename: string, itemId: string | null, expectedDuration: number | null, clipTracking?: ActiveClipDownloadTracking, onProgress?: (progress: DownloadProgress) => void): Promise<DownloadResult> {
     const remuxFilename = partialDownloadRegistry.begin(`${filename}.remux`);
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
     try {
         if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
         const diskCheck = ensureDiskSpace(path.dirname(filename), fs.statSync(partialFilename).size + 32 * 1024 * 1024, 'MP4');
         if (!diskCheck.success) return diskCheck;
+        const downloadedSize = fs.statSync(partialFilename).size;
+        const startedAt = Date.now();
+        let finalization: Mp4FinalizationProgress = { stage: 'writing', elapsedSeconds: 0 };
+        const report = (): void => {
+            if (!onProgress || !itemId) return;
+            const statusKey = finalization.stage === 'optimizing' ? 'statusOptimizingMp4' : finalization.stage === 'verifying' ? 'statusVerifyingMp4' : 'statusFinalizingMp4';
+            onProgress({ id: itemId, progress: 100, progressPhase: 'finalizing', finalization: { ...finalization, elapsedSeconds: (Date.now() - startedAt) / 1000 },
+                speed: '', eta: '', downloadedBytes: downloadedSize, status: tBackend(statusKey) });
+        };
+        report();
+        if (onProgress) progressTimer = setInterval(report, 1000);
         await remuxMp4({
             inputPath: partialFilename,
             outputPath: remuxFilename,
             ffmpegPath: await getFFmpegPath(),
             ffprobePath: await getFFprobePath(),
+            durationSeconds: expectedDuration ?? undefined,
+            onProgress: value => { finalization = value; report(); },
             onProcess: (process) => {
                 if (clipTracking) clipTracking.process = process;
                 const remuxRegistration = itemId ? queueProcessRegistry.register(itemId, 'post-processing', createPhaseBoundaryProcessResource(
@@ -4007,6 +4021,7 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
         appendDebugLog('mp4-finalization-failed', { itemId, error: String(error) });
         return { success: false, error: tBackend('mp4FinalizationFailed') };
     } finally {
+        clearInterval(progressTimer);
         partialDownloadRegistry.discard(remuxFilename);
         partialDownloadRegistry.discard(partialFilename);
     }
@@ -4236,7 +4251,7 @@ async function downloadVODPart(
                 }
 
                 onProgress({ id: itemId, progress: 100, progressPhase: 'finalizing', speed: '', eta: '', status: tBackend('statusFinalizingMp4'), currentPart: partNum, totalParts });
-                const finalized = await finalizeDownloadedMp4(partialFilename, filename, itemId, expectedDurationSeconds);
+                const finalized = await finalizeDownloadedMp4(partialFilename, filename, itemId, expectedDurationSeconds, undefined, progress => onProgress({ ...progress, currentPart: partNum, totalParts }));
                 if (!finalized.success) { resolve(finalized); return; }
                 runtimeMetrics.downloadedBytesTotal += stats.size;
                 appendDebugLog('download-part-success', { itemId, filename, bytes: stats.size });

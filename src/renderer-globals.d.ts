@@ -107,6 +107,7 @@ interface QueueItem {
     totalBytes?: number;
     progressStatus?: string;
     progressPhase?: 'downloading' | 'finalizing';
+    finalization?: import('./types').Mp4FinalizationProgress;
     last_error?: string;
     customClip?: CustomClip;
     mergeGroup?: MergeGroup;
@@ -121,6 +122,7 @@ interface DownloadProgress {
     id: string;
     progress: number;
     progressPhase?: 'downloading' | 'finalizing';
+    finalization?: import('./types').Mp4FinalizationProgress;
     speed: string;
     speedBytesPerSec?: number;
     eta: string;

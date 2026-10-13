@@ -71,6 +71,7 @@ export function clearQueueTransferState(item: QueueItem, status: QueueTransition
     delete stable.eta;
     delete stable.progressStatus;
     delete stable.progressPhase;
+    delete stable.finalization;
     delete stable.downloadedBytes;
     delete stable.totalBytes;
     delete stable.recordingHealth;
@@ -82,6 +83,7 @@ export function applyQueueTransferState(item: QueueItem, status: QueueTransition
     delete item.eta;
     delete item.progressStatus;
     delete item.progressPhase;
+    delete item.finalization;
     delete item.downloadedBytes;
     delete item.totalBytes;
     delete item.recordingHealth;
@@ -115,6 +117,7 @@ export function mergeQueueProgressState(item: QueueItem, progress: DownloadProgr
     item.eta = progress.eta || '';
     item.progressStatus = progress.status;
     item.progressPhase = progress.progressPhase;
+    item.finalization = progress.finalization;
     if (typeof progress.currentPart === 'number') item.currentPart = progress.currentPart;
     if (typeof progress.totalParts === 'number') item.totalParts = progress.totalParts;
     if (typeof progress.downloadedBytes === 'number') item.downloadedBytes = progress.downloadedBytes;

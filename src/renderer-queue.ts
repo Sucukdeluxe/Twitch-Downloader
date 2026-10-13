@@ -602,6 +602,10 @@ function getQueueProgressStatusText(item: QueueItem): string {
 
 function getQueueProgressMetricsText(item: QueueItem): string {
     const parts: string[] = [];
+    if (item.progressPhase === 'finalizing' && item.finalization) {
+        const value = getQueueDisplayedProgress(item);
+        return value === null ? '' : value.toLocaleString(getIntlLocale(), { maximumFractionDigits: 1 }) + ' %';
+    }
     if (item.status === 'completed') parts.push('100%');
     if ((item.status === 'downloading' || item.status === 'paused') && item.progress > 0 && item.progressPhase !== 'finalizing') {
         parts.push(`${Math.max(0, Math.min(100, item.progress)).toFixed(1)}%`);
@@ -615,6 +619,20 @@ interface QueueProgressDetail {
     key: string;
     label: string;
     value: string;
+}
+
+function getQueueDisplayedProgress(item: QueueItem): number | null {
+    if (item.status === 'completed') return 100;
+    const value = item.progressPhase === 'finalizing'
+        ? item.finalization?.stage === 'writing' ? item.finalization.percent : undefined
+        : item.progress;
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.min(100, value) : null;
+}
+
+function formatQueueElapsed(seconds: number): string {
+    const value = Math.max(0, Math.round(seconds));
+    return [[Math.floor(value / 3600), 'h'], [Math.floor(value / 60) % 60, 'min'], [value % 60, 's']]
+        .filter(([amount]) => Number(amount) > 0).map(([amount, unit]) => formatUiNumber(Number(amount)) + ' ' + unit).join(' ') || '0 s';
 }
 
 function formatQueueTransferValue(value: string): string {
@@ -641,6 +659,22 @@ function getQueueProgressDetails(item: QueueItem): QueueProgressDetail[] {
     const bytes = Number.isFinite(item.downloadedBytes) && item.downloadedBytes! >= 0 ? formatBytesRenderer(item.downloadedBytes!) : sizeMatch?.[0];
     const size = bytes ? formatQueueTransferValue(bytes) : '';
     if (item.progressPhase === 'finalizing') {
+        const state = item.finalization;
+        if (state) {
+            const writing = state.stage === 'writing';
+            const rows: QueueProgressDetail[] = [{ key: 'message', label: 'Status:', value: writing ? (de ? 'MP4 schreiben' : 'Writing MP4')
+                : state.stage === 'optimizing' ? (de ? 'Wiedergabe optimieren' : 'Optimizing playback') : (de ? 'Datei prüfen' : 'Checking file') }];
+            const percent = getQueueDisplayedProgress(item);
+            const written = typeof state.writtenBytes === 'number' ? formatQueueTransferValue(formatBytesRenderer(state.writtenBytes)) : '';
+            if (writing && percent !== null) rows.push({ key: 'progress', label: de ? 'Fortschritt:' : 'Progress:', value: [percent.toLocaleString(getIntlLocale(), { maximumFractionDigits: 1 }) + ' %', written].filter(Boolean).join(' · ') });
+            else if (written) rows.push({ key: 'size', label: de ? 'Dateigröße:' : 'File size:', value: written });
+            if (writing && state.processedSeconds !== undefined && state.durationSeconds) rows.push({ key: 'time', label: de ? 'Videozeit:' : 'Video time:', value: formatSecondsToTime(Math.floor(Math.min(state.processedSeconds, state.durationSeconds))) + ' / ' + formatSecondsToTime(Math.round(state.durationSeconds)) });
+            if (writing && state.speedBytesPerSec && state.speedBytesPerSec > 0) rows.push({ key: 'speed', label: de ? 'Tempo:' : 'Speed:', value: formatQueueTransferValue(formatBytesRenderer(state.speedBytesPerSec) + '/s') });
+            if (writing && state.etaSeconds && state.etaSeconds > 0) rows.push({ key: 'eta', label: de ? 'Restzeit:' : 'Remaining:', value: formatQueueElapsed(state.etaSeconds) });
+            rows.push({ key: 'elapsed', label: de ? 'Bisher:' : 'Elapsed:', value: formatQueueElapsed(state.elapsedSeconds) });
+            if (item.currentPart && item.totalParts && item.totalParts > 1) rows.push({ key: 'part', label: UI_TEXT.queue.part + ':', value: formatUiNumber(item.currentPart) + ' / ' + formatUiNumber(item.totalParts) });
+            return rows;
+        }
         return [{ key: 'message', label: 'Status:', value: getQueueProgressStatusText(item) }, ...(size ? [{ key: 'size', label: de ? 'Geladen:' : 'Downloaded:', value: size }] : [])];
     }
     const progress = item.progress >= 0 && Number.isFinite(item.progress) ? Math.min(100, item.progress).toLocaleString(getIntlLocale(), { maximumFractionDigits: 1 }) + ' %' : '';
@@ -760,10 +794,11 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
     const wrap = el.querySelector('.queue-progress-wrap') as HTMLElement | null;
 
     if (bar) {
-        const isDeterminate = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
-        const pct = isDeterminate ? Math.min(100, item.progress) : 0;
+        const value = getQueueDisplayedProgress(item);
+        const isDeterminate = value !== null;
+        const pct = value ?? 0;
         bar.style.width = `${pct}%`;
-        bar.className = 'queue-progress-bar' + (item.progressPhase === 'finalizing' ? ' is-finalizing' : '');
+        bar.className = 'queue-progress-bar' + (item.progressPhase === 'finalizing' && !isDeterminate ? ' is-finalizing' : '');
         if (wrap) {
             if (isDeterminate) wrap.setAttribute('aria-valuenow', String(Math.round(pct)));
             else wrap.removeAttribute('aria-valuenow');
@@ -937,10 +972,9 @@ function renderQueueItem(item: QueueItem): string {
     const safeProgressMetrics = escapeHtml(getQueueProgressMetricsText(item));
     const safeDate = escapeHtml(formatUiDate(item.date));
     const isClip = item.customClip ? '* ' : '';
-    const hasDeterminateProgress = item.progressPhase !== 'finalizing' && item.progress > 0 && item.progress <= 100;
-    const progressValue = item.status === 'completed'
-        ? 100
-        : (hasDeterminateProgress ? Math.max(0, Math.min(100, item.progress)) : 0);
+    const displayedProgress = getQueueDisplayedProgress(item);
+    const progressValue = displayedProgress ?? 0;
+    const isFinalizing = item.progressPhase === 'finalizing' && displayedProgress === null;
 
     const isMergeGroup = !!item.mergeGroup;
     const selectionIndex = selectedQueueIds.indexOf(item.id);
@@ -971,8 +1005,8 @@ function renderQueueItem(item: QueueItem): string {
                     <button class="remove" type="button" title="${escapeHtml(UI_TEXT.queue.removeItem)}" aria-label="${escapeHtml(UI_TEXT.queue.removeItem)}" data-queue-action="remove"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
                 </div>
                 ${mergeMetaExtra ? `<div class="queue-meta">${mergeMetaExtra}</div>` : ''}
-                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${item.progressPhase === 'finalizing' ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-description="${safeProgressMetrics}" aria-label="${escapeHtml(safeStatusLabel)}">
-                    <div class="queue-progress-bar${item.progressPhase === 'finalizing' ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
+                <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${displayedProgress === null ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-description="${safeProgressMetrics}" aria-label="${escapeHtml(safeStatusLabel)}">
+                    <div class="queue-progress-bar${isFinalizing ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
                 </div>
                 <button class="queue-footer queue-details-toggle" type="button" aria-label="${escapeHtml(UI_TEXT.queue.toggleDetails)}" aria-describedby="${detailsId}-status ${detailsId}-date" aria-expanded="${expandedQueueIds.has(item.id) ? 'true' : 'false'}" aria-controls="${detailsId}" data-queue-action="details">
                     <span class="queue-status-badge" title="${safeProgressStatus}"><span class="status ${item.status}" aria-hidden="true">${renderQueueStatusIcon(item.status)}</span><span class="queue-status-label" id="${detailsId}-status">${safeStatusLabel}</span></span>

@@ -133,6 +133,7 @@ async function init(): Promise<void> {
         item.totalBytes = progress.totalBytes;
         item.progressStatus = progress.status;
         item.progressPhase = progress.progressPhase;
+        item.finalization = progress.finalization;
         if (progress.recordingHealth) {
             item.recordingHealth = progress.recordingHealth;
         }
@@ -1108,6 +1109,7 @@ function mergeQueueState(nextQueue: QueueItem[]): QueueItem[] {
             totalBytes: item.totalBytes === undefined ? prev.totalBytes : item.totalBytes,
             progressStatus: item.progressStatus === undefined ? prev.progressStatus : item.progressStatus,
             progressPhase: item.progressPhase,
+            finalization: item.finalization,
             recordingHealth: item.recordingHealth === undefined ? prev.recordingHealth : item.recordingHealth
         };
     });
@@ -1122,7 +1124,8 @@ function getQueueStateFingerprint(items: QueueItem[]): string {
         item.totalParts || 0,
         item.last_error || '',
         item.progressStatus || '',
-        item.progressPhase || ''
+        item.progressPhase || '',
+        JSON.stringify(item.finalization || null)
     ].join(':')).join('|');
 }
 
