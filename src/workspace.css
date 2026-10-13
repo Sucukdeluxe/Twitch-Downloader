@@ -1883,12 +1883,10 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
 }
 
 .streamer-profile-live-toggle {
-    min-width: 110px;
-    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
+    gap: 10px;
     min-height: 38px;
     padding: 6px 10px;
     border: 1px solid var(--workspace-border-strong);
@@ -1906,17 +1904,14 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
 }
 
 .streamer-profile-live-toggle > svg {
-    position: absolute;
-    right: 12px;
-    top: 50%;
     width: 16px;
     height: 16px;
-    transform: translateY(-50%);
+    flex-shrink: 0;
     transition: transform 180ms ease;
 }
 
 .streamer-profile-live-toggle[aria-expanded="true"] > svg {
-    transform: translateY(-50%) rotate(180deg);
+    transform: rotate(180deg);
 }
 
 .streamer-profile-live-toggle:focus-visible {
@@ -1925,6 +1920,8 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
 }
 
 .streamer-profile-live-panel {
+    position: relative;
+    z-index: 2;
     display: grid;
     grid-template-rows: 0fr;
     transition: grid-template-rows 200ms cubic-bezier(.2, .7, .3, 1);

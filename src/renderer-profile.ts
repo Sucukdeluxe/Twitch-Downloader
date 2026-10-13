@@ -6,28 +6,32 @@ let activeProfileRequestId = 0;
 let activeProfileLogin = '';
 const streamerProfileCache = new Map<string, StreamerProfile>();
 const streamerProfileLoads = new Map<string, Promise<StreamerProfile | null>>();
-let liveProfileExpanded: boolean | null = null;
+const liveProfileExpandedByLogin = new Map<string, boolean>();
 
-function isLiveProfileExpanded(): boolean {
-    if (liveProfileExpanded === null) {
-        try { liveProfileExpanded = localStorage.getItem('twitch-vod-manager:profile-live-expanded') === '1'; }
-        catch { liveProfileExpanded = false; }
-    }
-    return liveProfileExpanded;
+function isLiveProfileExpanded(login = activeProfileLogin): boolean {
+    const key = login.toLowerCase();
+    const cached = liveProfileExpandedByLogin.get(key);
+    if (cached !== undefined) return cached;
+    let expanded = false;
+    try { expanded = localStorage.getItem('twitch-vod-manager:profile-live-expanded:' + key) === '1'; } catch { }
+    liveProfileExpandedByLogin.set(key, expanded);
+    return expanded;
 }
 
 function toggleStreamerLiveDetails(): void {
-    liveProfileExpanded = !isLiveProfileExpanded();
-    try { localStorage.setItem('twitch-vod-manager:profile-live-expanded', liveProfileExpanded ? '1' : '0'); } catch { }
+    const expanded = !isLiveProfileExpanded();
+    const key = activeProfileLogin.toLowerCase();
+    liveProfileExpandedByLogin.set(key, expanded);
+    try { localStorage.setItem('twitch-vod-manager:profile-live-expanded:' + key, expanded ? '1' : '0'); } catch { }
     const button = document.getElementById('streamerProfileLiveToggle');
     const panel = document.getElementById('streamerProfileLivePanel');
     if (!button || !panel) return;
-    button.setAttribute('aria-expanded', String(liveProfileExpanded));
-    button.setAttribute('aria-label', liveProfileExpanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive);
-    button.title = liveProfileExpanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive;
-    panel.classList.toggle('is-expanded', liveProfileExpanded);
-    panel.setAttribute('aria-hidden', String(!liveProfileExpanded));
-    panel.inert = !liveProfileExpanded;
+    button.setAttribute('aria-expanded', String(expanded));
+    button.setAttribute('aria-label', expanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive);
+    button.title = expanded ? UI_TEXT.profile.hideLive : UI_TEXT.profile.showLive;
+    panel.classList.toggle('is-expanded', expanded);
+    panel.setAttribute('aria-hidden', String(!expanded));
+    panel.inert = !expanded;
 }
 
 function getLiveVodCover(login: string, vodId: string): string {
@@ -126,7 +130,7 @@ function renderStreamerProfileCard(p: StreamerProfile): void {
     const statusReader = (window as unknown as { getStreamerLiveVodStatus?: (login: string) => { isLive: boolean } | undefined }).getStreamerLiveVodStatus;
     const status = statusReader?.(p.login);
     if (status) p = { ...p, isLive: status.isLive };
-    const expanded = isLiveProfileExpanded();
+    const expanded = isLiveProfileExpanded(p.login);
     const focusedId = document.activeElement?.id;
     const el = document.getElementById('streamerProfileHeader');
     if (!el) return;
