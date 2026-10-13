@@ -1,6 +1,7 @@
 type StreamerSearchHit = import('./main/twitch/channel-search').TwitchChannelSearchHit;
 
 let streamerSearchGeneration = 0;
+let streamerSearchSession = 0;
 let streamerSearchTimer: number | undefined;
 let streamerSearchCloseTimer: number | undefined;
 let streamerSearchHits: StreamerSearchHit[] = [];
@@ -53,6 +54,7 @@ function openStreamerSearchDialog(): void {
     dialog.classList.remove('is-closing');
     updateStreamerSearchTexts();
     if (!dialog.open) {
+        streamerSearchSession++;
         streamerSearchOpener = document.getElementById('btnAddStreamer') ?? document.activeElement as HTMLElement;
         clearStreamerSearch();
         dialog.showModal();
@@ -62,7 +64,8 @@ function openStreamerSearchDialog(): void {
 
 function closeStreamerSearchDialog(): void {
     const dialog = streamerSearchDialog();
-    if (!dialog.open) return;
+    if (!dialog.open || dialog.classList.contains('is-closing')) return;
+    streamerSearchSession++;
     streamerSearchGeneration++;
     window.clearTimeout(streamerSearchTimer);
     dialog.classList.add('is-closing');
@@ -176,27 +179,40 @@ function renderStreamerSearchResults(): void {
         return row;
     });
     list.replaceChildren(...rows);
-    list.setAttribute('aria-busy', String(streamerSearchLoading));
+    list.setAttribute('aria-busy', String(streamerSearchLoading || streamerSearchAdding));
     list.scrollTop = scroll;
     if (focused) Array.from(list.querySelectorAll<HTMLButtonElement>('button')).find(button => button.dataset.streamerLogin === focused && !button.disabled)?.focus({ preventScroll: true });
 }
 
 async function addStreamerSearchResult(channel: StreamerSearchHit): Promise<void> {
-    if (streamerSearchAdding) return;
+    const dialog = streamerSearchDialog();
+    if (streamerSearchAdding || !dialog.open || dialog.classList.contains('is-closing')) return;
     streamerSearchAdding = true;
     const generation = streamerSearchGeneration;
+    const session = streamerSearchSession;
     setStreamerSearchStatus(UI_TEXT.streamerSearch.adding);
-    renderStreamerSearchResults();
+    syncStreamerSearchButtons();
     try {
         const added = await addStreamer(channel.login);
         if (added) rememberStreamerDisplayName(channel.login, channel.displayName);
-        if (generation === streamerSearchGeneration) setStreamerSearchStatus(added ? UI_TEXT.streamerSearch.results : UI_TEXT.streamerSearch.failed);
+        if (session !== streamerSearchSession || !dialog.open) return;
+        if (added) closeStreamerSearchDialog();
+        else if (generation === streamerSearchGeneration) setStreamerSearchStatus(UI_TEXT.streamerSearch.failed);
     } catch { if (generation === streamerSearchGeneration) setStreamerSearchStatus(UI_TEXT.streamerSearch.failed); }
     finally {
         streamerSearchAdding = false;
-        if (!streamerSearchLoading) renderStreamerSearchResults();
+        syncStreamerSearchButtons();
         if (generation === streamerSearchGeneration && streamerSearchDialog().open) document.getElementById('newStreamer')?.focus({ preventScroll: true });
     }
+}
+
+function syncStreamerSearchButtons(): void {
+    const dialog = streamerSearchDialog();
+    document.getElementById('streamerSearchResults')!.setAttribute('aria-busy', String(streamerSearchLoading || streamerSearchAdding));
+    dialog.querySelectorAll<HTMLButtonElement>('.streamer-search-add').forEach(button => {
+        button.disabled = streamerSearchAdding || dialog.classList.contains('is-closing')
+            || (config.streamers ?? []).some(login => login.toLowerCase() === button.dataset.streamerLogin);
+    });
 }
 
 function handleStreamerSearchKey(event: KeyboardEvent): void {
