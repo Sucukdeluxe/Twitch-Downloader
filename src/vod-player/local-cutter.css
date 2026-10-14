@@ -13,12 +13,12 @@
 #cutterTab .cutter-info-label { font-size: 12px; text-transform: none; letter-spacing: normal; color: var(--text-secondary); }
 #cutterTab .cutter-info-value { font-size: 12px; font-weight: 600; color: var(--text); }
 #cutterTab button.btn-secondary, #cutterTab button.btn-primary { font-size: 13px; }
-#cutterTab .cutter-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 356px; min-height: 0; gap: 14px; align-items: start; flex: 0 0 auto; }
+#cutterTab .cutter-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 420px; min-height: 0; gap: 14px; align-items: start; flex: 0 0 auto; }
 #cutterTab .cutter-workspace:not(.shown) { grid-template-columns: minmax(0, 1fr); }
 #cutterTab .cutter-preview-panel, #cutterTab .cutter-workspace:not(.shown) .cutter-preview-panel { display: flex; width: 100%; height: auto; min-height: 0; padding: 0; background: transparent; border: 0; overflow: visible; }
 #cutterPlayer { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; min-height: 0; overflow: visible; background: transparent; border: 0; border-radius: 0; }
 #cutterTab .cutter-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); overflow: hidden; }
-#cutterTab .cutter-panel-header, #cutterTab .cutter-export-header { display: flex; align-items: center; justify-content: space-between; min-height: 44px; gap: 12px; padding: 10px 14px; flex: 0 0 auto; border-bottom: 1px solid var(--workspace-border, var(--border)); }
+#cutterTab .cutter-panel-header, #cutterTab .cutter-export-header { display: flex; align-items: center; justify-content: space-between; min-height: 40px; gap: 10px; padding: 8px 12px; flex: 0 0 auto; border-bottom: 1px solid var(--workspace-border, var(--border)); }
 #cutterTab h3 { margin: 0; font-size: 14px; font-weight: 600; }
 #cutterPlayer .video-preview { width: 100%; height: auto; min-height: 180px; flex: 0 0 auto; aspect-ratio: 16 / 9; max-height: 650px; border: 0; border-radius: 0; }
 #cutterPlayer .video-preview video { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -30,11 +30,11 @@
 #cutterPlayer.cinema, #cutterPlayer:fullscreen { height: 100dvh; padding: 14px; box-sizing: border-box; background: var(--workspace-background, #202020); }
 #cutterPlayer.cinema .cutter-viewer, #cutterPlayer:fullscreen .cutter-viewer { flex: 1 1 0; }
 #cutterPlayer.cinema .video-preview, #cutterPlayer:fullscreen .video-preview { height: 0; flex: 1 1 0; aspect-ratio: auto; max-height: none; }
-#cutterTab .cutter-inspector { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+#cutterTab .cutter-inspector { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 #cutterTab .cutter-workspace:not(.shown) .cutter-inspector { display: none; }
 #cutterTab .cutter-sidebar { flex: 0 0 auto; display: flex; flex-direction: column; align-self: stretch; max-height: none; min-height: 0; padding: 0; gap: 0; overflow: visible; border-radius: 10px; scrollbar-gutter: auto; }
 #cutterTab .cutter-format-badge { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 4px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 5px; color: var(--text); }
-#cutterTab .cutter-export-body { display: grid; gap: 14px; padding: 14px; min-height: 0; overflow: visible; }
+#cutterTab .cutter-export-body { display: grid; gap: 10px; padding: 12px; min-height: 0; overflow: visible; }
 #cutterTab .cutter-export-summary { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; padding: 10px 12px; border: 1px solid var(--workspace-border, var(--border)); background: var(--workspace-control, var(--bg-main)); border-radius: 7px; }
 #cutterTab .cutter-export-summary > span { font-size: 12px; color: var(--text-secondary); }
 #cutterTab .cutter-export-summary strong { font: 600 18px Consolas, monospace; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -53,7 +53,7 @@
 #cutterTab .cutter-format-details { font-size: 13px; line-height: 1.5; border-top: 1px solid var(--workspace-border, var(--border)); padding-top: 10px; }
 #cutterTab .cutter-format-details summary { cursor: pointer; padding: 2px 0; color: var(--text); user-select: none; }
 #cutterTab .cutter-format-details[open] summary { margin-bottom: 12px; }
-#cutterTab .cutter-export-footer { flex: 0 0 auto; padding: 12px 14px; border-top: 1px solid var(--workspace-border, var(--border)); }
+#cutterTab .cutter-export-footer { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--workspace-border, var(--border)); }
 #cutterTab .cutter-actions { display: flex; gap: 8px; margin: 0; flex-wrap: wrap; }
 #cutterTab .cutter-actions #btnCut { flex: 1 1 100%; width: 100%; min-width: 0; min-height: 40px; font-weight: 600; background: #287a49; color: #fff; border: 1px solid #439460; }
 #cutterTab .cutter-actions #btnCut:hover:not(:disabled) { background: #318c56; }
@@ -91,42 +91,42 @@
 #cutterTab .vod-range-markers.is-excerpt .vod-range-handle { background: #287a49; border-color: #82c69d; }
 #cutterTab .vod-range-markers.is-excerpt .vod-range-band { border-color: #79bc93; background: #438c601a; }
 #cutterTab .vod-range-markers.is-excerpt .vod-range-connectors path { stroke: #79bc93; }
-#cutterTab .cutter-edit-panel { padding: 14px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); flex: 0 0 auto; }
+#cutterTab .cutter-edit-panel { padding: 12px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); flex: 0 0 auto; }
 #cutterTab .cutter-edit-panel[hidden] { display: none; }
-#cutterTab .cutter-edit-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 8px; align-items: center; margin-bottom: 14px; }
+#cutterTab .cutter-edit-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; margin-bottom: 10px; }
 #cutterTab .cutter-edit-toolbar h3 { grid-row: 1; grid-column: 1; }
-#cutterTab .cutter-history-controls { grid-row: 1; grid-column: 2; margin: 0; }
-#cutterTab .cutter-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; grid-row: 2; grid-column: 1 / -1; }
+#cutterTab .cutter-history-controls { grid-row: 1; grid-column: 3; margin: 0; }
+#cutterTab .cutter-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; grid-row: 2; grid-column: 1 / -1; }
 #cutterTab .cutter-modes button { display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 6px 7px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 6px; background: var(--workspace-control, var(--bg-main)); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; user-select: none; }
 #cutterTab .cutter-modes button[aria-pressed="true"] { border-color: #64a57e; background: #468b6220; }
 #cutterTab .cutter-mode-icon { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
-#cutterTab #cutterFullRange { grid-row: 3; grid-column: 1 / -1; width: 100%; min-height: 30px; }
+#cutterTab #cutterFullRange { grid-row: 1; grid-column: 2; width: auto; min-height: 30px; padding: 4px 8px; font-size: 12px; }
 #cutterTab .cutter-trim-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: stretch; }
-#cutterTab .cutter-boundary-field { display: grid; gap: 6px; padding: 9px 10px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; background: var(--workspace-control, var(--bg-main)); }
-#cutterTab .cutter-boundary-field > div { display: contents; }
+#cutterTab .cutter-boundary-field { display: grid; gap: 5px; padding: 7px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; background: var(--workspace-control, var(--bg-main)); }
+#cutterTab .cutter-boundary-field > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
 #cutterTab .cutter-boundary-field label { grid-row: 1; }
 #cutterTab .cutter-boundary-field input { grid-row: 2; }
 #cutterTab .cutter-boundary-field .btn-secondary { grid-row: 3; }
 #cutterTab .cutter-boundary-field label { font-size: 13px; font-weight: 600; }
 #cutterTab .cutter-boundary-field kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 5px; background: #287a49; border: 1px solid #64a57e; color: #fff; border-radius: 4px; font-size: 12px; }
-#cutterTab .cutter-boundary-field .btn-secondary { min-height: 26px; padding: 3px 8px; font-size: 12px; }
+#cutterTab .cutter-boundary-field .btn-secondary { min-height: 24px; padding: 2px 5px; font-size: 12px; }
 #cutterTab .cutter-boundary-field input { width: 100%; height: 32px; text-align: left; font: 600 17px Consolas, monospace; font-variant-numeric: tabular-nums; padding: 4px 2px; background: transparent; border: 0; border-radius: 4px; color: var(--text); }
-#cutterTab .cutter-output-length { grid-column: 1 / -1; grid-row: 2; min-width: 0; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 10px 12px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; background: transparent; }
+#cutterTab .cutter-output-length { grid-column: 1 / -1; grid-row: 2; min-width: 0; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 6px 8px; border: 0; border-radius: 0; background: transparent; }
 #cutterTab .cutter-output-length span { font-size: 12px; color: var(--text-secondary); }
 #cutterTab .cutter-output-length strong { font: 600 18px Consolas, monospace; font-variant-numeric: tabular-nums; color: #80c49e; }
 .theme-light #cutterTab .cutter-output-length strong { color: #227649; }
-#cutterTab .cutter-edit-bottom { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-height: 0; flex-wrap: wrap; }
+#cutterTab .cutter-edit-bottom { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; margin-top: 8px; min-height: 0; }
 #cutterTab #cutterNewCutBtn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 #cutterTab #cutterNewCutBtn svg { width: 16px; height: 16px; }
-#cutterTab .cutter-preview-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; margin: 0; padding: 0 2px; color: var(--text); font-size: 12px; line-height: 1.35; cursor: pointer; user-select: none; }
+#cutterTab .cutter-preview-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; white-space: nowrap; color: var(--text); font-size: 12px; line-height: 1.35; cursor: pointer; user-select: none; }
 #cutterTab .cutter-preview-toggle input { appearance: none; position: relative; box-sizing: border-box; flex: 0 0 16px; width: 16px; height: 16px; margin: 0; padding: 0; opacity: 1; border: 1px solid var(--workspace-border-strong, var(--border)); border-radius: 4px; background-color: var(--workspace-control, var(--bg-main)); cursor: pointer; transition: background-color .15s, border-color .15s; }
 #cutterTab .cutter-preview-toggle input:checked { background-color: #287a49; border-color: #64a57e; background-position: center; background-size: 12px; background-repeat: no-repeat; }
 #cutterTab .cutter-preview-toggle input:hover:not(:disabled) { border-color: #79bc93; }
 #cutterTab .cutter-preview-toggle input:focus-visible { outline: 2px solid #79bc93; outline-offset: 2px; box-shadow: none; }
 #cutterTab .cutter-preview-toggle input:active:not(:disabled) { transform: none; }
 #cutterTab .cutter-preview-toggle input:disabled { opacity: .5; cursor: default; }
-#cutterTab .cutter-edit-hint { font-size: 11px; color: var(--text-secondary); margin: 0; width: 100%; }
-#cutterTab .cutter-cut-list { height: auto; min-height: 0; max-height: 260px; overflow: auto; scrollbar-gutter: stable; margin-top: 10px; gap: 8px; }
+#cutterTab .cutter-edit-hint { grid-column: 1 / -1; font-size: 11px; color: var(--text-secondary); margin: 0; width: 100%; }
+#cutterTab .cutter-cut-list { height: auto; min-height: 0; max-height: none; overflow: visible; scrollbar-gutter: auto; margin-top: 10px; gap: 8px; }
 #cutterTab .cutter-cut-list:has(.cutter-cut-empty), #cutterTab .cutter-cut-list:empty { display: none; }
 #cutterTab .cutter-cut-count { padding: 4px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 5px; background: transparent; color: var(--text-secondary); font-size: 11px; }
 #cutterTab .cutter-cut-count[hidden] { display: none; }
@@ -153,11 +153,11 @@
 @container (max-width: 550px) { .local-cutter-controls .player-volume-control { display: none; } .local-cutter-controls .player-button { width: 36px; } }
 @media (min-width: 1101px) and (min-height: 860px) {
   #cutterTab .cutter-container { height: 100%; min-height: 0; }
-  #cutterTab .cutter-workspace.shown { flex: 1 0 640px; align-items: stretch; }
+  #cutterTab .cutter-workspace.shown { flex: 1 0 auto; align-items: stretch; }
   #cutterTab .cutter-preview-panel, #cutterTab .cutter-workspace.shown #cutterPlayer { height: 100%; }
   #cutterTab .cutter-workspace.shown .cutter-viewer { flex: 1 1 0; min-height: 280px; }
   #cutterTab .cutter-workspace.shown #cutterPlayer .video-preview { height: 0; min-height: 180px; flex: 1 1 0; aspect-ratio: auto; max-height: none; }
-  #cutterTab .cutter-inspector { max-height: 100%; overflow-y: auto; scrollbar-width: thin; padding: 0 2px 2px; }
+  #cutterTab .cutter-inspector { max-height: none; overflow: visible; padding: 0; }
 }
 @media (max-width: 1100px) {
   #cutterTab .cutter-workspace { grid-template-columns: minmax(0, 1fr); }
@@ -182,3 +182,10 @@
 .audio-preview-meter i.is-peak { background:#f4ba57; }
 .audio-preview-meter output { width:33px; text-align:right; color:#e7edf3; }
 @media (max-width:760px) { .audio-preview-meter { display:none; } }
+
+@media (min-width: 701px) and (max-width: 900px) {
+  #cutterTab .cutter-edit-bottom { grid-template-columns: minmax(0, 1fr); }
+  #cutterTab .cutter-edit-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
+  #cutterTab .cutter-history-controls { grid-column: 2; }
+  #cutterTab #cutterFullRange { grid-row: 3; grid-column: 1 / -1; }
+}
