@@ -1,3 +1,4 @@
+import { createCutterWaveformAccumulator } from './main/domain/cutter-waveform';
 import { combineClipArchiveInventory, isWithinArchiveRoot } from './main/domain/clip-archive-inventory';
 import { clipLibraryPage } from './main/domain/clip-library';
 import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
@@ -440,6 +441,7 @@ interface VideoEditorAssets {
 }
 
 interface VideoEditorWaveform {
+    peaks?: number[][];
     channels?: number;
     jobId: number;
     waveform: string | null;
@@ -3015,7 +3017,7 @@ async function runEditorMediaProcess(args: string[], runGeneration: number): Pro
     });
 }
 
-async function runEditorWaveformProcess(args: string[], runGeneration: number): Promise<boolean> {
+async function runEditorWaveformProcess(args: string[], runGeneration: number, onData: (chunk: string) => void): Promise<boolean> {
     const ffmpegPath = await getFFmpegPath();
     return new Promise((resolve) => {
         if (runGeneration !== cutterWaveformGeneration || appShutdownStarted) {
@@ -3026,6 +3028,7 @@ async function runEditorWaveformProcess(args: string[], runGeneration: number): 
         const proc = spawn(ffmpegPath, args, { windowsHide: true });
         currentCutterWaveformProcesses.add(proc);
         proc.stderr?.resume();
+        proc.stdout?.on('data', (chunk: Buffer) => onData(chunk.toString()));
         let settled = false;
         const finish = (success: boolean): void => {
             if (settled) return;
@@ -3140,27 +3143,30 @@ async function prepareVideoEditorWaveform(filePath: string, jobId: number): Prom
     if (job.waveformPromise) return await job.waveformPromise;
     const runGeneration = cutterWaveformGeneration;
     const promise = (async (): Promise<VideoEditorWaveform | null> => {
-        const tempDir = fs.mkdtempSync(path.join(app.getPath('temp'), `tvm-editor-waveform-${process.pid}-`));
-        const waveformFile = path.join(tempDir, 'waveform.png');
         const channels = Math.max(1, Math.min(8, job.info.audioStreams[0]?.channels || 1));
-        const pixelHeight = Math.max(192, channels * 96);
-        try {
-            const success = await runEditorWaveformProcess([
-                '-i', filePath,
-                '-filter_complex_threads', '1',
-                '-filter_complex', `[0:a:0]showwavespic=s=32000x${pixelHeight}:split_channels=1:colors=white:scale=sqrt:filter=peak:draw=full`,
-                '-frames:v', '1',
-                '-y', waveformFile,
-            ], runGeneration);
-            if (!success || runGeneration !== cutterWaveformGeneration || cutterMediaJob !== job || !cutterInputIdentitiesMatch(getCutterInputIdentity(filePath), job.identity) || appShutdownStarted) return null;
-            const waveform = readImageDataUrl(waveformFile);
-            if (!waveform) return null;
-            const result = { jobId, waveform, pixelWidth: 32000, pixelHeight, channels };
-            job.waveform = result;
-            return result;
-        } finally {
-            fs.rmSync(tempDir, { recursive: true, force: true });
-        }
+        const accumulator = createCutterWaveformAccumulator(job.info.duration, channels);
+        let lastUpdate = 0;
+        const publish = (): void => {
+            if (runGeneration !== cutterWaveformGeneration || cutterMediaJob !== job || appShutdownStarted) return;
+            const update = accumulator.takeUpdate(jobId);
+            if (update) mainWindow?.webContents.send('video-editor-waveform-progress', update);
+            lastUpdate = Date.now();
+        };
+        const success = await runEditorWaveformProcess([
+            '-hide_banner', '-loglevel', 'error', '-threads', '2', '-i', filePath,
+            '-map', '0:a:0', '-vn', '-sn', '-dn', '-filter_threads', '1',
+            '-af', `aformat=sample_rates=48000,asetnsamples=n=${accumulator.samplesPerBin}:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=-`,
+            '-f', 'null', '-',
+        ], runGeneration, (chunk) => {
+            accumulator.push(chunk);
+            if (Date.now() - lastUpdate >= 100) publish();
+        });
+        accumulator.finish();
+        if (!success || !accumulator.completedBins || runGeneration !== cutterWaveformGeneration || cutterMediaJob !== job || !cutterInputIdentitiesMatch(getCutterInputIdentity(filePath), job.identity) || appShutdownStarted) return null;
+        publish();
+        const result = { jobId, waveform: null, peaks: accumulator.peaks.map(channel => Array.from(channel)), pixelWidth: accumulator.totalBins, pixelHeight: Math.max(192, channels * 96), channels };
+        job.waveform = result;
+        return result;
     })();
     job.waveformPromise = promise;
     const result = await promise;
@@ -3180,16 +3186,35 @@ async function prepareVideoEditorAssets(filePath: string, jobId: number, profile
     const thumbnailTileWidth = Math.max(428, Math.ceil(pixelWidth / thumbnailCount / 2) * 2);
     const thumbnailTileHeight = 240;
     try {
-        const thumbnailsReady = await runEditorMediaProcess([
-            '-threads', '2',
-            '-i', filePath,
-            '-filter_threads', '1',
-            '-vf', `fps=${thumbnailCount / info.duration},${info.sourceFormat.hdr ? cutterVideoFormat(info.sourceFormat, false, 'sdr').filters.join(',') + ',' : ''}scale=${thumbnailTileWidth}:${thumbnailTileHeight}:force_original_aspect_ratio=increase:flags=lanczos,crop=${thumbnailTileWidth}:${thumbnailTileHeight}`,
-            '-frames:v', String(thumbnailCount),
-            '-q:v', '2',
-            '-start_number', '1',
-            '-y', path.join(tempDir, 'thumb-%03d.jpg'),
-        ], runGeneration);
+        const thumbnailFilter = `${info.sourceFormat.hdr ? cutterVideoFormat(info.sourceFormat, false, 'sdr').filters.join(',') + ',' : ''}scale=${thumbnailTileWidth}:${thumbnailTileHeight}:force_original_aspect_ratio=increase:flags=lanczos,crop=${thumbnailTileWidth}:${thumbnailTileHeight}`;
+        let thumbnailsReady: boolean;
+        if (info.duration <= 120) {
+            thumbnailsReady = await runEditorMediaProcess([
+                '-threads', '2', '-i', filePath, '-an', '-sn',
+                '-filter_threads', '1', '-vf', `fps=${thumbnailCount / info.duration},${thumbnailFilter}`,
+                '-frames:v', String(thumbnailCount), '-q:v', '2', '-start_number', '1',
+                '-y', path.join(tempDir, 'thumb-%03d.jpg'),
+            ], runGeneration);
+        } else {
+            let nextIndex = 0;
+            let failed = false;
+            const extract = async (): Promise<boolean> => {
+                while (nextIndex < thumbnailCount) {
+                    if (failed || runGeneration !== cutterAssetRunGeneration || appShutdownStarted) return false;
+                    const index = nextIndex++;
+                    const time = Math.min(info.duration - 1 / info.fps, (index + 0.5) / thumbnailCount * info.duration);
+                    const success = await runEditorMediaProcess([
+                        '-threads', '2', '-ss', Math.max(0, time).toFixed(6), '-i', filePath, '-an', '-sn',
+                        '-filter_threads', '1', '-vf', thumbnailFilter,
+                        '-frames:v', '1', '-q:v', '2',
+                        '-y', path.join(tempDir, `thumb-${String(index + 1).padStart(3, '0')}.jpg`),
+                    ], runGeneration);
+                    if (!success) { failed = true; return false; }
+                }
+                return true;
+            };
+            thumbnailsReady = (await Promise.all([extract(), extract()])).every(Boolean);
+        }
         if (runGeneration !== cutterAssetRunGeneration || !cutterMediaJob || jobId !== cutterMediaJob.jobId || !cutterInputIdentitiesMatch(getCutterInputIdentity(filePath), cutterMediaJob.identity) || appShutdownStarted) return null;
         if (!thumbnailsReady) return null;
         const thumbnails = fs.readdirSync(tempDir)

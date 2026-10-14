@@ -3375,6 +3375,15 @@ input[type="checkbox"].vod-select-checkbox {
     display: none;
 }
 
+.cutter-waveform-status {
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.cutter-waveform-status[hidden] {
+    display: none;
+}
+
 .cutter-audio-empty {
     height: 100%;
     display: flex;

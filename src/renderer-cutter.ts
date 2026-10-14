@@ -58,6 +58,8 @@ let cutterThumbnailRenderFrame: number | null = null;
 let cutterThumbnailSpriteObjectUrl: string | null = null;
 let cutterThumbnailImages: HTMLImageElement[] = [];
 let cutterWaveformPeaks: Uint8Array[] = [];
+let cutterWaveformCompletedBins = 0;
+let cutterWaveformStatus: 'none' | 'loading' | 'complete' | 'failed' = 'none';
 let cutterWaveformImage: HTMLImageElement | null = null;
 let cutterWaveformRenderFrame: number | null = null;
 let cutterEditorInitialized = false;
@@ -291,6 +293,7 @@ function refreshCutterLocalizedUi(): void {
     renderCutterProjectRecovery(cutterPendingProject);
     updateCutterAudioStreams();
     updateCutterExportControls(cutterExportOptions);
+    updateCutterWaveformStatus();
     updateCutterEditActions();
     syncCutterPlayer();
     if (cutterEditorState) renderCutterEditor();
@@ -921,7 +924,7 @@ function renderCutterCutOverlays(): void {
     });
 }
 
-function updateCutterEditorGeometry(): void {
+function updateCutterEditorGeometry(validatedCutId: string | null = null): void {
     if (!cutterEditorState) return;
     const startPercent = cutterEditorState.trimStart / cutterEditorState.duration * 100;
     const endPercent = cutterEditorState.trimEnd / cutterEditorState.duration * 100;
@@ -946,15 +949,16 @@ function updateCutterEditorGeometry(): void {
         const cut = cutterEditorState!.cuts.find((entry) => entry.id === row.dataset.cutId);
         if (!cut) return;
         const inputs = row.querySelectorAll<HTMLInputElement>('input');
-        if (cutterDragState?.cutId === cut.id || cutterRangeDrag?.cutId === cut.id) {
+        const validated = validatedCutId === cut.id || cutterDragState?.cutId === cut.id || cutterRangeDrag?.cutId === cut.id;
+        if (validated) {
             inputs.forEach(input => input.setAttribute('aria-invalid', 'false'));
             const apply = row.querySelector<HTMLButtonElement>('.btn-secondary');
             const error = row.querySelector<HTMLElement>('.cutter-range-error');
             if (apply) apply.disabled = !cutterControlsEnabled;
             if (error) error.hidden = true;
         }
-        if (inputs[0] && document.activeElement !== inputs[0]) inputs[0].value = formatCutterTimecode(cut.start);
-        if (inputs[1] && document.activeElement !== inputs[1]) inputs[1].value = formatCutterTimecode(cut.end);
+        if (inputs[0] && (validated || document.activeElement !== inputs[0])) inputs[0].value = formatCutterTimecode(cut.start);
+        if (inputs[1] && (validated || document.activeElement !== inputs[1])) inputs[1].value = formatCutterTimecode(cut.end);
         const duration = row.querySelector<HTMLElement>('.cutter-cut-duration');
         if (duration) duration.textContent = formatCutterTimecode(cut.end - cut.start);
         row.classList.toggle('active', cut.id === cutterActiveCutId);
@@ -1034,6 +1038,9 @@ async function requestCutterAssets(): Promise<void> {
 function clearCutterWaveform(): void {
     cutterWaveformImage = null;
     cutterWaveformPeaks = [];
+    cutterWaveformCompletedBins = 0;
+    cutterWaveformStatus = 'none';
+    updateCutterWaveformStatus();
     if (cutterWaveformRenderFrame !== null) cancelAnimationFrame(cutterWaveformRenderFrame);
     cutterWaveformRenderFrame = null;
     const canvas = byId<HTMLCanvasElement>('cutterWaveform');
@@ -1063,11 +1070,13 @@ function drawCutterWaveform(): void {
     cutterWaveformPeaks.forEach((peaks, channel) => {
         const center = (channel + .5) * laneHeight;
         context.fillStyle = '#64717c';
-        context.fillRect(0, Math.round(center), canvas.width, 1);
+        const readyWidth = Math.max(0, Math.min(canvas.width, (cutterWaveformCompletedBins / peaks.length * totalWidth - left) * ratio));
+        context.fillRect(0, Math.round(center), readyWidth, 1);
         context.fillStyle = '#9ac8bb';
         for (let x = 0; x < canvas.width; x += 1) {
             const start = Math.min(peaks.length - 1, Math.floor((left + x / ratio) / totalWidth * peaks.length));
-            const end = Math.min(peaks.length, Math.max(start + 1, Math.ceil((left + (x + 1) / ratio) / totalWidth * peaks.length)));
+            if (start >= cutterWaveformCompletedBins) continue;
+            const end = Math.min(cutterWaveformCompletedBins, Math.max(start + 1, Math.ceil((left + (x + 1) / ratio) / totalWidth * peaks.length)));
             let peak = 0;
             for (let index = start; index < end; index += 1) peak = Math.max(peak, peaks[index]);
             const height = Math.round(peak / 255 * Math.max(1, laneHeight / 2 - 2));
@@ -1082,21 +1091,65 @@ function scheduleCutterWaveformRender(): void {
     cutterWaveformRenderFrame = requestAnimationFrame(drawCutterWaveform);
 }
 
+function updateCutterWaveformStatus(): void {
+    const element = byId('cutterWaveformStatus');
+    element.hidden = cutterWaveformStatus === 'none' || cutterWaveformStatus === 'complete';
+    const percent = cutterWaveformPeaks[0]?.length
+        ? Math.min(99, Math.floor(cutterWaveformCompletedBins / cutterWaveformPeaks[0].length * 100))
+        : 0;
+    element.textContent = cutterWaveformStatus === 'failed'
+        ? UI_TEXT.cutter.waveformFailed
+        : UI_TEXT.cutter.waveformLoading.replace('{percent}', String(percent));
+}
+
+function receiveCutterWaveformProgress(progress: import('./main/domain/cutter-waveform').VideoEditorWaveformProgress): void {
+    if (progress.jobId !== cutterMediaJobId || cutterWaveformStatus !== 'loading' || !cutterVideoInfo?.hasAudio) return;
+    if (!cutterWaveformPeaks.length) cutterWaveformPeaks = progress.peaks.map(() => new Uint8Array(progress.totalBins));
+    progress.peaks.forEach((peaks, channel) => cutterWaveformPeaks[channel]?.set(peaks, progress.startIndex));
+    cutterWaveformCompletedBins = Math.max(cutterWaveformCompletedBins, progress.completedBins);
+    updateCutterWaveformStatus();
+    scheduleCutterWaveformRender();
+}
+
 async function requestCutterWaveform(file: FileCapabilityReference, jobId: number, loadGeneration: number): Promise<void> {
+    cutterWaveformStatus = cutterVideoInfo?.hasAudio ? 'loading' : 'none';
+    updateCutterWaveformStatus();
     let result: VideoEditorWaveform | null = null;
     try {
         result = await window.api.prepareVideoEditorWaveform(file.token, jobId);
     } catch { }
-    if (loadGeneration !== cutterLoadGeneration || cutterFile !== file || cutterMediaJobId !== jobId || !result || result.jobId !== jobId) return;
+    if (loadGeneration !== cutterLoadGeneration || cutterFile !== file || cutterMediaJobId !== jobId) return;
+    if (!result || result.jobId !== jobId) {
+        cutterWaveformStatus = cutterVideoInfo?.hasAudio ? 'failed' : 'none';
+        updateCutterWaveformStatus();
+        return;
+    }
+    if (result.peaks?.length) {
+        cutterWaveformPeaks = result.peaks.map(peaks => Uint8Array.from(peaks));
+        cutterWaveformCompletedBins = cutterWaveformPeaks[0].length;
+        cutterWaveformStatus = 'complete';
+        updateCutterWaveformStatus();
+        byId('cutterAudioEmpty').hidden = true;
+        scheduleCutterWaveformRender();
+        return;
+    }
     if (!result.waveform) {
         clearCutterWaveform();
-        byId('cutterAudioEmpty').hidden = false;
+        byId('cutterAudioEmpty').hidden = Boolean(cutterVideoInfo?.hasAudio);
+        cutterWaveformStatus = cutterVideoInfo?.hasAudio ? 'failed' : 'none';
+        updateCutterWaveformStatus();
         return;
     }
     const image = new Image();
     cutterWaveformImage = image;
     image.src = result.waveform;
-    try { await image.decode(); } catch { return; }
+    try { await image.decode(); } catch {
+        if (loadGeneration === cutterLoadGeneration) {
+            cutterWaveformStatus = 'failed';
+            updateCutterWaveformStatus();
+        }
+        return;
+    }
     if (cutterWaveformImage !== image || loadGeneration !== cutterLoadGeneration) return;
     const channels = Math.max(1, Math.min(8, result.channels || 1));
     const canvas = document.createElement('canvas');
@@ -1120,6 +1173,9 @@ async function requestCutterWaveform(file: FileCapabilityReference, jobId: numbe
         return peaks;
     });
     canvas.width = 1;
+    cutterWaveformCompletedBins = cutterWaveformPeaks[0].length;
+    cutterWaveformStatus = 'complete';
+    updateCutterWaveformStatus();
     cutterWaveformImage = null;
     byId('cutterAudioEmpty').hidden = true;
     scheduleCutterWaveformRender();
@@ -1326,18 +1382,20 @@ function addCutterCut(): void {
         cursor = Math.max(cursor, cut.end);
     }
     if (cursor < cutterEditorState.trimEnd) gaps.push({ start: cursor, end: cutterEditorState.trimEnd });
-    const frame = 1 / cutterEditorState.fps;
-    const gap = gaps.find((entry) => playhead >= entry.start && playhead < entry.end)
-        || gaps.find((entry) => entry.end - entry.start >= frame);
+    const fps = cutterEditorState.fps;
+    const removableFrames = Math.floor((getCutterPlayableDuration() - 1 / fps + cutterFrameTolerance) * fps);
+    if (removableFrames < 1) return;
+    const frameGaps = gaps.map((entry) => ({
+        start: Math.ceil((entry.start - cutterFrameTolerance) * fps),
+        end: Math.floor((entry.end + cutterFrameTolerance) * fps),
+    })).filter((entry) => entry.end > entry.start);
+    const playheadFrame = Math.round(playhead * fps);
+    const gap = frameGaps.find((entry) => playheadFrame >= entry.start && playheadFrame < entry.end) || frameGaps[0];
     if (!gap) return;
-    let start = clampCutterValue(playhead, gap.start, gap.end - frame);
-    let end = Math.min(gap.end, start + 5);
-    if (end - start < frame) {
-        end = gap.end;
-        start = Math.max(gap.start, end - Math.min(5, gap.end - gap.start));
-    }
-    start = snapCutterTime(start);
-    end = snapCutterTime(end);
+    const startFrame = clampCutterValue(playheadFrame, gap.start, gap.end - 1);
+    const length = Math.min(Math.max(1, Math.round(5 * fps)), gap.end - startFrame, removableFrames);
+    const start = snapCutterTime(startFrame / fps);
+    const end = snapCutterTime((startFrame + length) / fps);
     const before = cloneCutterState(cutterEditorState);
     const id = `cut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const cuts = [...cutterEditorState.cuts, { id, start, end }].sort((left, right) => left.start - right.start);
@@ -1931,7 +1989,7 @@ function changeCutterPlayerRange(start: number, end: number, cutId: string | nul
     const changed = cutId ? setCutterCutRange(cutId, start, end) : setCutterTrim(start, end);
     if (!changed) return;
     if (!cutterRangeDrag) commitCutterChange(before);
-    updateCutterEditorGeometry();
+    updateCutterEditorGeometry(cutId);
     updateCutterEditActions();
     if (interaction.source === 'pointer' && interaction.boundary === 'start') {
         const position = cutId ? cutterEditorState.cuts.find(entry => entry.id === cutId)?.start : cutterEditorState.trimStart;
@@ -2103,10 +2161,6 @@ function handleCutterPageKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement;
     if (target.closest('.modal-overlay, [aria-modal="true"]')) return;
     const field = target.closest('input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]');
-    if (event.key === 'Tab' && !field) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
     if (event.code !== 'Space' && event.key !== ' ') return;
     if (field && !target.matches('select, input[readonly]')) return;
     event.preventDefault();

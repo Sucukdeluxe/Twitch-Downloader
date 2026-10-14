@@ -227,6 +227,7 @@ interface VideoEditorAssets {
 }
 
 interface VideoEditorWaveform {
+    peaks?: number[][];
     channels?: number;
     jobId: number;
     waveform: string | null;
@@ -561,6 +562,7 @@ interface ApiBridge {
     extractFrame(capability: string, timeSeconds: number): Promise<string | null>;
     prepareVideoEditorMedia(capability: string): Promise<VideoEditorMedia | null>;
     prepareVideoEditorWaveform(capability: string, jobId: number): Promise<VideoEditorWaveform | null>;
+    onVideoEditorWaveformProgress?(callback: (progress: import('./main/domain/cutter-waveform').VideoEditorWaveformProgress) => void): void;
     prepareVideoEditorAssets(capability: string, jobId: number, profile: VideoEditorAssetProfile): Promise<VideoEditorAssets | null>;
     cancelVideoEditorAssets(jobId: number): Promise<boolean>;
     getCutterProjectRecovery(capability: string): Promise<CutterProject | null>;

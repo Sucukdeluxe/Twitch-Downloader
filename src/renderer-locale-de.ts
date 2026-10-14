@@ -708,6 +708,8 @@ const UI_TEXT_DE = {
         removeCut: 'Schnitt entfernen',
         videoTrack: 'VIDEO',
         audioTrack: 'AUDIO',
+        waveformLoading: 'Wellenform wird erstellt: {percent} %',
+        waveformFailed: 'Wellenform nicht verfügbar',
         noAudio: 'Keine Audiospur',
         newVideo: 'Neues Video',
         openProject: 'Projekt öffnen',

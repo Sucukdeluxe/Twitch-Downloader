@@ -708,6 +708,8 @@ const UI_TEXT_EN = {
         removeCut: 'Remove cut',
         videoTrack: 'VIDEO',
         audioTrack: 'AUDIO',
+        waveformLoading: 'Building waveform: {percent}%',
+        waveformFailed: 'Waveform unavailable',
         noAudio: 'No audio track',
         newVideo: 'New video',
         openProject: 'Open project',

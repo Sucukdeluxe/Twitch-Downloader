@@ -166,6 +166,8 @@ async function init(): Promise<void> {
         markQueueActivity();
     });
 
+    window.api.onVideoEditorWaveformProgress?.(receiveCutterWaveformProgress);
+
     window.api.onCutProgress((percent: number) => {
         const rounded = Math.round(percent);
         byId('cutProgressBar').style.width = percent + '%';

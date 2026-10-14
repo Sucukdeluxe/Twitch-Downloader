@@ -122,6 +122,7 @@ interface VideoEditorAssets {
 }
 
 interface VideoEditorWaveform {
+    peaks?: number[][];
     channels?: number;
     jobId: number;
     waveform: string | null;
@@ -267,6 +268,9 @@ contextBridge.exposeInMainWorld('api', {
     extractFrame: (capability: string, timeSeconds: number): Promise<string | null> => ipcRenderer.invoke('extract-frame', capability, timeSeconds),
     prepareVideoEditorMedia: (capability: string): Promise<VideoEditorMedia | null> => ipcRenderer.invoke('prepare-video-editor-media', capability),
     prepareVideoEditorWaveform: (capability: string, jobId: number): Promise<VideoEditorWaveform | null> => ipcRenderer.invoke('prepare-video-editor-waveform', capability, jobId),
+    onVideoEditorWaveformProgress: (callback: (progress: import('./main/domain/cutter-waveform').VideoEditorWaveformProgress) => void) => {
+        ipcRenderer.on('video-editor-waveform-progress', (_, progress) => callback(progress));
+    },
     prepareVideoEditorAssets: (capability: string, jobId: number, profile: VideoEditorAssetProfile): Promise<VideoEditorAssets | null> => ipcRenderer.invoke('prepare-video-editor-assets', capability, jobId, profile),
     cancelVideoEditorAssets: (jobId: number): Promise<boolean> => ipcRenderer.invoke('cancel-video-editor-assets', jobId),
     getCutterProjectRecovery: (capability: string): Promise<CutterProject | null> => ipcRenderer.invoke('get-cutter-project-recovery', capability),
