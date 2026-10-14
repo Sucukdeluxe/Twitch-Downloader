@@ -5,7 +5,7 @@ import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/tw
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
 import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
-import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
+import { buildVodSourceDownloadArgs, isVodSourceReadTimeout } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
 import { normalizeAutoVodRules, normalizeAutoVodRule, evaluateAutoVodRule, type AutoVodRules } from './main/domain/auto-vod-rules';
@@ -1698,7 +1698,7 @@ function classifyDownloadError(errorMessage: string): RetryErrorClass {
     if (text.includes('ungültige vod-url') || text.includes('ungueltige vod-url') || text.includes('invalid vod url')) return 'validation';
     if (text.includes('429') || text.includes('rate limit') || text.includes('too many requests')) return 'rate_limit';
     if (text.includes('401') || text.includes('403') || text.includes('unauthorized') || text.includes('forbidden') || text.includes('subscriber only') || text.includes('sub-only') || text.includes('not subscribed')) return 'auth';
-    if (text.includes('timed out') || text.includes('timeout') || text.includes('network') || text.includes('connection') || text.includes('dns') || text.includes('http error') || text.includes('connectionerror') || text.includes('readerror')) return 'network';
+    if (text.includes('timed out') || text.includes('timeout') || text.includes('network') || text.includes('connection') || text.includes('dns') || text.includes('http error') || text.includes('connectionerror') || text.includes('readerror') || text.includes('zeitüberschreitung')) return 'network';
     if (text.includes('streamlink nicht gefunden') || text.includes('streamlink not found') || text.includes('streamlink is missing') || text.includes('ffmpeg') || text.includes('ffprobe') || text.includes('enoent')) return 'tooling';
     if (text.includes('integrität') || text.includes('integritaet') || text.includes('integrity') || text.includes('kein videostream') || text.includes('no video stream')) return 'integrity';
     if (text.includes('access denied') || text.includes('permission') || text.includes('disk') || text.includes('file') || text.includes('ordner') || text.includes('folder')) return 'io';
@@ -4334,7 +4334,7 @@ async function downloadVODPart(
             // Letzte Error-/Warning-Zeile aus beiden Streams suchen, falls
             // lastErrorLine noch leer ist (z.B. weil streamlink ohne Output
             // mit Code 1 exited — was bei pre-flight-Auth-Fails passiert).
-            let userFacingError = lastErrorLine;
+            let userFacingError = directSource && isVodSourceReadTimeout(fullStderr) ? tBackend('vodReadTimeout') : lastErrorLine;
             if (!userFacingError) {
                 const combined = fullStderr.split('\n').map(l => l.trim()).filter(Boolean);
                 userFacingError = combined.filter(l => l.toLowerCase().includes('error:')).pop()
