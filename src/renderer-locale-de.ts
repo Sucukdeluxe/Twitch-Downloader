@@ -581,6 +581,7 @@ const UI_TEXT_DE = {
         queueDuplicate: "Diese Clips sind bereits in der Downloadliste.",
         invalidDraft: "{count} ungültige Links bleiben in der Eingabe.",
         removeDownload: "Aus Downloadliste entfernen",
+        readyTooltip: "Bereit zum Herunterladen",
         stopBatch: "Downloads stoppen",
         stopping: "Wird abgebrochen …",
         retryFailed: "Fehlgeschlagene wiederholen",

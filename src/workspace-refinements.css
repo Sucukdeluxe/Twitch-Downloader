@@ -1224,8 +1224,11 @@
 .clip-result-status { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--workspace-text-muted); }
 .clip-result-row.failed .clip-result-status,
 .clip-result-row.invalid .clip-result-status { color: var(--workspace-text); }
-.clip-result-symbol { display: flex; flex: 0 0 24px; width: 24px; height: 24px; align-items: center; justify-content: center; color: var(--workspace-text-muted); }
+.clip-result-symbol { display: flex; flex: 0 0 32px; width: 32px; height: 32px; align-items: center; justify-content: center; color: var(--workspace-text-muted); }
 .clip-result-symbol svg { display: block; width: 24px; height: 24px; }
+.clip-result-state-trigger { display: grid; place-items: center; width: 32px; height: 32px; cursor: help; }
+.clip-result-actions .clip-remove-action { padding: 4px; }
+.clip-remove-action svg { width: 24px; height: 24px; }
 .clip-result-row.failed .clip-result-symbol,
 .clip-result-row.invalid .clip-result-symbol { color: var(--workspace-danger); }
 .clip-result-loader { width: 18px; height: 18px; flex: 0 0 auto; border: 2px solid var(--workspace-border-strong); border-top-color: var(--workspace-primary); border-radius: 50%; animation: clip-download-spin 900ms linear infinite; }

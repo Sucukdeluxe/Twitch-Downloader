@@ -29,6 +29,9 @@ export function Tooltip({ children, content }) {
   });
   const ref = useMergeRefs([floating.refs.setReference, children.props.ref]);
   useEffect(() => {
+    if (open) floating.update();
+  }, [open, floating.update]);
+  useEffect(() => {
     const element = floating.elements.floating;
     const dismiss = () => setOpen(false);
     element?.addEventListener('vod-tooltip-dismiss', dismiss);

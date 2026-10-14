@@ -8,6 +8,7 @@ import { OmissionModes, OmissionEditor } from './OmissionEditor.jsx';
 import { normalizeOmissions, planEditedVod } from '../main/domain/vod-edit-plan';
 import { ListVideo } from 'lucide-react';
 import { CutTimeline } from './CutTimeline.jsx';
+import { Tooltip } from './Tooltip.jsx';
 import { omissionGaps, omissionFits, omissionGap, boundOmission } from './omission-ranges.js';
 import { playerTexts } from './texts.js';
 import './player.css';
@@ -308,6 +309,26 @@ function Workspace({ options, bind }) {
 }
 
 window.VodPlayer = {
+  mountStatusTooltip(element) {
+    const root = createRoot(element);
+    let previous = '';
+    return {
+      update({ kind, label }) {
+        const next = JSON.stringify([kind, label]);
+        if (previous === next) return;
+        previous = next;
+        root.render(<Tooltip content={label}>
+          <span className="clip-result-state-trigger" tabIndex={0} role="img" aria-label={label}>
+            {kind === 'loading' ? <span className="clip-result-loader"/> : <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r={kind === 'done' ? 12 : 9} fill={kind === 'done' ? '#2E9E5B' : 'none'} stroke={kind === 'done' ? 'none' : 'currentColor'} strokeWidth="1.5"/>
+              <path d={kind === 'done' ? 'M6.6 12.3 10.4 16 17.4 8.6' : kind === 'error' ? 'M12 7v6m0 4h.01' : 'M12 7v5l3 2'} fill="none" stroke={kind === 'done' ? 'white' : 'currentColor'} strokeWidth={kind === 'done' ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>}
+          </span>
+        </Tooltip>);
+      },
+      destroy() { root.unmount(); },
+    };
+  },
   mountPreview(element, options) {
     const root = createRoot(element);
     const language = options.language === 'en' ? 'en' : 'de';

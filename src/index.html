@@ -457,7 +457,7 @@
                                     <label for="clipUrl" id="clipsLinksLabel">Twitch-Links</label>
                                     <button type="button" class="btn-secondary" id="clipsClearBtn" onclick="clearClipLinks()">Eingabe leeren</button>
                                 </div>
-                                <textarea id="clipUrl" disabled rows="6" maxlength="820000" wrap="off" spellcheck="false" oninput="updateClipLinks()" onpaste="pasteClipLinks(event)" onblur="compactClipLinks()" aria-describedby="clipsBatchHint" placeholder="https://clips.twitch.tv/…"></textarea>
+                                <textarea id="clipUrl" disabled rows="6" maxlength="820000" wrap="off" spellcheck="false" onbeforeinput="prepareClipDraftInput(event)" oninput="updateClipLinks(event)" onkeydown="handleClipDraftKeydown(event)" onpaste="pasteClipLinks(event)" onblur="compactClipLinks()" aria-describedby="clipsBatchHint" placeholder="https://clips.twitch.tv/…"></textarea>
                                 <div class="clips-actions">
                                     <button type="button" class="btn-primary" onclick="enqueueClipLinks()" id="btnClipQueue">Zur Warteschlange hinzufügen</button>
                                 </div>

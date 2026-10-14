@@ -2046,7 +2046,7 @@ interface ClipBatchRow {
     open: HTMLButtonElement;
     folder: HTMLButtonElement;
     remove: HTMLButtonElement;
-    symbolKind?: string;
+    statusTooltip: ReturnType<Window['VodPlayer']['mountStatusTooltip']>;
 }
 let clipDownloadInFlight = false;
 let clipBatchStopRequested = false;
@@ -2170,6 +2170,7 @@ async function restoreWorkspace(): Promise<void> {
         }
     } catch { showAppToast(currentLanguage === 'de' ? 'Listen konnten nicht geladen werden.' : 'Could not restore the lists.', 'warn'); }
     finally {
+        resetClipDraftHistory();
         workspaceLoading = false;
         requestClipMetadata();
         requestMergeDurations();
@@ -2313,11 +2314,107 @@ function compactClipInput(value: string): string {
     }).join('\n');
 }
 
+interface ClipDraftSnapshot {
+    value: string;
+    start: number;
+    end: number;
+    direction: 'forward' | 'backward' | 'none';
+}
+let clipDraftHistory: ClipDraftSnapshot[] = [];
+let clipDraftHistoryIndex = -1;
+let clipDraftMergeInput = false;
+let clipDraftLastEdit: { type: string; time: number; start: number; end: number } | null = null;
+
+function readClipDraftSnapshot(): ClipDraftSnapshot {
+    const input = byId<HTMLTextAreaElement>('clipUrl');
+    return { value: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection };
+}
+
+function resetClipDraftHistory(): void {
+    clipDraftHistory = [readClipDraftSnapshot()];
+    clipDraftHistoryIndex = 0;
+    clipDraftMergeInput = false;
+    clipDraftLastEdit = null;
+}
+
+function captureClipDraftSelection(): void {
+    const snapshot = readClipDraftSnapshot();
+    const current = clipDraftHistory[clipDraftHistoryIndex];
+    if (!current) resetClipDraftHistory();
+    else if (current.value === snapshot.value) clipDraftHistory[clipDraftHistoryIndex] = snapshot;
+    clipDraftMergeInput = false;
+}
+
+function restoreClipDraftHistory(direction: number): void {
+    const input = byId<HTMLTextAreaElement>('clipUrl');
+    if (workspaceLoading || input.disabled || input.readOnly) return;
+    captureClipDraftSelection();
+    const index = clipDraftHistoryIndex + direction;
+    const snapshot = clipDraftHistory[index];
+    if (!snapshot) return;
+    clipDraftHistoryIndex = index;
+    input.value = snapshot.value;
+    input.setSelectionRange(snapshot.start, snapshot.end, snapshot.direction);
+    clipDraftLastEdit = null;
+    updateClipLinks();
+}
+
+function handleClipDraftKeydown(event: KeyboardEvent): void {
+    if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.isComposing) return;
+    const key = event.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return;
+    event.preventDefault();
+    event.stopPropagation();
+    restoreClipDraftHistory(key === 'y' || event.shiftKey ? 1 : -1);
+}
+
+function prepareClipDraftInput(event: InputEvent): void {
+    if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        event.preventDefault();
+        restoreClipDraftHistory(event.inputType === 'historyRedo' ? 1 : -1);
+        return;
+    }
+    const snapshot = readClipDraftSnapshot();
+    const lastEdit = clipDraftLastEdit;
+    captureClipDraftSelection();
+    clipDraftMergeInput = Boolean(lastEdit && /^(insertText|deleteContentBackward|deleteContentForward)$/.test(event.inputType)
+        && event.inputType === lastEdit.type && performance.now() - lastEdit.time < 1000
+        && snapshot.start === snapshot.end && snapshot.start === lastEdit.start && snapshot.end === lastEdit.end
+        && clipDraftHistoryIndex === clipDraftHistory.length - 1);
+}
+
+function recordClipDraftHistory(event?: InputEvent): void {
+    const snapshot = readClipDraftSnapshot();
+    const current = clipDraftHistory[clipDraftHistoryIndex];
+    if (!current) resetClipDraftHistory();
+    else if (snapshot.value !== current.value) {
+        clipDraftHistory.splice(clipDraftHistoryIndex + 1);
+        if (clipDraftMergeInput && event && clipDraftHistoryIndex > 0) clipDraftHistory[clipDraftHistoryIndex] = snapshot;
+        else {
+            clipDraftHistory.push(snapshot);
+            clipDraftHistoryIndex += 1;
+        }
+        let size = clipDraftHistory.reduce((total, item) => total + item.value.length, 0);
+        while (clipDraftHistory.length > 2 && (clipDraftHistory.length > 100 || size > 4000000)) {
+            size -= clipDraftHistory.shift()!.value.length;
+            clipDraftHistoryIndex -= 1;
+        }
+    }
+    clipDraftMergeInput = false;
+    clipDraftLastEdit = event ? { type: event.inputType, time: performance.now(), start: snapshot.start, end: snapshot.end } : null;
+}
+
+function replaceClipDraft(value: string): void {
+    captureClipDraftSelection();
+    byId<HTMLTextAreaElement>('clipUrl').value = value;
+    updateClipLinks();
+}
+
 function compactClipLinks(): void {
     const input = byId<HTMLTextAreaElement>('clipUrl');
     const compact = compactClipInput(input.value);
-    if (input.value !== compact) input.value = compact;
-    updateClipLinks();
+    if (input.value !== compact) replaceClipDraft(compact);
+    else updateClipLinks();
 }
 
 function pasteClipLinks(event: ClipboardEvent): void {
@@ -2325,12 +2422,14 @@ function pasteClipLinks(event: ClipboardEvent): void {
     const text = event.clipboardData?.getData('text/plain');
     if (!text || input.disabled) return;
     event.preventDefault();
+    captureClipDraftSelection();
     input.setRangeText(compactClipInput(text), input.selectionStart, input.selectionEnd, 'end');
     updateClipLinks();
 }
 
-function updateClipLinks(): void {
+function updateClipLinks(event?: InputEvent): void {
     if (workspaceLoading) return;
+    recordClipDraftHistory(event);
     try { localStorage.setItem(clipDraftStorageKey, byId<HTMLTextAreaElement>('clipUrl').value); } catch { }
     renderClipBatchSummary();
 }
@@ -2359,8 +2458,7 @@ async function enqueueClipLinks(): Promise<void> {
     renderClipBatch();
     try {
         if (!await persistClipWorkspace()) return;
-        byId<HTMLTextAreaElement>('clipUrl').value = compactClipInput(remaining.join('\n'));
-        updateClipLinks();
+        replaceClipDraft(compactClipInput(remaining.join('\n')));
         const invalid = draft.filter(entry => !entry.valid).length;
         const message = added.length === 1 ? UI_TEXT.clips.queueAddedOne
             : added.length ? UI_TEXT.clips.queueAdded.replace('{count}', formatUiNumber(added.length)) : '';
@@ -2377,8 +2475,7 @@ async function enqueueClipLinks(): Promise<void> {
 
 function clearClipLinks(): void {
     if (workspaceLoading || clipEnqueueInFlight) return;
-    byId<HTMLTextAreaElement>('clipUrl').value = '';
-    updateClipLinks();
+    replaceClipDraft('');
 }
 
 function stopClipBatch(): void {
@@ -2419,7 +2516,7 @@ function createClipBatchRow(url: string): ClipBatchRow {
     const streamer = span('clip-result-streamer');
     const status = span('clip-result-status');
     const symbol = span('clip-result-symbol');
-    symbol.setAttribute('aria-hidden', 'true');
+    const statusTooltip = window.VodPlayer.mountStatusTooltip(symbol);
     const content = document.createElement('div');
     content.className = 'clip-result-content';
     const meta = document.createElement('div');
@@ -2446,41 +2543,9 @@ function createClipBatchRow(url: string): ClipBatchRow {
     const open = action('m8 5 11 7-11 7z', () => { void openClipFile(url, false); });
     const folder = action('M3 7V4h6l2 3h10v13H3z', () => { void openClipFile(url, true); });
     const remove = action('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5', () => removeClipLink(url));
-    row.append(number, thumb, content, symbol, actions);
-    return { row, number, thumb, thumbImg, label, streamer, status, symbol, open, folder, remove };
-}
-
-function updateClipBatchSymbol(elements: ClipBatchRow, kind: string): void {
-    if (elements.symbolKind === kind) return;
-    elements.symbolKind = kind;
-    if (kind === 'loading') {
-        const loader = document.createElement('span');
-        loader.className = 'clip-result-loader';
-        elements.symbol.replaceChildren(loader);
-        return;
-    }
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '24');
-    svg.setAttribute('height', '24');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    circle.setAttribute('cx', '12');
-    circle.setAttribute('cy', '12');
-    circle.setAttribute('r', kind === 'done' ? '12' : '9');
-    circle.setAttribute('fill', kind === 'done' ? '#2E9E5B' : 'none');
-    if (kind !== 'done') {
-        circle.setAttribute('stroke', 'currentColor');
-        circle.setAttribute('stroke-width', '1.5');
-    }
-    path.setAttribute('d', kind === 'done' ? 'M6.6 12.3 10.4 16 17.4 8.6' : kind === 'error' ? 'M12 7v6m0 4h.01' : 'M12 7v5l3 2');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', kind === 'done' ? 'white' : 'currentColor');
-    path.setAttribute('stroke-width', kind === 'done' ? '2.2' : '1.8');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    svg.append(circle, path);
-    elements.symbol.replaceChildren(svg);
+    remove.classList.add('clip-remove-action');
+    row.append(number, thumb, content, actions, symbol);
+    return { row, number, thumb, thumbImg, label, streamer, status, symbol, open, folder, remove, statusTooltip };
 }
 
 function clipBatchTitle(item: ClipBatchItem): string {
@@ -2580,7 +2645,7 @@ function renderClipBatchRow(item: ClipBatchItem, index: number): void {
     setClipText(elements.status, status);
     elements.status.title = status;
     const kind = item.state === 'done' ? 'done' : item.state === 'failed' || item.state === 'invalid' ? 'error' : item.state === 'active' || item.metadataState === 'loading' ? 'loading' : 'ready';
-    updateClipBatchSymbol(elements, kind);
+    elements.statusTooltip.update({ kind, label: item.state === 'ready' ? UI_TEXT.clips.readyTooltip : status });
     for (const [button, label] of [[elements.open, UI_TEXT.static.archiveOpen], [elements.folder, UI_TEXT.static.archiveShowInFolder], [elements.remove, UI_TEXT.clips.removeDownload]] as const) {
         button.setAttribute('aria-label', label);
         button.title = label;
@@ -2600,6 +2665,7 @@ function renderClipBatch(): void {
     const urls = new Set(clipBatchItems.map(item => item.url));
     for (const [url, elements] of clipBatchRows) {
         if (!urls.has(url)) {
+            elements.statusTooltip.destroy();
             elements.row.remove();
             clipBatchRows.delete(url);
         }
@@ -2971,7 +3037,6 @@ function importDiscoveredClips(clips: import('./main/domain/clip-discovery').Dis
         return true;
     });
     if (draft.length + added.length > 200) throw new Error('Clip limit exceeded');
-    byId<HTMLTextAreaElement>('clipUrl').value = compactClipInput([...draft.map(item => item.input), ...added.map(item => item.url)].join('\n'));
-    updateClipLinks();
+    replaceClipDraft(compactClipInput([...draft.map(item => item.input), ...added.map(item => item.url)].join('\n')));
 }
 Object.assign(window, { importDiscoveredClips });

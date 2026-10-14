@@ -581,6 +581,7 @@ const UI_TEXT_EN = {
         queueDuplicate: "These clips are already in the download list.",
         invalidDraft: "{count} invalid links remain in the input.",
         removeDownload: "Remove from download list",
+        readyTooltip: "Ready to download",
         stopBatch: "Stop downloads",
         stopping: "Cancelling …",
         retryFailed: "Retry failed downloads",

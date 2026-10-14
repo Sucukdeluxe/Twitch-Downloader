@@ -624,6 +624,7 @@ interface Window {
         }): { update(state: LocalCutterViewState): void; updatePosition(time: number): void; destroy(): void };
     };
     VodPlayer: {
+        mountStatusTooltip(element: HTMLElement): { update(options: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string }): void; destroy(): void };
         mountPreview(element: HTMLElement, options: { id: string; sourceUrl: string; duration: number; language: string; onError(): void }): { destroy(): void };
         planEditedVod: typeof import('./main/domain/vod-edit-plan').planEditedVod;
         mount(element: HTMLElement, options: {
