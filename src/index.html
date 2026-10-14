@@ -453,13 +453,13 @@
                                     <div class="clips-header-actions">
                                     <span class="clips-count" id="clipsLinkCount">0</span><button type="button" class="btn-secondary" id="clipsDiscoverButton" onclick="RendererClipDiscovery.open()">Clips suchen</button><button type="button" class="btn-secondary" id="clipsInfoButton" aria-controls="clipsInfoPopover" aria-expanded="false" onclick="toggleClipInfo()"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg><span id="clipsInfoTitle">Info</span></button></div>
                                 </header>
-                                <label for="clipUrl" id="clipsLinksLabel">Twitch-Links</label>
-                                <textarea id="clipUrl" disabled rows="6" maxlength="820000" spellcheck="false" oninput="updateClipLinks()" aria-describedby="clipsBatchHint" placeholder="https://clips.twitch.tv/…"></textarea>
+                                <div class="clips-input-label">
+                                    <label for="clipUrl" id="clipsLinksLabel">Twitch-Links</label>
+                                    <button type="button" class="btn-secondary" id="clipsClearBtn" onclick="clearClipLinks()">Eingabe leeren</button>
+                                </div>
+                                <textarea id="clipUrl" disabled rows="6" maxlength="820000" wrap="off" spellcheck="false" oninput="updateClipLinks()" onpaste="pasteClipLinks(event)" onblur="compactClipLinks()" aria-describedby="clipsBatchHint" placeholder="https://clips.twitch.tv/…"></textarea>
                                 <div class="clips-actions">
-                                    <button type="button" class="btn-secondary" id="clipsClearBtn" onclick="clearClipLinks()">Liste leeren</button>
-                                    <button type="button" class="btn-secondary" id="clipsStopBtn" onclick="stopClipBatch()" hidden>Nach aktuellem Clip stoppen</button>
-                                    <button type="button" class="btn-secondary" id="clipsRetryBtn" onclick="downloadClip(true)" hidden>Fehlgeschlagene wiederholen</button>
-                                    <button type="button" class="btn-primary" onclick="downloadClip()" id="btnClip">Clips herunterladen</button>
+                                    <button type="button" class="btn-primary" onclick="enqueueClipLinks()" id="btnClipQueue">Zur Warteschlange hinzufügen</button>
                                 </div>
                             </div>
                             <div class="clip-notice" id="clipStatus" role="status" aria-live="polite"></div>
@@ -467,6 +467,11 @@
                                 <div class="clips-results-header"><h3 id="clipsResultsTitle">Downloads</h3><span id="clipsBatchSummary" aria-live="polite"></span></div>
                                 <div class="clips-batch-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="clipsBatchProgress"><span></span></div>
                                 <ol id="clipsDownloadList"></ol>
+                                <div class="clips-actions clips-download-actions">
+                                    <button type="button" class="btn-secondary" id="clipsStopBtn" onclick="stopClipBatch()" hidden>Downloads stoppen</button>
+                                    <button type="button" class="btn-secondary" id="clipsRetryBtn" onclick="downloadClip(true)" hidden>Fehlgeschlagene wiederholen</button>
+                                    <button type="button" class="btn-primary" onclick="downloadClip()" id="btnClip">Downloads starten</button>
+                                </div>
                             </section>
                         </section>
                         <aside class="clips-info" id="clipsInfoPopover" popover="auto" aria-labelledby="clipsInfoTitle"><p id="clipsInfoText">Maximal 200 Clips.

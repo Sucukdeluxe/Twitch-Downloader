@@ -7,6 +7,7 @@ interface DevelopmentViewState {
     focus?: string;
     scroll: Record<string, number>;
     expandedQueue?: string[];
+    clipDraftVersion?: number;
 }
 
 const developmentViewKey = 'tvm:development-view';
@@ -36,7 +37,7 @@ function readDevelopmentView(): DevelopmentViewState | null {
 function developmentRefreshBlocked(): boolean {
     if (!developmentEnabled || !developmentRendererReady || Date.now() - developmentLastInput < 800) return true;
     if (clipMetadataDirty || Object.values(workspaceSaves).some(state => state.pending > 0 || state.failed)) return true;
-    if (workspaceLoading || clipDownloadInFlight || clipQueueInFlight || isCutting || isMerging || mergeFilePickerInFlight || streamerAddInFlight || vodBulkOperationInFlight || settingsAutoSaveInFlight || settingsSaveFailed || cutterEditorState) return true;
+    if (workspaceLoading || clipDownloadInFlight || clipEnqueueInFlight || clipQueueInFlight || isCutting || isMerging || mergeFilePickerInFlight || streamerAddInFlight || vodBulkOperationInFlight || settingsAutoSaveInFlight || settingsSaveFailed || cutterEditorState) return true;
     if (Array.from(document.querySelectorAll<HTMLElement>('.modal.show, .modal.active, dialog[open], [aria-modal="true"]')).some(element => element.getClientRects().length > 0)) return true;
     if (Array.from(document.querySelectorAll('video,audio')).some(media => !(media as HTMLMediaElement).paused)) return true;
     return false;
@@ -56,7 +57,7 @@ async function prepareDevelopmentRefresh(): Promise<boolean> {
         if (element.scrollTop) scroll[element.id] = element.scrollTop;
     }
     try {
-        localStorage.setItem(developmentViewKey, JSON.stringify({ savedAt: Date.now(), tab: document.querySelector('.tab-content.active')?.id.replace(/Tab$/, '') || 'vods', streamer: currentStreamer, settingsPane: document.getElementById('settingsTab')?.dataset.settingsPane || 'general', focus: document.activeElement?.id, inputs, scroll, expandedQueue: [...expandedQueueIds] }));
+        localStorage.setItem(developmentViewKey, JSON.stringify({ savedAt: Date.now(), tab: document.querySelector('.tab-content.active')?.id.replace(/Tab$/, '') || 'vods', streamer: currentStreamer, settingsPane: document.getElementById('settingsTab')?.dataset.settingsPane || 'general', focus: document.activeElement?.id, inputs, scroll, expandedQueue: [...expandedQueueIds], clipDraftVersion: 1 }));
         return true;
     } catch { return false; }
 }
@@ -66,9 +67,11 @@ function restoreDevelopmentView(): void {
     const state = readDevelopmentView();
     if (state) {
         for (const [id, value] of Object.entries(state.inputs)) {
+            if (id === 'clipUrl' && state.clipDraftVersion !== 1) continue;
             const input = document.getElementById(id) as HTMLInputElement | null;
             if (input) input.value = value;
         }
+        compactClipLinks();
         onVodFilterInput();
         onStreamerListFilterChange();
         filterSettings(state.inputs.settingsSearchInput || '');

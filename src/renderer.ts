@@ -2051,7 +2051,8 @@ interface ClipBatchRow {
 let clipDownloadInFlight = false;
 let clipBatchStopRequested = false;
 let clipBatchItems: ClipBatchItem[] = [];
-let clipBatchLimitExceeded = false;
+let clipEnqueueInFlight = false;
+const clipDraftStorageKey = 'tvm:clip-draft';
 let clipNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 const clipMetadataRequests = new Set<string>();
 const clipThumbnails = new Map<string, string>();
@@ -2088,7 +2089,7 @@ const workspaceSaves = {
     merge: { pending: 0, failed: false, revision: 0 },
 };
 
-async function trackWorkspaceSave(kind: keyof typeof workspaceSaves, save: () => Promise<boolean>): Promise<void> {
+async function trackWorkspaceSave(kind: keyof typeof workspaceSaves, save: () => Promise<boolean>): Promise<boolean> {
     const state = workspaceSaves[kind];
     const revision = ++state.revision;
     state.pending += 1;
@@ -2100,20 +2101,21 @@ async function trackWorkspaceSave(kind: keyof typeof workspaceSaves, save: () =>
     } finally {
         state.pending -= 1;
     }
-    if (revision !== state.revision) return;
+    if (revision !== state.revision) return !failed;
     state.failed = failed;
     if (failed) {
         const message = currentLanguage === 'de' ? 'Liste konnte nicht gespeichert werden.' : 'Could not save the list.';
         if (kind === 'clips') showClipNotice(message, true);
         else showAppToast(message, 'warn');
     }
+    return !failed;
 }
 
-function persistClipWorkspace(): void {
-    if (workspaceLoading) return;
+async function persistClipWorkspace(): Promise<boolean> {
+    if (workspaceLoading) return false;
     clipMetadataDirty = false;
     const items = clipBatchItems.map(({ transfer: _transfer, ...item }) => item);
-    void trackWorkspaceSave('clips', () => window.api.saveClipWorkspace(items));
+    return trackWorkspaceSave('clips', () => window.api.saveClipWorkspace(items));
 }
 
 function receiveClipProgress(progress: ClipTransferProgress): void {
@@ -2152,7 +2154,9 @@ async function restoreWorkspace(): Promise<void> {
         if (session) {
             if (session.automationPaused) showAppToast(currentLanguage === 'de' ? 'Sicherung wiederhergestellt. Automatik für diesen Start pausiert.' : 'Backup restored. Automation is paused for this session.');
             clipBatchItems = session.clips.map(item => ({ ...item, metadataState: item.metadataState === 'loading' ? 'pending' : item.metadataState }));
-            byId<HTMLTextAreaElement>('clipUrl').value = clipBatchItems.map(item => item.url).join('\n');
+            try {
+                byId<HTMLTextAreaElement>('clipUrl').value = localStorage.getItem(clipDraftStorageKey)?.slice(0, 820000) || '';
+            } catch { }
             mergeFiles = session.mergeFiles;
             isMerging = restoredMergeDownload = Boolean(session.mergeActive && !latestMergeFinish);
             if (session.mergeActive && latestMergeFinish?.success) mergeFiles = [];
@@ -2176,6 +2180,9 @@ async function restoreWorkspace(): Promise<void> {
 }
 
 function canonicalClipLink(line: string): { url: string; valid: boolean } {
+    line = line.trim();
+    const short = /^\/clip\/([A-Za-z0-9_-]+)$/.exec(line);
+    if (short && line.length <= 4096) return { url: 'https://clips.twitch.tv/' + short[1], valid: true };
     try {
         const url = new URL(line);
         if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !url.port && line.length <= 4096) {
@@ -2189,10 +2196,10 @@ function canonicalClipLink(line: string): { url: string; valid: boolean } {
 }
 
 function removeClipLink(url: string): void {
-    if (clipDownloadInFlight) return;
-    const input = byId<HTMLTextAreaElement>('clipUrl');
-    input.value = input.value.split(/\r?\n/).filter(line => canonicalClipLink(line.trim()).url !== url).join('\n');
-    updateClipLinks();
+    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight) return;
+    clipBatchItems = clipBatchItems.filter(item => item.url !== url);
+    renderClipBatch();
+    void persistClipWorkspace();
 }
 
 async function openClipFile(url: string, folder: boolean): Promise<void> {
@@ -2286,29 +2293,90 @@ function requestClipMetadata(): void {
     }
 }
 
-function updateClipLinks(): void {
-    if (clipDownloadInFlight || workspaceLoading) return;
+function getClipDraft(): Array<{ input: string; url: string; valid: boolean }> {
     const lines = byId<HTMLTextAreaElement>('clipUrl').value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const seen = new Set<string>();
-    const previous = new Map(clipBatchItems.map(item => [item.url, item]));
-    clipBatchItems = [];
-    clipBatchLimitExceeded = false;
+    const entries: Array<{ input: string; url: string; valid: boolean }> = [];
     for (const line of lines) {
         const parsed = canonicalClipLink(line);
         if (seen.has(parsed.url)) continue;
         seen.add(parsed.url);
-        if (clipBatchItems.length >= 200) { clipBatchLimitExceeded = true; break; }
-        clipBatchItems.push(previous.get(parsed.url) || { url: parsed.url, label: '', streamer: '', metadataState: parsed.valid ? 'pending' : 'unavailable', state: parsed.valid ? 'ready' : 'invalid' });
+        entries.push({ input: line, ...parsed });
     }
-    showClipNotice(clipBatchLimitExceeded ? UI_TEXT.clips.limitReached : '', true);
-    requestClipMetadata();
+    return entries;
+}
+
+function compactClipInput(value: string): string {
+    return value.split(/\r?\n/).map(line => {
+        const parsed = canonicalClipLink(line);
+        return parsed.valid ? '/clip/' + parsed.url.split('/').pop() : line;
+    }).join('\n');
+}
+
+function compactClipLinks(): void {
+    const input = byId<HTMLTextAreaElement>('clipUrl');
+    const compact = compactClipInput(input.value);
+    if (input.value !== compact) input.value = compact;
+    updateClipLinks();
+}
+
+function pasteClipLinks(event: ClipboardEvent): void {
+    const input = byId<HTMLTextAreaElement>('clipUrl');
+    const text = event.clipboardData?.getData('text/plain');
+    if (!text || input.disabled) return;
+    event.preventDefault();
+    input.setRangeText(compactClipInput(text), input.selectionStart, input.selectionEnd, 'end');
+    updateClipLinks();
+}
+
+function updateClipLinks(): void {
+    if (workspaceLoading) return;
+    try { localStorage.setItem(clipDraftStorageKey, byId<HTMLTextAreaElement>('clipUrl').value); } catch { }
+    renderClipBatchSummary();
+}
+
+async function enqueueClipLinks(): Promise<void> {
+    if (workspaceLoading || clipEnqueueInFlight) return;
+    const draft = getClipDraft();
+    if (!draft.length) return;
+    const queued = new Set(clipBatchItems.map(item => item.url));
+    const added: ClipBatchItem[] = [];
+    const remaining: string[] = [];
+    let limitReached = false;
+    for (const entry of draft) {
+        if (!entry.valid) { remaining.push(entry.input); continue; }
+        if (queued.has(entry.url)) continue;
+        if (clipBatchItems.length + added.length >= 200) {
+            limitReached = true;
+            remaining.push(entry.input);
+            continue;
+        }
+        queued.add(entry.url);
+        added.push({ url: entry.url, label: '', streamer: '', metadataState: 'pending', state: 'ready' });
+    }
+    clipEnqueueInFlight = true;
+    clipBatchItems.push(...added);
     renderClipBatch();
-    persistClipWorkspace();
-    void RendererClipDiscovery.annotate(clipBatchItems, item => { if (clipBatchItems.includes(item)) scheduleClipBatchRender(item); });
+    try {
+        if (!await persistClipWorkspace()) return;
+        byId<HTMLTextAreaElement>('clipUrl').value = compactClipInput(remaining.join('\n'));
+        updateClipLinks();
+        const invalid = draft.filter(entry => !entry.valid).length;
+        const message = added.length === 1 ? UI_TEXT.clips.queueAddedOne
+            : added.length ? UI_TEXT.clips.queueAdded.replace('{count}', formatUiNumber(added.length)) : '';
+        const warning = limitReached ? UI_TEXT.clips.limitReached
+            : invalid ? UI_TEXT.clips.invalidDraft.replace('{count}', formatUiNumber(invalid)) : '';
+        showClipNotice([message, warning].filter(Boolean).join(' ') || UI_TEXT.clips.queueDuplicate, Boolean(warning));
+    } finally {
+        clipEnqueueInFlight = false;
+        requestClipMetadata();
+        renderClipBatch();
+        void RendererClipDiscovery.annotate(clipBatchItems, item => { if (clipBatchItems.includes(item)) scheduleClipBatchRender(item); });
+    }
 }
 
 function clearClipLinks(): void {
-    if (clipDownloadInFlight) return;
+    if (workspaceLoading || clipEnqueueInFlight) return;
     byId<HTMLTextAreaElement>('clipUrl').value = '';
     updateClipLinks();
 }
@@ -2377,7 +2445,7 @@ function createClipBatchRow(url: string): ClipBatchRow {
     };
     const open = action('m8 5 11 7-11 7z', () => { void openClipFile(url, false); });
     const folder = action('M3 7V4h6l2 3h10v13H3z', () => { void openClipFile(url, true); });
-    const remove = action('M6 6l12 12M6 18 18 6', () => removeClipLink(url));
+    const remove = action('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5', () => removeClipLink(url));
     row.append(number, thumb, content, symbol, actions);
     return { row, number, thumb, thumbImg, label, streamer, status, symbol, open, folder, remove };
 }
@@ -2405,7 +2473,7 @@ function updateClipBatchSymbol(elements: ClipBatchRow, kind: string): void {
         circle.setAttribute('stroke', 'currentColor');
         circle.setAttribute('stroke-width', '1.5');
     }
-    path.setAttribute('d', kind === 'done' ? 'M6.6 12.3 10.4 16 17.4 8.6' : kind === 'error' ? 'M12 7v6m0 4h.01' : 'M8 12h8');
+    path.setAttribute('d', kind === 'done' ? 'M6.6 12.3 10.4 16 17.4 8.6' : kind === 'error' ? 'M12 7v6m0 4h.01' : 'M12 7v5l3 2');
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', kind === 'done' ? 'white' : 'currentColor');
     path.setAttribute('stroke-width', kind === 'done' ? '2.2' : '1.8');
@@ -2428,12 +2496,17 @@ function setClipText(element: HTMLElement, value: string): void {
     if (element.textContent !== value) element.textContent = value;
 }
 
+function setClipDisabled(element: HTMLButtonElement | HTMLTextAreaElement, disabled: boolean): void {
+    if (element.disabled !== disabled) element.disabled = disabled;
+}
+
 function renderClipBatchSummary(): void {
     const done = clipBatchItems.filter(item => item.state === 'done').length;
     const failed = clipBatchItems.filter(item => item.state === 'failed' || item.state === 'invalid').length;
     const ready = clipBatchItems.some(item => item.state === 'ready' || item.state === 'stopped');
     const format = (message: string) => message.replace('{done}', formatUiNumber(done)).replace('{total}', formatUiNumber(clipBatchItems.length)).replace('{failed}', formatUiNumber(failed));
-    byId('clipsLinkCount').textContent = clipBatchItems.length === 1 ? UI_TEXT.clips.linkCountOne : UI_TEXT.clips.linksCount.replace('{count}', formatUiNumber(clipBatchItems.length));
+    const draftCount = getClipDraft().length;
+    byId('clipsLinkCount').textContent = draftCount === 1 ? UI_TEXT.clips.linkCountOne : UI_TEXT.clips.linksCount.replace('{count}', formatUiNumber(draftCount));
     byId('clipsResults').dataset.empty = String(clipBatchItems.length === 0);
     byId('clipsBatchSummary').textContent = format(UI_TEXT.clips.summary);
     const progress = clipBatchItems.length ? Math.round((done + failed) * 100 / clipBatchItems.length) : 0;
@@ -2442,20 +2515,23 @@ function renderClipBatchSummary(): void {
     gauge.dataset.active = String(clipDownloadInFlight || progress > 0);
     gauge.querySelector<HTMLElement>('span')!.style.transition = clipDownloadInFlight ? '' : 'none';
     gauge.querySelector<HTMLElement>('span')!.style.width = progress + '%';
-    byId<HTMLTextAreaElement>('clipUrl').disabled = clipDownloadInFlight || workspaceLoading;
-    byId<HTMLButtonElement>('clipsClearBtn').disabled = clipDownloadInFlight || workspaceLoading || !clipBatchItems.length;
+    setClipDisabled(byId<HTMLTextAreaElement>('clipUrl'), workspaceLoading || clipEnqueueInFlight);
+    setClipDisabled(byId<HTMLButtonElement>('clipsClearBtn'), workspaceLoading || clipEnqueueInFlight || !draftCount);
+    const addButton = byId<HTMLButtonElement>('btnClipQueue');
+    setClipDisabled(addButton, workspaceLoading || clipEnqueueInFlight || !draftCount);
+    setClipText(addButton, clipEnqueueInFlight ? UI_TEXT.clips.addingToQueue : UI_TEXT.clips.addToQueue);
     const button = byId<HTMLButtonElement>('btnClip');
-    button.disabled = clipDownloadInFlight || workspaceLoading || clipBatchLimitExceeded || !ready;
-    button.textContent = clipDownloadInFlight ? UI_TEXT.clips.loadingButton : UI_TEXT.clips.downloadButton;
+    setClipDisabled(button, clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || !ready);
+    setClipText(button, clipDownloadInFlight ? UI_TEXT.clips.loadingButton : UI_TEXT.clips.downloadButton);
     const toolbarButton = byId<HTMLButtonElement>('toolbarClipDownloadBtn');
     toolbarButton.disabled = button.disabled;
     const stop = byId<HTMLButtonElement>('clipsStopBtn');
     stop.hidden = !clipDownloadInFlight;
     stop.disabled = clipBatchStopRequested;
-    stop.textContent = clipBatchStopRequested ? UI_TEXT.clips.stopping : UI_TEXT.clips.stopBatch;
+    setClipText(stop, clipBatchStopRequested ? UI_TEXT.clips.stopping : UI_TEXT.clips.stopBatch);
     const retry = byId<HTMLButtonElement>('clipsRetryBtn');
     retry.hidden = !clipBatchItems.some(item => item.state === 'failed');
-    retry.disabled = clipDownloadInFlight || workspaceLoading || clipBatchLimitExceeded;
+    retry.disabled = clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight;
 }
 
 function renderClipBatchRow(item: ClipBatchItem, index: number): void {
@@ -2505,13 +2581,13 @@ function renderClipBatchRow(item: ClipBatchItem, index: number): void {
     elements.status.title = status;
     const kind = item.state === 'done' ? 'done' : item.state === 'failed' || item.state === 'invalid' ? 'error' : item.state === 'active' || item.metadataState === 'loading' ? 'loading' : 'ready';
     updateClipBatchSymbol(elements, kind);
-    for (const [button, label] of [[elements.open, UI_TEXT.static.archiveOpen], [elements.folder, UI_TEXT.static.archiveShowInFolder], [elements.remove, UI_TEXT.merge.removeAria]] as const) {
+    for (const [button, label] of [[elements.open, UI_TEXT.static.archiveOpen], [elements.folder, UI_TEXT.static.archiveShowInFolder], [elements.remove, UI_TEXT.clips.removeDownload]] as const) {
         button.setAttribute('aria-label', label);
         button.title = label;
     }
     elements.open.style.visibility = elements.folder.style.visibility = item.filename ? 'visible' : 'hidden';
     elements.open.disabled = elements.folder.disabled = !item.filename;
-    elements.remove.disabled = clipDownloadInFlight || workspaceLoading;
+    elements.remove.disabled = clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight;
     if (list.children[index] !== elements.row) list.insertBefore(elements.row, list.children[index] || null);
 }
 
@@ -2545,12 +2621,7 @@ function renderClipBatch(): void {
 }
 
 async function downloadClip(retryFailed = false): Promise<void> {
-    if (clipDownloadInFlight || workspaceLoading) return;
-    if (!clipBatchItems.length) updateClipLinks();
-    if (clipBatchLimitExceeded) {
-        showClipNotice(UI_TEXT.clips.limitReached, true);
-        return;
-    }
+    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight) return;
     const pending = clipBatchItems.filter(item => retryFailed ? item.state === 'failed' : item.state === 'ready' || item.state === 'stopped');
     if (!pending.length) {
         showClipNotice(clipBatchItems.length ? UI_TEXT.clips.emptyBatch : UI_TEXT.clips.enterUrl, true);
@@ -2891,13 +2962,16 @@ async function startMerging(): Promise<void> {
 void init();
 
 function importDiscoveredClips(clips: import('./main/domain/clip-discovery').DiscoveredClip[]): void {
-    if (workspaceLoading || clipDownloadInFlight) throw new Error('Clip import unavailable');
-    const existing = new Set(clipBatchItems.map(item => item.url));
-    const added = clips.filter(clip => !existing.has(clip.url));
-    if (clipBatchItems.length + added.length > 200) throw new Error('Clip limit exceeded');
-    for (const clip of added) clipBatchItems.push({ url: clip.url, label: clip.title, streamer: clip.channel, metadataState: 'ready', state: 'ready', previouslyDownloaded: clip.downloaded });
-    byId<HTMLTextAreaElement>('clipUrl').value = clipBatchItems.map(item => item.url).join('\n');
-    renderClipBatch();
-    persistClipWorkspace();
+    if (workspaceLoading || clipEnqueueInFlight) throw new Error('Clip import unavailable');
+    const draft = getClipDraft();
+    const existing = new Set([...clipBatchItems.map(item => item.url), ...draft.map(item => item.url)]);
+    const added = clips.filter(clip => {
+        if (existing.has(clip.url)) return false;
+        existing.add(clip.url);
+        return true;
+    });
+    if (draft.length + added.length > 200) throw new Error('Clip limit exceeded');
+    byId<HTMLTextAreaElement>('clipUrl').value = compactClipInput([...draft.map(item => item.input), ...added.map(item => item.url)].join('\n'));
+    updateClipLinks();
 }
 Object.assign(window, { importDiscoveredClips });
