@@ -33,6 +33,10 @@ export function parseLoudnessMeasurement(stderr: string): LoudnessMeasurement | 
         || Math.abs(measurement.targetOffset) > 99) return null;
     return measurement;
 }
+export function createAudioTimelineFilter(sampleRate?: number): string {
+    return 'aresample=' + (sampleRate === undefined ? '' : sampleRate + ':') + 'async=1:first_pts=0';
+}
+
 export function createAudioProcessingFilters(value: AudioProcessingOptions | undefined, duration: number, measurement?: LoudnessMeasurement): string[] {
     const options = normalizeAudioProcessing(value, duration);
     const filters: string[] = [];

@@ -9,7 +9,7 @@ import { buildVodSourceDownloadArgs } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
 import { normalizeAutoVodRules, normalizeAutoVodRule, evaluateAutoVodRule, type AutoVodRules } from './main/domain/auto-vod-rules';
-import { validAudioProcessing, type AudioProcessingOptions } from './main/domain/audio-processing';
+import { createAudioTimelineFilter, validAudioProcessing, type AudioProcessingOptions } from './main/domain/audio-processing';
 import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-library';
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
@@ -409,6 +409,7 @@ interface PreflightResult {
 }
 
 interface VideoInfo {
+    startTime: number;
     sourceFormat: VideoSourceFormat;
     duration: number;
     width: number;
@@ -2883,6 +2884,7 @@ async function getVideoInfo(filePath: string, trackedProcesses?: Set<ChildProces
                     }));
                 const audioStream = audioStreams[0] ?? null;
                 const duration = parseFloat(info.format?.duration || videoStream?.duration || '0');
+                const startTime = Number(info.format?.start_time);
                 const averageFps = parseFrameRate(videoStream?.avg_frame_rate);
                 const realFps = parseFrameRate(videoStream?.r_frame_rate);
                 const fps = averageFps > 0 ? averageFps : realFps;
@@ -2901,6 +2903,7 @@ async function getVideoInfo(filePath: string, trackedProcesses?: Set<ChildProces
                     : undefined;
                 finish({
                     duration,
+                    startTime: Number.isFinite(startTime) ? startTime : 0,
                     width: videoStream.width,
                     height: videoStream.height,
                     fps,
@@ -3153,9 +3156,9 @@ async function prepareVideoEditorWaveform(filePath: string, jobId: number): Prom
             lastUpdate = Date.now();
         };
         const success = await runEditorWaveformProcess([
-            '-hide_banner', '-loglevel', 'error', '-threads', '2', '-i', filePath,
+            '-hide_banner', '-loglevel', 'error', '-threads', '2', '-copyts', '-itsoffset', String(-job.info.startTime), '-i', filePath,
             '-map', '0:a:0', '-vn', '-sn', '-dn', '-filter_threads', '1',
-            '-af', `aformat=sample_rates=48000,asetnsamples=n=${accumulator.samplesPerBin}:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=-`,
+            '-af', `${createAudioTimelineFilter(48000)},asetnsamples=n=${accumulator.samplesPerBin}:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=-`,
             '-f', 'null', '-',
         ], runGeneration, (chunk) => {
             accumulator.push(chunk);
@@ -3414,6 +3417,7 @@ async function performVideoEditExport(request: VideoEditExportRequest, onProgres
         audioStreamIndices,
         audioStreams: info.audioStreams,
         sourceFormat: info.sourceFormat,
+        startTime: info.startTime,
         colorMode: request.colorMode,
         audioProcessing: request.audioProcessing,
         rotation: info.rotation,
@@ -3463,6 +3467,7 @@ async function performVideoEditExport(request: VideoEditExportRequest, onProgres
         audioStreamIndices,
         audioStreams: info.audioStreams,
         sourceFormat: info.sourceFormat,
+        startTime: info.startTime,
         colorMode: request.colorMode,
         audioProcessing: request.audioProcessing,
             rotation: info.rotation,

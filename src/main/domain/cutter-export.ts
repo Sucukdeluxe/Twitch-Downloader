@@ -1,4 +1,4 @@
-import { createAudioProcessingFilters, type AudioProcessingOptions } from './audio-processing';
+import { createAudioTimelineFilter, createAudioProcessingFilters, type AudioProcessingOptions } from './audio-processing';
 import * as path from 'node:path';
 import type { EditorSegment } from './video-editor';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode, type CutterSoftwareCodec } from './media-format';
@@ -21,6 +21,7 @@ export const CUTTER_EXPORT_PROFILES: CutterExportProfileDefinition[] = [
 ];
 
 export interface CutterExportPlanOptions {
+    startTime?: number;
     audioProcessing?: AudioProcessingOptions;
     inputFile: string;
     outputFile: string;
@@ -120,6 +121,13 @@ function createFilterComplex(segments: readonly EditorSegment[], indices: readon
     const filters: string[] = [];
     const concatInputs: string[] = [];
     const rotationFilter = videoRotationFilter(rotation);
+    const audioInputLabel = (index: number, audioIndex: number): string => '[s' + (index * indices.length + audioIndex) + ']';
+    indices.forEach((stream, audioIndex) => {
+        const input = stream === 0 ? '[0:a]' : '[0:a:' + stream + ']';
+        const outputs = segments.map((_, index) => audioInputLabel(index, audioIndex)).join('');
+        filters.push(input + createAudioTimelineFilter() + ',apad=whole_dur=' + formatSeconds(segments[segments.length - 1].end)
+            + (segments.length > 1 ? ',asplit=' + segments.length : '') + outputs);
+    });
     segments.forEach((segment, index) => {
         const start = formatSeconds(segment.start);
         const end = formatSeconds(segment.end);
@@ -127,8 +135,8 @@ function createFilterComplex(segments: readonly EditorSegment[], indices: readon
         if (rotationFilter) videoFilters.push(rotationFilter);
         filters.push('[0:v]' + videoFilters.join(',') + '[v' + index + ']');
         concatInputs.push('[v' + index + ']');
-        indices.forEach((stream, audioIndex) => {
-            const input = stream === 0 ? '[0:a]' : '[0:a:' + stream + ']';
+        indices.forEach((_, audioIndex) => {
+            const input = audioInputLabel(index, audioIndex);
             const label = '[a' + index + (audioIndex ? '_' + audioIndex : '') + ']';
             filters.push(input + 'atrim=start=' + start + ':end=' + end + ',asetpts=PTS-STARTPTS' + label);
             concatInputs.push(label);
@@ -176,10 +184,10 @@ function audioArgs(profile: CutterExportProfile, hasAudio: boolean): string[] {
     return ['-c:a', 'aac', '-b:a', bitrate];
 }
 
-function createFfmpegArgs(inputFile: string, outputFile: string, filterComplex: string, indices: readonly number[], profile: CutterExportProfile, selectedEncoder: CutterExportPlan['selectedEncoder'], rotation: 0 | 90 | 180 | 270, format: ReturnType<typeof cutterVideoFormat>, audioStreams: CutterExportPlanOptions['audioStreams']): string[] {
+function createFfmpegArgs(inputFile: string, outputFile: string, filterComplex: string, indices: readonly number[], profile: CutterExportProfile, selectedEncoder: CutterExportPlan['selectedEncoder'], rotation: 0 | 90 | 180 | 270, format: ReturnType<typeof cutterVideoFormat>, audioStreams: CutterExportPlanOptions['audioStreams'], startTime: number): string[] {
     const args: string[] = [];
     if (rotation !== 0) args.push('-noautorotate');
-    args.push('-i', inputFile, '-filter_complex', filterComplex, '-map', '[outv]');
+    args.push('-copyts', '-itsoffset', formatSeconds(-startTime), '-i', inputFile, '-filter_complex', filterComplex, '-map', '[outv]');
     indices.forEach((_, index) => args.push('-map', '[outa' + (index || '') + ']'));
     if (selectedEncoder === 'ffv1') args.push('-c:v', 'ffv1', '-level', '3', '-g', '1');
     else if (selectedEncoder === 'libx264' || selectedEncoder === 'libx265' || selectedEncoder === 'libx264rgb') {
@@ -224,6 +232,8 @@ export function getCutterExportProfile(profile: CutterExportProfile): CutterExpo
 
 export function createCutterExportPlan(options: CutterExportPlanOptions): CutterExportPlan {
     const inputFile = validatePath(options.inputFile, 'inputFile');
+    const startTime = options.startTime ?? 0;
+    if (!Number.isFinite(startTime)) throw new Error('Start time must be finite');
     const outputFile = validatePath(options.outputFile, 'outputFile');
     const profile = options.profile ?? 'balanced';
     const profileDefinition = getProfileDefinition(profile);
@@ -246,7 +256,7 @@ export function createCutterExportPlan(options: CutterExportPlanOptions): Cutter
         segments,
         remainingDuration,
         filterComplex,
-        ffmpegArgs: createFfmpegArgs(inputFile, outputFile, filterComplex, indices, profile, encoder.selectedEncoder, rotation, format, options.audioStreams),
+        ffmpegArgs: createFfmpegArgs(inputFile, outputFile, filterComplex, indices, profile, encoder.selectedEncoder, rotation, format, options.audioStreams, startTime),
         profile,
         selectedEncoder: encoder.selectedEncoder,
         hardwareFallback: encoder.hardwareFallback,

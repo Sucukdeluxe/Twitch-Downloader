@@ -11,7 +11,7 @@ import { type ExportJobContext, type ExportJobRequest, validateExportJobRequest 
 
 const executeFile = promisify(execFile);
 interface ProbeStream extends Record<string, unknown> { codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string; sample_rate?: string; channel_layout?: string; channels?: number; tags?: { language?: string; rotate?: string }; side_data_list?: Array<Record<string, unknown>>; }
-interface MediaProbe { streams: ProbeStream[]; format: { duration?: string } }
+interface MediaProbe { streams: ProbeStream[]; format: { duration?: string; start_time?: string } }
 export interface ExportJobRunnerOptions {
     resolveTools(): Promise<{ ffmpeg: string; ffprobe: string }>;
     availableHardwareEncoders?(): Promise<readonly CutterHardwareEncoder[]>;
@@ -119,7 +119,8 @@ export function createExportJobRunner(options: ExportJobRunnerOptions) {
                 const audioStreams = probes[0].streams.filter(stream => stream.codec_type === 'audio').map((stream, index) => ({ index, language: stream.tags?.language || null }));
                 if (audioStreams.length && !audioStreams.some(stream => stream.index === project.audioStreamIndex)) throw new Error('Audio stream is no longer available');
                 const rawRotation = Number(firstVideo.side_data_list?.find(value => value.rotation !== undefined)?.rotation ?? firstVideo.tags?.rotate ?? 0);
-                const planOptions = { inputFile: sources[0].path, outputFile: temporary, segments, hasAudio: audioStreams.length > 0, profile: project.profile, encoder: project.encoder,
+                const startTime = Number(probes[0].format.start_time);
+                const planOptions = { startTime: Number.isFinite(startTime) ? startTime : 0, inputFile: sources[0].path, outputFile: temporary, segments, hasAudio: audioStreams.length > 0, profile: project.profile, encoder: project.encoder,
                     availableHardwareEncoders: await options.availableHardwareEncoders?.() || [], audioStreamIndex: project.audioStreamIndex,
                     audioStreamIndices: project.allAudioStreams ? audioStreams.map(stream => stream.index) : undefined, audioStreams,
                     audioProcessing: project.audioProcessing, sourceFormat: readVideoSourceFormat(firstVideo), colorMode: project.colorMode || 'source', rotation: rawRotation };

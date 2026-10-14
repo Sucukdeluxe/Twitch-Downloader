@@ -92,6 +92,7 @@ interface RuntimeMetricsSnapshot {
 }
 
 interface VideoInfo {
+    startTime?: number;
     sourceFormat?: import('./main/domain/media-format').VideoSourceFormat;
     duration: number;
     width: number;
