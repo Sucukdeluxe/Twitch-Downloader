@@ -2204,6 +2204,10 @@ function canonicalClipLink(line: string): { url: string; valid: boolean } {
 function removeClipLink(url: string): void {
     if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || clipFolderPicking) return;
     clipBatchItems = clipBatchItems.filter(item => item.url !== url);
+    if (!clipBatchItems.length) {
+        clipRunItems = [];
+        clipRunRevision += 1;
+    }
     renderClipBatch();
     void persistClipWorkspace();
 }
