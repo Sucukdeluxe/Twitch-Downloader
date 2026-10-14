@@ -284,6 +284,10 @@ function updateCutterExportControls(options: CutterExportOptions | null | undefi
 }
 
 function refreshCutterLocalizedUi(): void {
+    byId('cutterPreviewHeading').textContent = UI_TEXT.cutter.previewAlt;
+    byId('cutterTimelineHeading').textContent = UI_TEXT.cutter.timeline;
+    byId('cutterZoomOverviewBtn').textContent = UI_TEXT.cutter.overview;
+    byId('cutterZoomSelectionBtn').textContent = UI_TEXT.cutter.zoomSelection;
     renderCutterProjectRecovery(cutterPendingProject);
     updateCutterAudioStreams();
     updateCutterExportControls(cutterExportOptions);
@@ -969,7 +973,7 @@ function renderCutterEditor(): void {
 
 function setCutterControlsEnabled(enabled: boolean): void {
     cutterControlsEnabled = enabled;
-    for (const id of ['cutterZoom', 'cutterZoomInBtn', 'cutterZoomOutBtn', 'cutterNewCutBtn', 'cutterSaveProjectBtn', 'cutterExportProfile', 'cutterColorMode', 'cutterAudioFadeIn', 'cutterAudioFadeOut', 'cutterAudioNormalize', 'cutterFullRange', 'cutterMarkStart', 'cutterMarkEnd', 'startTime', 'endTime']) {
+    for (const id of ['cutterZoom', 'cutterZoomInBtn', 'cutterZoomOutBtn', 'cutterZoomOverviewBtn', 'cutterZoomSelectionBtn', 'cutterNewCutBtn', 'cutterSaveProjectBtn', 'cutterExportProfile', 'cutterColorMode', 'cutterAudioFadeIn', 'cutterAudioFadeOut', 'cutterAudioNormalize', 'cutterFullRange', 'cutterMarkStart', 'cutterMarkEnd', 'startTime', 'endTime']) {
         const element = document.getElementById(id) as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | null;
         if (element) element.disabled = !enabled;
     }
@@ -1477,6 +1481,21 @@ function updateCutterZoom(value: number, animate = false, anchorClientX: number 
     if ((cutterVideoInfo?.duration || 0) > 120 && (cutterAssetsPixelWidth > 0 || cutterAssetsInFlightJobId !== null)) scheduleCutterAssetRefresh();
 }
 
+function setCutterTimelineView(view: 'overview' | 'selection'): void {
+    if (!cutterEditorState || !cutterControlsEnabled) return;
+    if (view === 'overview') {
+        updateCutterZoom(1);
+        return;
+    }
+    const range = cutterEditorState.cuts.find(cut => cut.id === cutterCutDraft?.id) || { start: cutterEditorState.trimStart, end: cutterEditorState.trimEnd };
+    const span = Math.max(1 / cutterEditorState.fps, range.end - range.start);
+    updateCutterZoom(cutterEditorState.duration / (span * 1.15));
+    const scroll = byId<HTMLElement>('cutterTimelineScroll');
+    const timeline = byId<HTMLElement>('timeline');
+    const center = (range.start + range.end) / 2 / cutterEditorState.duration;
+    scroll.scrollLeft = clampCutterValue(center * timeline.scrollWidth - scroll.clientWidth / 2, 0, Math.max(0, timeline.scrollWidth - scroll.clientWidth));
+}
+
 function changeCutterZoom(delta: number): void {
     updateCutterZoom(cutterZoom + delta, true);
 }
@@ -1959,7 +1978,7 @@ function updateCutterEditActions(): void {
     byId('cutterMarkEnd').textContent = UI_TEXT.cutter.setHere;
     byId('cutterOutputLengthLabel').textContent = UI_TEXT.cutter.videoLength;
     byId('cutterFormatSummary').textContent = UI_TEXT.cutter.formatDetails;
-    byId('cutterNewCutBtn').textContent = '+ ' + UI_TEXT.cutter.newCut;
+    byId('cutterNewCutBtn').querySelector('span')!.textContent = UI_TEXT.cutter.newCut;
     byId('cutterTimeHint').textContent = draft ? UI_TEXT.cutter.confirmHint : UI_TEXT.cutter.timeHint;
     updateCutterExportPresentation();
     updateCutterHistoryButtons();

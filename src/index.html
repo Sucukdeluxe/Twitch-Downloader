@@ -493,167 +493,171 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                 <div class="tab-content" id="cutterTab">
                     <div class="cutter-container">
                         <div class="cutter-source-bar">
+                            <span class="cutter-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z M14 3v6h6"/><path d="m10 12 5 3-5 3Z"/></svg></span>
                             <div class="cutter-source-copy">
                                 <span class="cutter-source-title" id="cutterSelectTitle" hidden>Video auswählen</span>
                                 <input type="text" id="cutterFilePath" readonly aria-labelledby="cutterSelectTitle" placeholder="Keine Datei ausgewählt…">
+                                <div class="cutter-info" id="cutterInfo">
+                                    <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoDurationLabel">Originaldauer</span><span class="cutter-info-value" id="infoDuration">--:--:--</span></div>
+                                    <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoResolutionLabel">Auflösung</span><span class="cutter-info-value" id="infoResolution">----×----</span></div>
+                                    <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoFpsLabel">Bildrate</span><span class="cutter-info-value" id="infoFps">--</span></div>
+                                </div>
                             </div>
-                            <button type="button" class="btn-secondary" id="cutterBrowseBtn" onclick="selectCutterVideo()" hidden>Durchsuchen</button>
+                            <button type="button" class="btn-secondary" id="cutterBrowseBtn" onclick="selectCutterVideo()">Durchsuchen</button>
                         </div>
                         <div class="cutter-recovery-panel" id="cutterRecoveryPanel" role="status" hidden>
                             <span id="cutterRecoveryText">Gespeicherte Bearbeitung gefunden</span>
                             <button type="button" class="btn-secondary" id="cutterRecoveryRestoreBtn" onclick="recoverCutterProject()">Wiederherstellen</button>
                             <button type="button" class="btn-secondary" id="cutterRecoveryDiscardBtn" onclick="discardCutterProject()">Verwerfen</button>
                         </div>
-
                         <div class="cutter-workspace" id="cutterWorkspace">
                             <section class="cutter-preview-panel">
                                 <div class="archive-player local-cutter-player" id="cutterPlayer" tabindex="-1">
-                                    <div class="archive-screen video-preview" id="cutterPreview">
-                                    <video id="cutterVideo" preload="metadata"></video>
-                                    <div class="placeholder" id="cutterPreviewEmpty">
-                                        <svg aria-hidden="true" width="64" height="64" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM9 8l7 4-7 4V8z"/></svg>
-                                        <p id="cutterPreviewPlaceholder">Video auswählen</p>
-                                    </div>
-                                    <div class="cutter-player-loading" id="cutterPlayerLoading" hidden>
-                                        <span class="cutter-spinner"></span>
-                                        <span id="cutterLoadingLabel">Video wird vorbereitet…</span>
-                                    </div>
+                                    <div class="cutter-viewer">
+                                        <header class="cutter-panel-header"><h3 id="cutterPreviewHeading">Vorschau</h3></header>
+                                        <div class="archive-screen video-preview" id="cutterPreview">
+                                            <video id="cutterVideo" preload="metadata"></video>
+                                            <div class="placeholder" id="cutterPreviewEmpty">
+                                                <svg aria-hidden="true" width="64" height="64" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM9 8l7 4-7 4V8z"/></svg>
+                                                <p id="cutterPreviewPlaceholder">Video auswählen</p>
+                                            </div>
+                                            <div class="cutter-player-loading" id="cutterPlayerLoading" hidden>
+                                                <span class="cutter-spinner"></span>
+                                                <span id="cutterLoadingLabel">Video wird vorbereitet…</span>
+                                            </div>
+                                        </div>
+                                        <div id="cutterPlayerControls"></div>
                                     </div>
                                     <div class="timeline-container" id="timelineContainer">
                                         <div class="cutter-timeline-toolbar">
-                                <div class="cutter-timeline-timecode" id="cutterTimelineTimecode">00:00:00:00</div>
-
-                                 <div class="cutter-zoom-controls">
-                                     <button type="button" class="cutter-icon-button" id="cutterZoomOutBtn" onclick="changeCutterZoom(-0.25)" disabled aria-label="Verkleinern"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"></path></svg></button>
-                                     <input type="range" id="cutterZoom" min="1" max="16" step="0.05" value="1" disabled aria-label="Timeline-Zoom">
-                                     <button type="button" class="cutter-icon-button" id="cutterZoomInBtn" onclick="changeCutterZoom(0.25)" disabled aria-label="Vergrößern"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></button>
-                                 </div>
+                                            <h3 id="cutterTimelineHeading">Zeitleiste</h3>
+                                            <div class="cutter-timeline-timecode" id="cutterTimelineTimecode">00:00:00:00</div>
+                                            <div class="cutter-timeline-views">
+                                                <button type="button" id="cutterZoomOverviewBtn" onclick="setCutterTimelineView('overview')" disabled>Gesamt</button>
+                                                <button type="button" id="cutterZoomSelectionBtn" onclick="setCutterTimelineView('selection')" disabled>Auswahl</button>
+                                            </div>
+                                            <div class="cutter-zoom-controls">
+                                                <button type="button" class="cutter-icon-button" id="cutterZoomOutBtn" onclick="changeCutterZoom(-0.25)" disabled aria-label="Verkleinern"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"></path></svg></button>
+                                                <input type="range" id="cutterZoom" min="1" max="16" step="0.05" value="1" disabled aria-label="Timeline-Zoom">
+                                                <button type="button" class="cutter-icon-button" id="cutterZoomInBtn" onclick="changeCutterZoom(0.25)" disabled aria-label="Vergrößern"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></button>
+                                            </div>
                                         </div>
-                            <div class="cutter-timeline-scroll" id="cutterTimelineScroll">
-                                <div class="timeline" id="timeline">
-                                    <div class="cutter-ruler" id="cutterRuler"></div>
-                                    <div class="cutter-track cutter-video-track" id="cutterVideoTrack">
-                                        <span class="cutter-track-label" id="cutterVideoTrackLabel">VIDEO</span>
-                                        <div class="cutter-thumbnail-strip" id="cutterThumbnailStrip"></div>
+                                        <div class="cutter-timeline-scroll" id="cutterTimelineScroll">
+                                            <div class="timeline" id="timeline">
+                                                <div class="cutter-ruler" id="cutterRuler"></div>
+                                                <div class="cutter-track cutter-video-track" id="cutterVideoTrack">
+                                                    <span class="cutter-track-label" id="cutterVideoTrackLabel">VIDEO</span>
+                                                    <div class="cutter-thumbnail-strip" id="cutterThumbnailStrip"></div>
+                                                </div>
+                                                <div class="cutter-track cutter-audio-track" id="cutterAudioTrack">
+                                                    <span class="cutter-track-label" id="cutterAudioTrackLabel">AUDIO</span>
+                                                    <canvas id="cutterWaveform" aria-hidden="true" hidden></canvas>
+                                                    <div class="cutter-audio-empty" id="cutterAudioEmpty">Keine Audiospur</div>
+                                                </div>
+                                                <div class="cutter-outside-shade cutter-outside-left" id="cutterOutsideLeft"></div>
+                                                <div class="cutter-outside-shade cutter-outside-right" id="cutterOutsideRight"></div>
+                                                <div class="timeline-selection" id="timelineSelection"></div>
+                                                <div id="cutterRangeMarkers"></div>
+                                                <div class="cutter-cut-overlays" id="cutterCutOverlays"></div>
+                                                <div class="timeline-current" id="timelineCurrent"><span></span></div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="cutter-track cutter-audio-track" id="cutterAudioTrack">
-                                        <span class="cutter-track-label" id="cutterAudioTrackLabel">AUDIO</span>
-                                        <canvas id="cutterWaveform" aria-hidden="true" hidden></canvas>
-                                        <div class="cutter-audio-empty" id="cutterAudioEmpty">Keine Audiospur</div>
-                                    </div>
-                                    <div class="cutter-outside-shade cutter-outside-left" id="cutterOutsideLeft"></div>
-                                    <div class="cutter-outside-shade cutter-outside-right" id="cutterOutsideRight"></div>
-                                    <div class="timeline-selection" id="timelineSelection"></div>
-                                    <div id="cutterRangeMarkers"></div>
-                                    <div class="cutter-cut-overlays" id="cutterCutOverlays"></div>
-                                    <div class="timeline-current" id="timelineCurrent"><span></span></div>
-                                </div>
-                            </div>
-                                    </div>
-                                    <div id="cutterPlayerControls"></div>
                                 </div>
                             </section>
-                            <aside class="cutter-sidebar" aria-labelledby="cutterExportHeading">
-                                <div class="cutter-export-header"><h3 id="cutterExportHeading">Export</h3><span class="cutter-format-badge" id="cutterFormatBadge">MP4</span></div>
-                                <div class="cutter-export-body">
-                                    <div class="cutter-export-summary">
-                                        <span id="cutterInfoSelectionLabel">Ausgabelänge</span>
-                                        <strong id="infoSelection">--:--:--</strong>
-                                        <span class="cutter-export-codecs" id="cutterExportCodecs">H.264 · AAC</span>
+                            <aside class="cutter-inspector">
+                                <section class="cutter-edit-panel" id="cutterEditPanel" hidden>
+                                    <div class="cutter-edit-toolbar">
+                                        <h3 id="cutterEditHeading">Schnittbereich</h3>
+                                        <div class="cutter-modes" role="group" aria-label="Schnittmodus">
+                                            <button type="button" id="cutterTrimMode" onclick="setCutterMode('trim')" aria-pressed="true"><svg class="cutter-mode-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.1 8.1 12 12M8.1 15.9 20 4"/></svg><span class="cutter-mode-label">Ausschnitt</span></button>
+                                            <button type="button" id="cutterOmitMode" onclick="setCutterMode('omit')" aria-pressed="false"><svg class="cutter-mode-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4v16M19 4v16M8 8l8 8M16 8l-8 8"/></svg><span class="cutter-mode-label">Bereiche auslassen</span></button>
+                                        </div>
+                                        <div class="cutter-history-controls">
+                                            <button type="button" class="cutter-icon-button" id="cutterUndoBtn" onclick="undoCutterEdit()" disabled aria-label="Rückgängig" title="Rückgängig (Strg+Z)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5v-3h5a5 5 0 0 1 5 5v1h2v-1a7 7 0 0 0-7-7H9V7z"></path></svg></button>
+                                            <button type="button" class="cutter-icon-button" id="cutterRedoBtn" onclick="redoCutterEdit()" disabled aria-label="Wiederholen" title="Wiederholen (Strg+Y)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 7 5 5-5 5v-3h-5a5 5 0 0 0-5 5v1H3v-1a7 7 0 0 1 7-7h5V7z"></path></svg></button>
+                                        </div>
+                                        <button type="button" class="btn-secondary" id="cutterFullRange" onclick="resetCutterRange()">Gesamtes Video</button>
                                     </div>
-                                    <fieldset class="cutter-profile-fieldset">
-                                        <legend id="cutterExportProfileLabel">Exportprofil</legend>
-                                        <select id="cutterExportProfile" onchange="setCutterExportProfile(this.value)" disabled hidden aria-labelledby="cutterExportProfileLabel">
-                                            <option value="quality" id="cutterProfileQualityOption">Qualität</option>
-                                            <option value="balanced" id="cutterProfileBalancedOption" selected>Ausgewogen</option>
-                                            <option value="fast" id="cutterProfileFastOption">Schnell</option>
-                                            <option value="archive" id="cutterProfileArchiveOption">Archiv</option>
-                                        </select>
-                                        <div class="cutter-profile-grid">
-                                            <label><input type="radio" name="cutterProfile" value="quality" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileQualityLabel">Qualität</span></label>
-                                            <label><input type="radio" name="cutterProfile" value="balanced" onchange="setCutterExportProfile(this.value)" disabled checked><span id="cutterProfileBalancedLabel">Ausgewogen</span></label>
-                                            <label><input type="radio" name="cutterProfile" value="fast" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileFastLabel">Schnell</span></label>
-                                            <label><input type="radio" name="cutterProfile" value="archive" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileArchiveLabel">Archiv</span></label>
+                                    <div class="cutter-trim-fields">
+                                        <div class="cutter-boundary-field">
+                                            <div><label for="startTime"><kbd>I</kbd> <span id="cutterStartLabel">Startzeit</span></label><button type="button" class="btn-secondary" id="cutterMarkStart" onclick="markCutterBoundary('start')">Hier setzen</button></div>
+                                            <input type="text" id="startTime" value="00:00:00:00" placeholder="HH:MM:SS:FF" title="HH:MM:SS:FF" spellcheck="false" onchange="updateTimeFromInput()">
                                         </div>
-
-                                    </fieldset>
-                                    <div class="cutter-export-field">
-                                        <label for="cutterAudioStream" id="cutterAudioStreamLabel">Audiospur</label>
-                                        <select id="cutterAudioStream" onchange="setCutterAudioStream(this.value)" disabled aria-describedby="cutterAudioHelp"><option value="0" id="cutterAudioStreamEmptyOption">Keine Audiospur</option></select>
-                                        <p class="cutter-field-help" id="cutterAudioHelp"></p>
+                                        <div class="cutter-output-length"><span id="cutterOutputLengthLabel">Videolänge</span><strong id="cutterOutputLength">00:00:00:00</strong></div>
+                                        <div class="cutter-boundary-field">
+                                            <div><label for="endTime"><kbd>O</kbd> <span id="cutterEndLabel">Endzeit</span></label><button type="button" class="btn-secondary" id="cutterMarkEnd" onclick="markCutterBoundary('end')">Hier setzen</button></div>
+                                            <input type="text" id="endTime" value="00:00:00:00" placeholder="HH:MM:SS:FF" title="HH:MM:SS:FF" spellcheck="false" onchange="updateTimeFromInput()">
+                                        </div>
                                     </div>
-                                    <details class="cutter-format-details">
-                                        <summary id="cutterFormatSummary">Weitere Optionen</summary>
-                                        <div class="cutter-export-field">
-                                            <label for="cutterExportEncoder" id="cutterExportEncoderLabel">Verarbeitung</label>
-                                            <select id="cutterExportEncoder" onchange="setCutterExportEncoder(this.value)" disabled><option value="software" id="cutterEncoderSoftwareOption">Software (CPU)</option></select>
+                                    <div class="cutter-edit-bottom">
+                                        <button type="button" class="btn-secondary" id="cutterNewCutBtn" onclick="addCutterCut()" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span>Neuer Bereich</span></button>
+                                        <label class="cutter-preview-toggle"><input type="checkbox" id="cutterPreviewMode" checked onchange="setCutterPreviewMode(this.checked)"><span id="cutterPreviewModeLabel">Auslassungen überspringen</span></label>
+                                        <span class="cutter-edit-hint" id="cutterTimeHint">HH:MM:SS:FF · I/O setzt die Ausschnittgrenzen</span>
+                                        <span class="cutter-cut-count" id="cutterCutCount" hidden>0</span>
+                                    </div>
+                                    <div class="cutter-cut-list" id="cutterCutList"></div>
+                                </section>
+                                <section class="cutter-sidebar" aria-labelledby="cutterExportHeading">
+                                    <div class="cutter-export-header"><h3 id="cutterExportHeading">Export</h3><span class="cutter-format-badge" id="cutterFormatBadge">MP4</span></div>
+                                    <div class="cutter-export-body">
+                                        <div class="cutter-export-summary">
+                                            <span id="cutterInfoSelectionLabel">Ausgabelänge</span>
+                                            <strong id="infoSelection">--:--:--</strong>
+                                            <span class="cutter-export-codecs" id="cutterExportCodecs">H.264 · AAC</span>
                                         </div>
-                                        <div class="cutter-export-field">
-                                            <label for="cutterColorMode" id="cutterColorLabel">Farbraum</label>
-                                            <select id="cutterColorMode" onchange="setCutterColorMode(this.value)" disabled><option value="source" id="cutterColorSource">Quelle beibehalten</option><option value="sdr" id="cutterColorSdr">SDR · 8 Bit</option></select>
-                                        </div>
-                                        <fieldset class="cutter-audio-processing"><legend id="cutterAudioProcessingTitle">Audio</legend>
-                                            <div class="cutter-audio-fades"><label><span id="cutterAudioFadeInLabel">Einblenden (s)</span><input type="number" id="cutterAudioFadeIn" value="0" min="0" step="0.1" onchange="setCutterAudioProcessing()" disabled></label><label><span id="cutterAudioFadeOutLabel">Ausblenden (s)</span><input type="number" id="cutterAudioFadeOut" value="0" min="0" step="0.1" onchange="setCutterAudioProcessing()" disabled></label></div>
-                                            <label class="inline-toggle"><input type="checkbox" id="cutterAudioNormalize" onchange="setCutterAudioProcessing()" disabled><span id="cutterAudioNormalizeLabel">Lautheit anpassen · −16 LUFS</span></label>
-                                            <p class="cutter-field-help" id="cutterAudioProcessingHelp">Für den Export · Normalisierung mit 48 kHz</p>
-                                            <p id="cutterAudioError" role="status" hidden>Überblendungen kürzen: Ausschnitt ist zu kurz.</p>
+                                        <fieldset class="cutter-profile-fieldset">
+                                            <legend id="cutterExportProfileLabel">Exportprofil</legend>
+                                            <select id="cutterExportProfile" onchange="setCutterExportProfile(this.value)" disabled hidden aria-labelledby="cutterExportProfileLabel">
+                                                <option value="quality" id="cutterProfileQualityOption">Qualität</option>
+                                                <option value="balanced" id="cutterProfileBalancedOption" selected>Ausgewogen</option>
+                                                <option value="fast" id="cutterProfileFastOption">Schnell</option>
+                                                <option value="archive" id="cutterProfileArchiveOption">Archiv</option>
+                                            </select>
+                                            <div class="cutter-profile-grid">
+                                                <label><input type="radio" name="cutterProfile" value="quality" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileQualityLabel">Qualität</span></label>
+                                                <label><input type="radio" name="cutterProfile" value="balanced" onchange="setCutterExportProfile(this.value)" disabled checked><span id="cutterProfileBalancedLabel">Ausgewogen</span></label>
+                                                <label><input type="radio" name="cutterProfile" value="fast" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileFastLabel">Schnell</span></label>
+                                                <label><input type="radio" name="cutterProfile" value="archive" onchange="setCutterExportProfile(this.value)" disabled><span id="cutterProfileArchiveLabel">Archiv</span></label>
+                                            </div>
                                         </fieldset>
-                                        <div class="cutter-info" id="cutterInfo">
-                                            <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoDurationLabel">Originaldauer</span><span class="cutter-info-value" id="infoDuration">--:--:--</span></div>
-                                            <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoResolutionLabel">Auflösung</span><span class="cutter-info-value" id="infoResolution">----×----</span></div>
-                                            <div class="cutter-info-item"><span class="cutter-info-label" id="cutterInfoFpsLabel">Bildrate</span><span class="cutter-info-value" id="infoFps">--</span></div>
+                                        <div class="cutter-export-field">
+                                            <label for="cutterAudioStream" id="cutterAudioStreamLabel">Audiospur</label>
+                                            <select id="cutterAudioStream" onchange="setCutterAudioStream(this.value)" disabled aria-describedby="cutterAudioHelp"><option value="0" id="cutterAudioStreamEmptyOption">Keine Audiospur</option></select>
+                                            <p class="cutter-field-help" id="cutterAudioHelp"></p>
                                         </div>
-
-                                    </details>
-                                </div>
-                                <div class="cutter-export-footer">
-                                    <div class="progress-container" id="cutProgress">
-                                        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Cut progress" id="cutProgressGauge"><div class="progress-bar-fill" id="cutProgressBar"></div></div>
-                                        <div class="progress-text" id="cutProgressText">0%</div>
+                                        <details class="cutter-format-details">
+                                            <summary id="cutterFormatSummary">Weitere Optionen</summary>
+                                            <div class="cutter-export-field">
+                                                <label for="cutterExportEncoder" id="cutterExportEncoderLabel">Verarbeitung</label>
+                                                <select id="cutterExportEncoder" onchange="setCutterExportEncoder(this.value)" disabled><option value="software" id="cutterEncoderSoftwareOption">Software (CPU)</option></select>
+                                            </div>
+                                            <div class="cutter-export-field">
+                                                <label for="cutterColorMode" id="cutterColorLabel">Farbraum</label>
+                                                <select id="cutterColorMode" onchange="setCutterColorMode(this.value)" disabled><option value="source" id="cutterColorSource">Quelle beibehalten</option><option value="sdr" id="cutterColorSdr">SDR · 8 Bit</option></select>
+                                            </div>
+                                            <fieldset class="cutter-audio-processing"><legend id="cutterAudioProcessingTitle">Audio</legend>
+                                                <div class="cutter-audio-fades"><label><span id="cutterAudioFadeInLabel">Einblenden (s)</span><input type="number" id="cutterAudioFadeIn" value="0" min="0" step="0.1" onchange="setCutterAudioProcessing()" disabled></label><label><span id="cutterAudioFadeOutLabel">Ausblenden (s)</span><input type="number" id="cutterAudioFadeOut" value="0" min="0" step="0.1" onchange="setCutterAudioProcessing()" disabled></label></div>
+                                                <label class="inline-toggle"><input type="checkbox" id="cutterAudioNormalize" onchange="setCutterAudioProcessing()" disabled><span id="cutterAudioNormalizeLabel">Lautheit anpassen · −16 LUFS</span></label>
+                                                <p class="cutter-field-help" id="cutterAudioProcessingHelp">Für den Export · Normalisierung mit 48 kHz</p>
+                                                <p id="cutterAudioError" role="status" hidden>Überblendungen kürzen: Ausschnitt ist zu kurz.</p>
+                                            </fieldset>
+                                        </details>
                                     </div>
-                                    <p class="cutter-field-help cutter-export-state" id="cutterExportState" hidden></p>
-                                    <div class="cutter-actions">
-                                        <button type="button" class="btn-secondary" id="cutterCancelExportBtn" onclick="cancelCutterExport()" hidden>Abbrechen</button>
-                                        <button type="button" class="btn-primary" id="btnCut" onclick="startCutting()" disabled>Video exportieren</button>
+                                    <div class="cutter-export-footer">
+                                        <div class="progress-container" id="cutProgress">
+                                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Cut progress" id="cutProgressGauge"><div class="progress-bar-fill" id="cutProgressBar"></div></div>
+                                            <div class="progress-text" id="cutProgressText">0%</div>
+                                        </div>
+                                        <p class="cutter-field-help cutter-export-state" id="cutterExportState" hidden></p>
+                                        <div class="cutter-actions">
+                                            <button type="button" class="btn-secondary" id="cutterCancelExportBtn" onclick="cancelCutterExport()" hidden>Abbrechen</button>
+                                            <button type="button" class="btn-primary" id="btnCut" onclick="startCutting()" disabled>Video exportieren</button>
+                                        </div>
                                     </div>
-                                </div>
+                                </section>
                             </aside>
                         </div>
-                        <section class="cutter-edit-panel" id="cutterEditPanel" hidden>
-                            <div class="cutter-edit-toolbar">
-                                <h3 id="cutterEditHeading">Schnittbereich</h3>
-                                <div class="cutter-modes" role="group" aria-label="Schnittmodus">
-                                    <button type="button" id="cutterTrimMode" onclick="setCutterMode('trim')" aria-pressed="true"><span class="cutter-mode-icon" aria-hidden="true">✂</span><span class="cutter-mode-label">Ausschnitt</span></button>
-                                    <button type="button" id="cutterOmitMode" onclick="setCutterMode('omit')" aria-pressed="false"><span class="cutter-mode-icon" aria-hidden="true">☷</span><span class="cutter-mode-label">Bereiche auslassen</span></button>
-                                </div>
-                                <div class="cutter-history-controls">
-                                    <button type="button" class="cutter-icon-button" id="cutterUndoBtn" onclick="undoCutterEdit()" disabled aria-label="Rückgängig" title="Rückgängig (Strg+Z)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5v-3h5a5 5 0 0 1 5 5v1h2v-1a7 7 0 0 0-7-7H9V7z"></path></svg></button>
-                                    <button type="button" class="cutter-icon-button" id="cutterRedoBtn" onclick="redoCutterEdit()" disabled aria-label="Wiederholen" title="Wiederholen (Strg+Y)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 7 5 5-5 5v-3h-5a5 5 0 0 0-5 5v1H3v-1a7 7 0 0 1 7-7h5V7z"></path></svg></button>
-                                </div>
-                                <button type="button" class="btn-secondary" id="cutterFullRange" onclick="resetCutterRange()">Gesamtes Video</button>
-                            </div>
-                            <div class="cutter-trim-fields">
-                                <div class="cutter-boundary-field">
-                                    <div><label for="startTime"><kbd>I</kbd> <span id="cutterStartLabel">Startzeit</span></label><button type="button" class="btn-secondary" id="cutterMarkStart" onclick="markCutterBoundary('start')">Hier setzen</button></div>
-                                    <input type="text" id="startTime" value="00:00:00:00" placeholder="HH:MM:SS:FF" title="HH:MM:SS:FF" spellcheck="false" onchange="updateTimeFromInput()">
-                                </div>
-                                <div class="cutter-output-length"><span id="cutterOutputLengthLabel">Videolänge</span><strong id="cutterOutputLength">00:00:00:00</strong></div>
-                                <div class="cutter-boundary-field">
-                                    <div><label for="endTime"><kbd>O</kbd> <span id="cutterEndLabel">Endzeit</span></label><button type="button" class="btn-secondary" id="cutterMarkEnd" onclick="markCutterBoundary('end')">Hier setzen</button></div>
-                                    <input type="text" id="endTime" value="00:00:00:00" placeholder="HH:MM:SS:FF" title="HH:MM:SS:FF" spellcheck="false" onchange="updateTimeFromInput()">
-                                </div>
-                            </div>
-                            <div class="cutter-edit-bottom">
-                                <button type="button" class="btn-secondary" id="cutterNewCutBtn" onclick="addCutterCut()" disabled>+ Neuer Bereich</button>
-                                <label class="cutter-preview-toggle"><input type="checkbox" id="cutterPreviewMode" checked onchange="setCutterPreviewMode(this.checked)"><span id="cutterPreviewModeLabel">Auslassungen überspringen</span></label>
-                                <span class="cutter-edit-hint" id="cutterTimeHint">HH:MM:SS:FF · I/O setzt die Ausschnittgrenzen</span>
-                                <span class="cutter-cut-count" id="cutterCutCount" hidden>0</span>
-                            </div>
-                            <div class="cutter-cut-list" id="cutterCutList"></div>
-                        </section>
-
-
-
                     </div>
                 </div>
 

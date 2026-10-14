@@ -93,7 +93,7 @@ export function RangeMarkers({ duration, range, onChange, text, from = 0, to = d
           update(which, value, 'pointer');
         } else {
           const raw = current.value + (event.clientX - current.x) / Math.max(1, current.width) * current.span;
-          const value = Math.max(from, minimum, Math.min(to, maximum, Math.round(raw * 10) / 10));
+          const value = Math.max(from, minimum, Math.min(to, maximum, Math.round(raw / step) * step));
           const anchor = which === 'start' ? Math.max(0, Math.min(value, range.end - minimumRange)) : value;
           current.fineState = { ...current.fineState, value:anchor, anchor, window:fineWindow(anchor, duration) };
           update(which, value, 'pointer');

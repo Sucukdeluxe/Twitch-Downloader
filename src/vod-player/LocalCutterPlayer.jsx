@@ -19,11 +19,11 @@ function LocalCutterRanges({ state, options, root, t }) {
     return () => observer.disconnect();
   }, []);
   const chapters = useMemo(() => [{ id:'local', name:state.name, start:0, end:state.duration }], [state.name, state.duration]);
-  const finePreview = { root, chapters, t };
+  const finePreview = { root, chapters, t, formatTime: options.format };
   const text = state.labels;
   if (!state.range) return null;
   const markers = (range, cutId, variant, limits) => <RangeMarkers key={variant + state.generation} compact trackInset={0} trackWidth={width} duration={state.duration}
-    range={range} variant={variant} limits={limits} text={text} finePreview={finePreview} minimumRange={1 / state.fps} format={options.format}
+    range={range} variant={variant} limits={limits} text={text} finePreview={finePreview} minimumRange={1 / state.fps} step={1 / state.fps} format={options.format}
     disabled={!state.enabled || (!cutId && Boolean(state.cut))}
     handleIds={cutId ? { start:'cutterOmitStartHandle', end:'cutterOmitEndHandle' } : { start:'cutterTrimStartHandle', end:'cutterTrimEndHandle' }}
     onChange={(start, end, interaction) => options.changeRange(start, end, cutId, interaction)}
