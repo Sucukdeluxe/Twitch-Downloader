@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.48 - 2026-10-14
+
+This update redesigns video cutting and improves clip queues, saved downloads and audio synchronization.
+
+### Video cutting
+
+- Add a preview-focused workspace with a compact editing panel, frame-accurate trim controls and editable omitted ranges.
+- Keep the preview size stable when switching between the full timeline, selected range and manual zoom. Clearly mark the active view and separate audio meters from the time display.
+- Load timeline thumbnails faster for long videos and show the audio waveform progressively with visible progress.
+- Preserve audio timing in waveforms, direct exports and queued exports, including delayed tracks, internal silence, multiple audio streams and omitted ranges.
+- Fix short-range omissions, validation after keyboard adjustments and Tab navigation.
+
+### Twitch clips
+
+- Separate pasted clip links from the download queue. Adding clips to the queue clears the input list without removing queued or completed downloads.
+- Shorten displayed clip links, restore Undo/Redo and clarify download states with consistent action icons and tooltips.
+- Choose a destination folder for queued clips and browse saved clips from the configured folders.
+- Show progress for the current download batch, reset progress when the list is empty, and keep the list stationary when switching tabs.
+- Improve duplicate messages, completion actions, folder changes and oversized link-paste handling.
+
 ## 1.0.47 - 2026-10-14
 
 This update renames the application to Twitch Downloader, reworks the Clips workspace into a two-column split layout with clip thumbnails, and updates the top navigation bar.

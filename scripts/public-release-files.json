@@ -52,6 +52,7 @@
     "src/main/domain/config-input.ts",
     "src/main/domain/config-normalize.ts",
     "src/main/domain/cutter-export.ts",
+    "src/main/domain/cutter-waveform.ts",
     "src/main/domain/cutter-project.ts",
     "src/main/domain/download-history-store.ts",
     "src/main/domain/download-policy.ts",
