@@ -30,6 +30,9 @@ const checks = [
     ['roadmap-native', ['scripts/smoke-test-roadmap-native.js']],
     ...['archive', 'clips'].flatMap(name => ['chromium', 'webkit'].map(browser => ['roadmap-' + name + '-' + browser, ['scripts/smoke-test-roadmap-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : [])]])),
     ['vod-playback', ['scripts/smoke-test-full-vod-audit.js']],
+    ['vod-read-timeout', ['scripts/smoke-test-vod-stall-production-timeout.js', 'ffmpeg']],
+    ['vod-stall-queue', ['scripts/smoke-test-vod-stall-native.js', 'ffmpeg', 'ffprobe']],
+    ['vod-healthy-ranges', ['scripts/smoke-test-vod-stall-healthy.js', 'ffmpeg', 'ffprobe']],
 ];
 await mkdir(output, { recursive: true });
 await rm(resolve(output, 'receipt.json'), { force: true });

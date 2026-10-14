@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.49 - 2026-10-15
+
+This patch prevents direct VOD downloads from remaining stuck when the server stops responding.
+
+- Stop a network read after 30 seconds without a response so the existing retry logic can recover or report a failure.
+- Reject interrupted streams instead of treating an incomplete video as a successful download.
+- Show a clear timeout message and classify it as a network error. Normal slow downloads, pause/resume and cancellation remain supported.
+
 ## 1.0.48 - 2026-10-14
 
 This update redesigns video cutting and improves clip queues, saved downloads and audio synchronization.

@@ -1,6 +1,6 @@
 {
   "name": "twitch-downloader",
-  "version": "1.0.48",
+  "version": "1.0.49",
   "description": "Twitch Downloader - Download Twitch VODs easily",
   "main": "dist/main.js",
   "author": "Sucukdeluxe",
