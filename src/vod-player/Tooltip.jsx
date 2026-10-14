@@ -4,6 +4,7 @@ import './tooltip.css';
 
 export function Tooltip({ children, content }) {
   const arrowRef = useRef(null);
+  const tooltipId = useRef(Symbol());
   const [open, setOpen] = useState(false);
   const floating = useFloating({
     open, onOpenChange: setOpen, placement: 'top', strategy: 'fixed', whileElementsMounted: autoUpdate,
@@ -29,7 +30,15 @@ export function Tooltip({ children, content }) {
   });
   const ref = useMergeRefs([floating.refs.setReference, children.props.ref]);
   useEffect(() => {
-    if (open) floating.update();
+    const dismissOther = event => { if (event.detail !== tooltipId.current) setOpen(false); };
+    document.addEventListener('vod-tooltip-open', dismissOther);
+    return () => document.removeEventListener('vod-tooltip-open', dismissOther);
+  }, []);
+  useEffect(() => {
+    if (open) {
+      document.dispatchEvent(new CustomEvent('vod-tooltip-open', { detail: tooltipId.current }));
+      floating.update();
+    }
   }, [open, floating.update]);
   useEffect(() => {
     const element = floating.elements.floating;

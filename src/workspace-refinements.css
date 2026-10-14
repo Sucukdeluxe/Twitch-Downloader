@@ -1205,8 +1205,8 @@
 .clips-batch-progress > span { display: block; height: 100%; background: #2e9e5b; transition: width 180ms ease; }
 #clipsDownloadList { list-style: none; padding: 0; margin: 0; flex: 1 1 160px; height: 160px; min-height: 160px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; overflow-anchor: none; }
 .clips-list-empty { display: flex; height: 100%; align-items: center; justify-content: center; padding: 20px; color: var(--workspace-text-muted); text-align: center; }
-.clips-results[data-empty="false"] #clipsDownloadList { animation: clip-list-enter 220ms ease-out; }
-@keyframes clip-list-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+
 .clip-result-row { display: flex; gap: 12px; align-items: center; height: 68px; min-height: 68px; padding: 10px 14px; margin-bottom: 8px; background: var(--workspace-panel); border: 1px solid var(--workspace-border); border-radius: 6px; }
 .clip-result-row:last-child { margin-bottom: 0; }
 .clip-result-number { flex: 0 0 28px; text-align: center; font-variant-numeric: tabular-nums; color: var(--workspace-text-muted); }
@@ -1542,8 +1542,8 @@ body :is(select, .select-compact) {
 
 .top-nav .top-nav-item.nav-item.active,
 .top-nav .top-nav-item.nav-item.active:hover {
-    background: var(--workspace-primary);
-    color: var(--workspace-primary-text);
+    background: var(--workspace-control-hover);
+    color: var(--workspace-text);
 }
 
 .top-nav .top-nav-item.active svg {
@@ -2403,3 +2403,26 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 @media (prefers-reduced-motion: reduce) {
     .streamer-search-dialog[open], .streamer-search-dialog.is-closing, .streamer-search-skeleton, .profile-refresh-vods.is-loading svg { animation: none; }
 }
+
+#clipsTab .clips-input-pane > .clips-actions { gap: 0; }
+#clipsTab #btnClipQueue { border-radius: 5px 0 0 5px; flex: 1 1 auto; width: auto; }
+#clipQueueOptions { display: flex; flex: 0 0 42px; }
+#clipsTab #btnClip, #clipsTab #btnClipQueue, #clipQueueOptions .clip-options-trigger { background: #287a49; color: #fff; }
+#clipsTab #btnClip:hover:not(:disabled), #clipsTab #btnClipQueue:hover:not(:disabled), #clipQueueOptions .clip-options-trigger:hover:not(:disabled) { background: #308d55; }
+#clipsTab #btnClip:disabled, #clipsTab #btnClipQueue:disabled, #clipQueueOptions .clip-options-trigger:disabled { background: var(--workspace-control); color: var(--workspace-text-muted); opacity: 1; }
+#clipQueueOptions .clip-options-trigger { display: grid; place-items: center; padding: 0 12px; width: 42px; height: 38px; border: 0; border-left: 1px solid #ffffff26; border-radius: 0 5px 5px 0; }
+.clip-options-trigger svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.clip-folder-menu { display: grid; min-width: 220px; gap: 4px; user-select: none; }
+.clip-folder-menu button { text-align: left; padding: 10px 12px; border: 0; border-radius: 5px; font-size: 13px; color: var(--workspace-text); background: transparent; }
+.clip-folder-menu button:hover, .clip-folder-menu button:focus-visible { background: var(--workspace-control-hover); }
+.clips-view { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
+.clips-view[hidden] { display: none; }
+.clips-view-tabs { display: flex; gap: 5px; min-width: 0; }
+.clips-view-tabs button { padding: 7px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--workspace-text-muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.clips-view-tabs button[aria-selected="true"] { color: var(--workspace-text); background: var(--workspace-control-hover); }
+.clip-row-controls { display: flex; flex: 0 0 auto; gap: 12px; align-items: center; }
+.clip-row-controls .clip-result-actions { flex: 0 0 auto; }
+.clips-library-location { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+#clipsLibraryDirectory { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; color: var(--workspace-text); background: transparent; border: 0; padding: 4px 0; font-size: 12px; }
+#clipsSavedList { list-style: none; flex: 1 1 160px; min-height: 160px; height: 160px; padding: 0; margin: 0; overflow: auto; scrollbar-gutter: stable; }
+.clips-library-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 12px; }

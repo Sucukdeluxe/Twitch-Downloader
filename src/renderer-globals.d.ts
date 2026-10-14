@@ -1,6 +1,7 @@
 interface AppConfig {
     client_id?: string;
     download_path?: string;
+    clip_download_path?: string;
     streamers?: string[];
     streamer_display_names?: Record<string, string>;
     theme?: string;
@@ -497,6 +498,8 @@ interface ApiBridge {
     onClipProgress(callback: (progress: ClipTransferProgress) => void): void;
     getWorkspaceSession(): Promise<WorkspaceSnapshot>;
     saveClipWorkspace(items: ClipBatchItem[]): Promise<boolean>;
+    setClipOutputDirectory(capability: string | null): Promise<ClipBatchItem[] | null>;
+    getClipLibrary(offset?: number, refresh?: boolean): Promise<import('./main/domain/clip-library').ClipLibraryPage | null>;
     saveMergeWorkspace(ids: string[]): Promise<boolean>;
     getMergeVideoInfo(id: string): Promise<{ durationSeconds?: number; missing?: boolean }>;
     getClipInfo(url: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null>;
@@ -624,6 +627,8 @@ interface Window {
         }): { update(state: LocalCutterViewState): void; updatePosition(time: number): void; destroy(): void };
     };
     VodPlayer: {
+        mountClipControls(element: HTMLElement, callbacks: { open(): void; folder(): void; remove(): void }): { update(state: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string; available: boolean; removable: boolean; disabled: boolean; labels: { open: string; folder: string; remove: string } }): void; destroy(): void };
+        mountClipMenu(element: HTMLElement, callbacks: { select(): void; reset(): void }): { update(state: { disabled: boolean; labels: { options: string; select: string; reset: string } }): void; destroy(): void };
         mountStatusTooltip(element: HTMLElement): { update(options: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string }): void; destroy(): void };
         mountPreview(element: HTMLElement, options: { id: string; sourceUrl: string; duration: number; language: string; onError(): void }): { destroy(): void };
         planEditedVod: typeof import('./main/domain/vod-edit-plan').planEditedVod;

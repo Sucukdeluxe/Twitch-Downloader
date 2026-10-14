@@ -1388,6 +1388,8 @@ async function selectFolder(): Promise<void> {
         if (!folder) return;
         config = await window.api.saveConfig({ download_path: folder.displayPath }, folder.token);
         byId<HTMLInputElement>('downloadPath').value = folder.displayPath;
+        syncClipStorage();
+        clipLibraryPage = null;
     } catch {
         showAppToast(currentLanguage === 'de' ? 'Download-Ordner konnte nicht gespeichert werden.' : 'Download folder could not be saved.', 'warn');
         return;

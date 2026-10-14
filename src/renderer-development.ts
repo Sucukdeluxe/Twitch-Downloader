@@ -37,7 +37,7 @@ function readDevelopmentView(): DevelopmentViewState | null {
 function developmentRefreshBlocked(): boolean {
     if (!developmentEnabled || !developmentRendererReady || Date.now() - developmentLastInput < 800) return true;
     if (clipMetadataDirty || Object.values(workspaceSaves).some(state => state.pending > 0 || state.failed)) return true;
-    if (workspaceLoading || clipDownloadInFlight || clipEnqueueInFlight || clipQueueInFlight || isCutting || isMerging || mergeFilePickerInFlight || streamerAddInFlight || vodBulkOperationInFlight || settingsAutoSaveInFlight || settingsSaveFailed || cutterEditorState) return true;
+    if (workspaceLoading || clipDownloadInFlight || clipEnqueueInFlight || clipFolderPicking || clipQueueInFlight || isCutting || isMerging || mergeFilePickerInFlight || streamerAddInFlight || vodBulkOperationInFlight || settingsAutoSaveInFlight || settingsSaveFailed || cutterEditorState) return true;
     if (Array.from(document.querySelectorAll<HTMLElement>('.modal.show, .modal.active, dialog[open], [aria-modal="true"]')).some(element => element.getClientRects().length > 0)) return true;
     if (Array.from(document.querySelectorAll('video,audio')).some(media => !(media as HTMLMediaElement).paused)) return true;
     return false;

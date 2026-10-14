@@ -194,6 +194,8 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.on('clip-progress', (_, progress) => callback(progress));
     },
     getWorkspaceSession: () => ipcRenderer.invoke('get-workspace-session'),
+    setClipOutputDirectory: (capability: string | null) => ipcRenderer.invoke('set-clip-output-directory', capability),
+    getClipLibrary: (offset = 0, refresh = false) => ipcRenderer.invoke('get-clip-library', offset, refresh),
     saveClipWorkspace: (items: import('./main/domain/workspace-session').WorkspaceClip[]) => ipcRenderer.invoke('save-clip-workspace', items),
     saveMergeWorkspace: (ids: string[]) => ipcRenderer.invoke('save-merge-workspace', ids),
     getMergeVideoInfo: (id: string) => ipcRenderer.invoke('get-merge-video-info', id),

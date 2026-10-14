@@ -29,7 +29,7 @@ export function PlayerButton({ name, label, className = "", ...props }) {
   return <button type="button" className={`player-button ${className}`} aria-label={label} title={label} {...props}><PlayerIcon name={name} /></button>;
 }
 
-export function PlayerPanel({ label, trigger, root, children, className = "", onOpenChange }) {
+export function PlayerPanel({ label, trigger, root, children, className = "", onOpenChange, disabled = false }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const dialog = root.current?.closest('dialog[open]');
@@ -54,7 +54,7 @@ export function PlayerPanel({ label, trigger, root, children, className = "", on
   const { getReferenceProps, getFloatingProps } = useInteractions([useClick(context), useDismiss(context), useRole(context, { role: "dialog" })]);
   const { isMounted, styles } = useTransitionStyles(context, { duration: { open: 160, close: 120 }, initial: { opacity: 0, transform: "translateY(4px) scale(.98)" } });
   return <>
-    <button type="button" ref={refs.setReference} className={`player-button ${className}`} aria-label={label} title={label} {...getReferenceProps()}>{trigger}</button>
+    <button type="button" ref={refs.setReference} className={`player-button ${className}`} disabled={disabled} aria-label={label} title={label} {...getReferenceProps()}>{trigger}</button>
     {isMounted && <FloatingPortal root={playerPortalRoot(root.current, document.fullscreenElement, document.body)}><FloatingFocusManager context={context} modal={false} returnFocus>
       <div ref={refs.setFloating} className="player-panel-position" style={floatingStyles} aria-label={label} {...getFloatingProps()}>
         <div className="player-panel" style={styles}>{typeof children === 'function' ? children(() => { setOpen(false); onOpenChange?.(false); }) : children}</div>

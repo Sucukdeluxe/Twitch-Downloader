@@ -1,3 +1,4 @@
+import { ClipControls, ClipFolderMenu } from './ClipControls.jsx';
 import './LocalCutterPlayer.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -309,6 +310,14 @@ function Workspace({ options, bind }) {
 }
 
 window.VodPlayer = {
+  mountClipControls(element, callbacks) {
+    const root = createRoot(element);
+    return { update(state) { root.render(<ClipControls {...state} {...callbacks}/>); }, destroy() { root.unmount(); } };
+  },
+  mountClipMenu(element, callbacks) {
+    const root = createRoot(element);
+    return { update(state) { root.render(<ClipFolderMenu host={element} {...state} {...callbacks}/>); }, destroy() { root.unmount(); } };
+  },
   mountStatusTooltip(element) {
     const root = createRoot(element);
     let previous = '';

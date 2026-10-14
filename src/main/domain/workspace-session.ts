@@ -10,6 +10,7 @@ export interface WorkspaceClip {
     metadataState: 'pending' | 'loading' | 'ready' | 'missing' | 'unavailable';
     state: ClipState;
     filename?: string;
+    outputDirectory?: string;
     error?: string;
 }
 export interface WorkspaceMergeFile {
@@ -83,7 +84,8 @@ export class WorkspaceSessionStore {
                 const saved = data.clips.find((value: WorkspaceClip) => value?.url === item.url);
                 return { ...item, state: item.state === 'active' ? 'stopped' : item.state,
                     metadataState: item.metadataState === 'loading' ? 'pending' : item.metadataState,
-                    filename: text(saved?.filename, 4096) || undefined };
+                    filename: text(saved?.filename, 4096) || undefined,
+                    outputDirectory: typeof saved?.outputDirectory === 'string' && path.isAbsolute(saved.outputDirectory) ? text(saved.outputDirectory, 4096) : undefined };
             });
             if (Array.isArray(data.mergeFiles)) {
                 this.mergeFiles = data.mergeFiles.slice(0, 500).filter((file: WorkspaceMergeFile) =>

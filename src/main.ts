@@ -1,3 +1,4 @@
+import { clipLibraryPage } from './main/domain/clip-library';
 import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
@@ -289,6 +290,7 @@ const cutterProjectAutosaves = createCutterProjectAutosaveStore(CUTTER_PROJECT_A
 interface Config {
     client_id: string;
     download_path: string;
+    clip_download_path: string;
     streamers: string[];
     streamer_display_names: Record<string, string>;
     theme: string;
@@ -492,6 +494,7 @@ interface ReleaseUpdateInfo {
 const defaultConfig: Config = {
     client_id: '',
     download_path: DEFAULT_DOWNLOAD_PATH,
+    clip_download_path: '',
     streamers: [],
     streamer_display_names: {},
     theme: 'twitch',
@@ -4966,6 +4969,9 @@ async function computeStorageStats(): Promise<StorageStatsResult> {
 const readArchiveInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'archive-index.json'), 60000, directory => {
     if (directory === path.resolve(config.download_path) && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('archive-index-updated');
 });
+function clipDownloadRoot(): string { return config.clip_download_path || path.join(config.download_path, 'Clips'); }
+const readClipInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'clip-index.json'));
+
 const archiveThumbnails = new ArchiveThumbnailService(path.join(APPDATA_DIR, 'cache', 'archive-thumbnails'), getFFmpegPath, command => recordManagedToolExecution('ffmpeg', command));
 
 // ==========================================
@@ -7329,13 +7335,11 @@ function applyConfigTransition(previousConfig: Config, nextConfig: Config): Conf
 ipcMain.handle('save-config', (event, newConfig: Partial<Config>, fileCapability?: string) => {
     if (!isTrustedRendererEvent(event)) return config;
     const acceptedConfig = sanitizeConfigInput(newConfig) as Partial<Config>;
-    if (typeof acceptedConfig.download_path === 'string' && acceptedConfig.download_path !== config.download_path) {
-        const selectedPath = typeof fileCapability === 'string'
-            ? resolveFileCapability(event, fileCapability, 'selected-folder')
-            : null;
-        if (!selectedPath || normalizeComparablePath(selectedPath) !== normalizeComparablePath(acceptedConfig.download_path)) {
-            delete acceptedConfig.download_path;
-        }
+    for (const key of ['download_path', 'clip_download_path'] as const) {
+        const directory = acceptedConfig[key];
+        if (typeof directory !== 'string' || directory === config[key] || (key === 'clip_download_path' && !directory)) continue;
+        const selectedPath = typeof fileCapability === 'string' ? resolveFileCapability(event, fileCapability, 'selected-folder') : null;
+        if (!selectedPath || normalizeComparablePath(selectedPath) !== normalizeComparablePath(directory)) delete acceptedConfig[key];
     }
     const previousConfig = config;
     const nextConfig = normalizeConfigTemplates({ ...previousConfig, ...acceptedConfig });
@@ -7778,7 +7782,7 @@ function rememberQueueFilePaths(queueItems: QueueItem[]): void {
 function isKnownRendererPath(purpose: FileCapabilityPurpose, candidate: string): boolean {
     if (typeof candidate !== 'string' || !candidate || !path.isAbsolute(candidate) || !fs.existsSync(candidate)) return false;
     const normalized = normalizeComparablePath(candidate);
-    if (purpose === 'selected-folder' && normalized === normalizeComparablePath(config.download_path)) return true;
+    if (purpose === 'selected-folder' && [config.download_path, clipDownloadRoot()].some(directory => normalized === normalizeComparablePath(directory))) return true;
     return knownRendererPaths.get(purpose)?.has(normalized) === true;
 }
 
@@ -7966,6 +7970,8 @@ interface ClipRequest {
     controller: AbortController;
     progress: ClipTransferProgress;
     tracking?: ActiveClipDownloadTracking;
+    outputDirectory?: string;
+    defaultDirectory: string;
 }
 interface ClipResult { success: boolean; cancelled?: boolean; error?: string; filename?: string }
 const activeClipProcesses = new Set<ActiveClipDownloadTracking>();
@@ -8017,7 +8023,7 @@ async function performClipDownload(clipId: string, request: ClipRequest): Promis
     if (!(await prepareClipStep(request, ensureFfmpegInstalled()))) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
     if (appShutdownStarted || request.controller.signal.aborted) return { success: false, cancelled: true };
     const safeBroadcaster = sanitizeClipFilename(clipInfo.broadcaster_name || '', 'unknown');
-    const folder = path.join(config.download_path, 'Clips', safeBroadcaster);
+    const folder = request.outputDirectory || path.join(request.defaultDirectory, safeBroadcaster);
     fs.mkdirSync(folder, { recursive: true });
     const diskCheck = ensureDiskSpace(folder, 128 * 1024 * 1024, 'Clip-Download');
     if (!diskCheck.success) return { success: false, error: diskCheck.error || tBackend('diskSpaceShortGeneric') };
@@ -8073,6 +8079,7 @@ async function performClipDownload(clipId: string, request: ClipRequest): Promis
         try { downloadHistoryStore?.recordClip({ attemptId: request.progress.requestId, clipId, filename, title: clipInfo.title, channel: clipInfo.broadcaster_name }); }
         catch (error) { appendDebugLog('clip-history-save-failed', { clipId, error: String(error) }); }
         readArchiveInventory.invalidate();
+        readClipInventory.invalidate();
         rememberRendererPath('open-file', filename);
         rememberRendererPath('show-in-folder', filename);
         appendDebugLog('clip-download-success', { clipId, bytes: stats.size, filename });
@@ -8093,7 +8100,8 @@ registerTrustedIpcHandler(ipcMain, 'download-clip', isTrustedRendererEvent, () =
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(requestId) || clipRequests.has(requestId) || [...clipRequests.values()].some(request => request.ownerId === event.sender.id)) return { success: false, error: tBackend('unknownDownloadError') };
     const policy = decideStandaloneDownloadStart(config.download_policy, new Date());
     if (!policy.allowed) return { success: false, error: tBackend('downloadOutsideWindow', { nextStart: policy.nextStart ? policy.nextStart.getHours().toString().padStart(2, '0') + ':' + policy.nextStart.getMinutes().toString().padStart(2, '0') : '--:--' }) };
-    const request: ClipRequest = { ownerId: event.sender.id, controller: new AbortController(), progress: {
+    const request: ClipRequest = { ownerId: event.sender.id, controller: new AbortController(), defaultDirectory: clipDownloadRoot(),
+        outputDirectory: workspaceSession.clips.find(item => item.url === 'https://clips.twitch.tv/' + clipId)?.outputDirectory, progress: {
         url: 'https://clips.twitch.tv/' + clipId, requestId, bytes: 0, bytesPerSecond: 0, phase: 'preparing', state: 'active'
     } };
     clipRequests.set(requestId, request);
@@ -8716,10 +8724,33 @@ ipcMain.handle('save-clip-workspace', (event, items: unknown) => {
     workspaceSession.clips = normalizeWorkspaceClips(items).map(item => {
         const saved = previous.get(item.url);
         const active = [...clipRequests.values()].find(request => request.progress.url === item.url);
-        return { ...item, filename: saved?.filename,
+        return { ...item, filename: saved?.filename, outputDirectory: saved?.outputDirectory,
             state: active ? 'active' : item.state === 'done' && !saved?.filename ? 'ready' : item.state };
     });
     return workspaceSession.save();
+});
+
+ipcMain.handle('set-clip-output-directory', async (event, capability: unknown) => {
+    if (!isTrustedRendererEvent(event) || [...clipRequests.values()].some(request => request.ownerId === event.sender.id)) return null;
+    const directory = capability === null ? undefined : typeof capability === 'string' ? resolveFileCapability(event, capability, 'selected-folder') : null;
+    if (directory === null) return null;
+    const previous = workspaceSession.clips;
+    workspaceSession.clips = previous.map(item => item.state === 'done' || item.state === 'active' ? item : { ...item, outputDirectory: directory });
+    if (!await workspaceSession.save()) { workspaceSession.clips = previous; return null; }
+    return workspaceSession.clips;
+});
+
+ipcMain.handle('get-clip-library', async (event, offset: unknown, refresh: unknown) => {
+    if (!isTrustedRendererEvent(event)) return null;
+    const directory = clipDownloadRoot();
+    const result = clipLibraryPage(await readClipInventory(directory, refresh === true), offset);
+    if (directory !== clipDownloadRoot()) return null;
+    rememberRendererPath('selected-folder', directory);
+    for (const file of result.files) {
+        rememberRendererPath('open-file', file.fullPath);
+        rememberRendererPath('show-in-folder', file.fullPath);
+    }
+    return result;
 });
 
 ipcMain.handle('save-merge-workspace', (event, ids: unknown) => {
@@ -9077,6 +9108,7 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
             if (currentCutterProcess && exportProcesses.includes(currentCutterProcess)) currentCutterProcess = null;
         }],
         ['archive-index-close', () => readArchiveInventory.dispose()],
+        ['clip-index-close', () => readClipInventory.dispose()],
         ['cutter-media-cancel', () => cancelCutterMediaPreparation()],
         ['cutter-waveform-cancel', () => cancelCutterWaveformPreparation()],
         ['cutter-metadata-cancel', () => cancelCutterMetadataPreparation()],

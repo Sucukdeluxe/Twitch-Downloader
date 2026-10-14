@@ -187,6 +187,7 @@ function applyLanguageToStaticUI(): void {
     setText('clipsClearBtn', UI_TEXT.clips.clearList);
     setText('clipsRetryBtn', UI_TEXT.clips.retryFailed);
     setText('clipsResultsTitle', UI_TEXT.clips.resultsTitle);
+    syncClipStorage();
     setAriaLabel('clipsBatchProgress', UI_TEXT.clips.resultsTitle);
     renderClipBatch();
     setPlaceholder('clipStartPart', UI_TEXT.clips.startPartPlaceholder);

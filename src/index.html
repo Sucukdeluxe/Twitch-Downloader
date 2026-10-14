@@ -460,17 +460,27 @@
                                 <textarea id="clipUrl" disabled rows="6" maxlength="820000" wrap="off" spellcheck="false" onbeforeinput="prepareClipDraftInput(event)" oninput="updateClipLinks(event)" onkeydown="handleClipDraftKeydown(event)" onpaste="pasteClipLinks(event)" onblur="compactClipLinks()" aria-describedby="clipsBatchHint" placeholder="https://clips.twitch.tv/…"></textarea>
                                 <div class="clips-actions">
                                     <button type="button" class="btn-primary" onclick="enqueueClipLinks()" id="btnClipQueue">Zur Warteschlange hinzufügen</button>
+                                    <span id="clipQueueOptions"></span>
                                 </div>
                             </div>
                             <div class="clip-notice" id="clipStatus" role="status" aria-live="polite"></div>
                             <section class="clips-results" id="clipsResults" aria-labelledby="clipsResultsTitle" data-empty="true">
-                                <div class="clips-results-header"><h3 id="clipsResultsTitle">Downloads</h3><span id="clipsBatchSummary" aria-live="polite"></span></div>
+                                <div class="clips-results-header"><div class="clips-view-tabs" role="tablist" onkeydown="handleClipViewKeydown(event)" aria-label="Clip-Ansicht">
+                                    <button type="button" role="tab" id="clipsResultsTitle" aria-selected="true" aria-controls="clipsDownloadsView" onclick="setClipView('downloads')">Downloads</button>
+                                    <button type="button" role="tab" id="clipsSavedTitle" aria-selected="false" aria-controls="clipsSavedView" onclick="setClipView('saved')">Gespeichert</button>
+                                </div><span id="clipsBatchSummary" aria-live="polite"></span></div>
+                                <div id="clipsDownloadsView" class="clips-view" role="tabpanel" aria-labelledby="clipsResultsTitle">
                                 <div class="clips-batch-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="clipsBatchProgress"><span></span></div>
                                 <ol id="clipsDownloadList"></ol>
                                 <div class="clips-actions clips-download-actions">
                                     <button type="button" class="btn-secondary" id="clipsStopBtn" onclick="stopClipBatch()" hidden>Downloads stoppen</button>
                                     <button type="button" class="btn-secondary" id="clipsRetryBtn" onclick="downloadClip(true)" hidden>Fehlgeschlagene wiederholen</button>
-                                    <button type="button" class="btn-primary" onclick="downloadClip()" id="btnClip">Downloads starten</button>
+                                    <button type="button" class="btn-primary" onclick="downloadClip()" id="btnClip" disabled>Downloads starten</button>
+                                </div></div>
+                                <div id="clipsSavedView" class="clips-view" role="tabpanel" aria-labelledby="clipsSavedTitle" hidden>
+                                    <div class="clips-library-location"><button type="button" id="clipsLibraryDirectory" onclick="openClipLibraryFolder()"></button><button type="button" class="btn-secondary" id="clipsLibraryRefresh" onclick="loadClipLibrary(true)">Aktualisieren</button></div>
+                                    <ol id="clipsSavedList"></ol>
+                                    <div class="clips-library-pages"><button type="button" class="btn-secondary" id="clipsLibraryPrevious" onclick="changeClipLibraryPage(-1)">Zurück</button><span id="clipsLibraryPage"></span><button type="button" class="btn-secondary" id="clipsLibraryNext" onclick="changeClipLibraryPage(1)">Weiter</button></div>
                                 </div>
                             </section>
                         </section>
@@ -836,6 +846,15 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 <input type="text" id="downloadPath" readonly>
                                 <button type="button" class="btn-secondary" id="selectFolderBtn" onclick="selectFolder()">Ordner</button>
                                 <button type="button" class="btn-secondary" id="openFolderBtn" onclick="openFolder()">Öffnen</button>
+                            </div>
+                        </div>
+                        <div class="form-group download-settings-storage">
+                            <label id="clipStorageLabel" for="clipDownloadPath">Clip-Speicherort</label>
+                            <div class="form-row">
+                                <input type="text" id="clipDownloadPath" readonly>
+                                <button type="button" class="btn-secondary" id="selectClipFolderBtn" onclick="selectClipStorageFolder()">Ordner</button>
+                                <button type="button" class="btn-secondary" id="resetClipFolderBtn" onclick="resetClipStorageFolder()">Standard</button>
+                                <button type="button" class="btn-secondary" id="openClipFolderBtn" onclick="openClipLibraryFolder()">Öffnen</button>
                             </div>
                         </div>
                         <div class="download-settings-layout">

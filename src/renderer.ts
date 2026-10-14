@@ -2031,6 +2031,7 @@ interface ClipBatchItem {
     metadataState: ClipMetadataState;
     state: ClipBatchState;
     filename?: string;
+    outputDirectory?: string;
     error?: string;
     transfer?: ClipTransferProgress;
 }
@@ -2042,12 +2043,16 @@ interface ClipBatchRow {
     label: HTMLSpanElement;
     streamer: HTMLSpanElement;
     status: HTMLSpanElement;
-    symbol: HTMLSpanElement;
-    open: HTMLButtonElement;
-    folder: HTMLButtonElement;
-    remove: HTMLButtonElement;
-    statusTooltip: ReturnType<Window['VodPlayer']['mountStatusTooltip']>;
+    controls: ReturnType<Window['VodPlayer']['mountClipControls']>;
 }
+let clipRunItems: ClipBatchItem[] = [];
+let clipRunRevision = 0;
+let clipView: 'downloads' | 'saved' = 'downloads';
+let clipFolderPicking = false;
+let clipMenu: ReturnType<Window['VodPlayer']['mountClipMenu']> | undefined;
+let clipLibraryPage: import('./main/domain/clip-library').ClipLibraryPage | null = null;
+let clipLibraryRequest = 0;
+const clipLibraryControls: Array<ReturnType<Window['VodPlayer']['mountClipControls']>> = [];
 let clipDownloadInFlight = false;
 let clipBatchStopRequested = false;
 let clipBatchItems: ClipBatchItem[] = [];
@@ -2197,7 +2202,7 @@ function canonicalClipLink(line: string): { url: string; valid: boolean } {
 }
 
 function removeClipLink(url: string): void {
-    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight) return;
+    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || clipFolderPicking) return;
     clipBatchItems = clipBatchItems.filter(item => item.url !== url);
     renderClipBatch();
     void persistClipWorkspace();
@@ -2435,7 +2440,7 @@ function updateClipLinks(event?: InputEvent): void {
 }
 
 async function enqueueClipLinks(): Promise<void> {
-    if (workspaceLoading || clipEnqueueInFlight) return;
+    if (workspaceLoading || clipEnqueueInFlight || clipFolderPicking) return;
     const draft = getClipDraft();
     if (!draft.length) return;
     const queued = new Set(clipBatchItems.map(item => item.url));
@@ -2455,6 +2460,8 @@ async function enqueueClipLinks(): Promise<void> {
     }
     clipEnqueueInFlight = true;
     clipBatchItems.push(...added);
+    if (added.length && !clipDownloadInFlight) { clipRunItems = []; clipRunRevision += 1; }
+    if (added.length && clipView !== 'downloads') setClipView('downloads');
     renderClipBatch();
     try {
         if (!await persistClipWorkspace()) return;
@@ -2464,7 +2471,7 @@ async function enqueueClipLinks(): Promise<void> {
             : added.length ? UI_TEXT.clips.queueAdded.replace('{count}', formatUiNumber(added.length)) : '';
         const warning = limitReached ? UI_TEXT.clips.limitReached
             : invalid ? UI_TEXT.clips.invalidDraft.replace('{count}', formatUiNumber(invalid)) : '';
-        showClipNotice([message, warning].filter(Boolean).join(' ') || UI_TEXT.clips.queueDuplicate, Boolean(warning));
+        showClipNotice([message, warning].filter(Boolean).join(' ') || (draft.filter(entry => entry.valid).length === 1 ? UI_TEXT.clips.queueDuplicateOne : UI_TEXT.clips.queueDuplicate), Boolean(warning));
     } finally {
         clipEnqueueInFlight = false;
         requestClipMetadata();
@@ -2515,37 +2522,182 @@ function createClipBatchRow(url: string): ClipBatchRow {
     const label = span('clip-result-label');
     const streamer = span('clip-result-streamer');
     const status = span('clip-result-status');
-    const symbol = span('clip-result-symbol');
-    const statusTooltip = window.VodPlayer.mountStatusTooltip(symbol);
     const content = document.createElement('div');
     content.className = 'clip-result-content';
     const meta = document.createElement('div');
     meta.className = 'clip-result-meta';
     meta.append(streamer, status);
     content.append(label, meta);
-    const actions = document.createElement('div');
-    actions.className = 'clip-result-actions';
-    const action = (pathData: string, callback: () => void) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'clip-row-action';
-        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('aria-hidden', 'true');
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', pathData);
-        icon.append(path);
-        button.append(icon);
-        button.addEventListener('click', callback);
-        actions.append(button);
-        return button;
-    };
-    const open = action('m8 5 11 7-11 7z', () => { void openClipFile(url, false); });
-    const folder = action('M3 7V4h6l2 3h10v13H3z', () => { void openClipFile(url, true); });
-    const remove = action('M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5', () => removeClipLink(url));
-    remove.classList.add('clip-remove-action');
-    row.append(number, thumb, content, actions, symbol);
-    return { row, number, thumb, thumbImg, label, streamer, status, symbol, open, folder, remove, statusTooltip };
+    const controlHost = document.createElement('div');
+    controlHost.className = 'clip-row-controls';
+    const controls = window.VodPlayer.mountClipControls(controlHost, {
+        open: () => { void openClipFile(url, false); }, folder: () => { void openClipFile(url, true); }, remove: () => removeClipLink(url),
+    });
+    row.append(number, thumb, content, controlHost);
+    return { row, number, thumb, thumbImg, label, streamer, status, controls };
+}
+
+
+function clipActionLabels(): { open: string; folder: string; remove: string } {
+    return { open: UI_TEXT.static.archiveOpen, folder: UI_TEXT.static.archiveShowInFolder, remove: UI_TEXT.clips.removeDownload };
+}
+
+function getClipDownloadDirectory(): string {
+    return config.clip_download_path || (config.download_path || '').replace(/[\\/]+$/, '') + '\\Clips';
+}
+
+function syncClipStorage(): void {
+    const directory = getClipDownloadDirectory();
+    byId<HTMLInputElement>('clipDownloadPath').value = directory;
+    setClipText(byId('clipStorageLabel'), UI_TEXT.clips.clipStorage);
+    setClipText(byId('selectClipFolderBtn'), UI_TEXT.static.selectFolder);
+    setClipText(byId('resetClipFolderBtn'), UI_TEXT.clips.defaultFolder);
+    setClipText(byId('openClipFolderBtn'), UI_TEXT.static.archiveOpen);
+    setClipText(byId('clipsSavedTitle'), UI_TEXT.clips.savedTitle);
+    setClipText(byId('clipsLibraryRefresh'), UI_TEXT.clips.refreshLibrary);
+    setClipText(byId('clipsLibraryPrevious'), UI_TEXT.clips.previousPage);
+    setClipText(byId('clipsLibraryNext'), UI_TEXT.clips.nextPage);
+    byId<HTMLButtonElement>('resetClipFolderBtn').disabled = !config.clip_download_path;
+}
+
+async function selectClipStorageFolder(): Promise<void> {
+    try {
+        const folder = await window.api.selectFolder();
+        if (!folder) return;
+        config = await window.api.saveConfig({ clip_download_path: folder.displayPath }, folder.token);
+        if (config.clip_download_path !== folder.displayPath) throw new Error('Folder rejected');
+        syncClipStorage();
+        clipLibraryRequest += 1;
+        clipLibraryPage = null;
+        if (clipView === 'saved') await loadClipLibrary(true, 0);
+    } catch { showAppToast(UI_TEXT.clips.folderFailed, 'warn'); }
+}
+
+async function resetClipStorageFolder(): Promise<void> {
+    try {
+        config = await window.api.saveConfig({ clip_download_path: '' });
+        syncClipStorage();
+        clipLibraryRequest += 1;
+        clipLibraryPage = null;
+        if (clipView === 'saved') await loadClipLibrary(true, 0);
+    } catch { showAppToast(UI_TEXT.clips.folderFailed, 'warn'); }
+}
+
+function updateClipFolderMenu(): void {
+    if (!clipMenu) clipMenu = window.VodPlayer.mountClipMenu(byId('clipQueueOptions'), {
+        select: () => { void chooseClipQueueFolder(false); }, reset: () => { void chooseClipQueueFolder(true); },
+    });
+    clipMenu.update({ disabled: workspaceLoading || clipDownloadInFlight || clipEnqueueInFlight || clipFolderPicking || !clipBatchItems.some(item => item.state !== 'done' && item.state !== 'active'),
+        labels: { options: UI_TEXT.clips.folderOptions, select: UI_TEXT.clips.queueFolder, reset: UI_TEXT.clips.queueDefaultFolder } });
+}
+
+async function chooseClipQueueFolder(reset: boolean): Promise<void> {
+    if (clipFolderPicking || clipDownloadInFlight || clipEnqueueInFlight || workspaceLoading) return;
+    clipFolderPicking = true;
+    renderClipBatch();
+    try {
+        const selected = reset ? null : await window.api.selectFolder();
+        if (!reset && !selected) return;
+        const items = await window.api.setClipOutputDirectory(selected?.token ?? null);
+        if (!items) throw new Error('Folder rejected');
+        const paths = new Map(items.map(item => [item.url, item.outputDirectory]));
+        for (const item of clipBatchItems) item.outputDirectory = paths.get(item.url);
+        const count = items.filter(item => item.state !== 'done' && item.state !== 'active').length;
+        showClipNotice((count === 1 ? UI_TEXT.clips.folderAssignedOne : UI_TEXT.clips.folderAssigned).replace('{count}', formatUiNumber(count)));
+    } catch { showClipNotice(UI_TEXT.clips.folderFailed, true); }
+    finally { clipFolderPicking = false; renderClipBatch(); }
+}
+
+function setClipView(view: 'downloads' | 'saved'): void {
+    clipView = view;
+    for (const [name, button, panel] of [['downloads', 'clipsResultsTitle', 'clipsDownloadsView'], ['saved', 'clipsSavedTitle', 'clipsSavedView']]) {
+        byId(button).setAttribute('aria-selected', String(view === name));
+        byId<HTMLButtonElement>(button).tabIndex = view === name ? 0 : -1;
+        byId(panel).hidden = view !== name;
+    }
+    renderClipBatchSummary();
+    if (view === 'saved') void loadClipLibrary(true);
+}
+
+function handleClipViewKeydown(event: KeyboardEvent): void {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const view = event.key === 'Home' ? 'downloads' : event.key === 'End' ? 'saved' : clipView === 'downloads' ? 'saved' : 'downloads';
+    setClipView(view);
+    byId(view === 'saved' ? 'clipsSavedTitle' : 'clipsResultsTitle').focus();
+}
+
+function clipLibraryCount(): string {
+    const count = clipLibraryPage?.total || 0;
+    return (count === 1 ? UI_TEXT.clips.savedCountOne : UI_TEXT.clips.savedCount).replace('{count}', formatUiNumber(count));
+}
+
+async function openSavedClip(filename: string, folder: boolean): Promise<void> {
+    try {
+        const opened = folder ? await window.api.showInFolder(filename) : await window.api.openFile(filename);
+        if (opened === false) throw new Error('File unavailable');
+    } catch { showClipNotice(UI_TEXT.clips.notAvailable, true); }
+}
+
+function openClipLibraryFolder(): void {
+    void window.api.openFolder(clipLibraryPage?.directory || getClipDownloadDirectory());
+}
+
+function changeClipLibraryPage(direction: number): void {
+    if (clipLibraryPage) void loadClipLibrary(false, Math.max(0, clipLibraryPage.offset + direction * 100));
+}
+
+async function loadClipLibrary(refresh = false, offset = clipLibraryPage?.offset || 0): Promise<void> {
+    const request = ++clipLibraryRequest;
+    const button = byId<HTMLButtonElement>('clipsLibraryRefresh');
+    button.disabled = true;
+    const list = byId('clipsSavedList');
+    if (!clipLibraryPage) { clipLibraryControls.splice(0).forEach(control => control.destroy()); list.textContent = UI_TEXT.clips.libraryLoading; }
+    try {
+        const page = await window.api.getClipLibrary(offset, refresh);
+        if (request !== clipLibraryRequest) return;
+        if (!page) throw new Error('Library unavailable');
+        clipLibraryPage = page;
+        clipLibraryControls.splice(0).forEach(control => control.destroy());
+        list.replaceChildren();
+        const directory = byId<HTMLButtonElement>('clipsLibraryDirectory');
+        setClipText(directory, page.directory);
+        directory.title = page.directory;
+        directory.disabled = !page.rootExists;
+        if (!page.files.length) {
+            const empty = document.createElement('li');
+            empty.className = 'clips-list-empty';
+            empty.textContent = UI_TEXT.clips.savedEmpty;
+            list.append(empty);
+        }
+        for (const file of page.files) {
+            const row = document.createElement('li');
+            row.className = 'clip-result-row done';
+            const content = document.createElement('div');
+            content.className = 'clip-result-content';
+            const title = document.createElement('span');
+            title.className = 'clip-result-label';
+            title.textContent = file.fileName;
+            title.title = file.fileName;
+            const meta = document.createElement('span');
+            meta.className = 'clip-result-status';
+            meta.textContent = [file.streamer, new Date(file.mtimeMs).toLocaleDateString(currentLanguage === 'de' ? 'de-DE' : 'en-US'), formatBytesForMetrics(file.size)].filter(Boolean).join(' · ');
+            content.append(title, meta);
+            const host = document.createElement('div');
+            host.className = 'clip-row-controls';
+            const control = window.VodPlayer.mountClipControls(host, { open: () => { void openSavedClip(file.fullPath, false); }, folder: () => { void openSavedClip(file.fullPath, true); }, remove: () => {} });
+            control.update({ kind: 'done', label: UI_TEXT.clips.done, available: true, removable: false, disabled: false, labels: clipActionLabels() });
+            clipLibraryControls.push(control);
+            row.append(content, host);
+            list.append(row);
+        }
+        byId<HTMLButtonElement>('clipsLibraryPrevious').disabled = page.offset === 0;
+        byId<HTMLButtonElement>('clipsLibraryNext').disabled = page.offset + page.files.length >= page.total;
+        setClipText(byId('clipsLibraryPage'), page.total ? formatUiNumber(page.offset + 1) + '–' + formatUiNumber(page.offset + page.files.length) + ' / ' + formatUiNumber(page.total) : '0');
+        renderClipBatchSummary();
+    } catch {
+        if (request === clipLibraryRequest) { if (!clipLibraryPage) list.textContent = UI_TEXT.clips.libraryFailed; showClipNotice(UI_TEXT.clips.libraryFailed, true); }
+    } finally { if (request === clipLibraryRequest) button.disabled = false; }
 }
 
 function clipBatchTitle(item: ClipBatchItem): string {
@@ -2571,22 +2723,26 @@ function renderClipBatchSummary(): void {
     const ready = clipBatchItems.some(item => item.state === 'ready' || item.state === 'stopped');
     const format = (message: string) => message.replace('{done}', formatUiNumber(done)).replace('{total}', formatUiNumber(clipBatchItems.length)).replace('{failed}', formatUiNumber(failed));
     const draftCount = getClipDraft().length;
+    updateClipFolderMenu();
     byId('clipsLinkCount').textContent = draftCount === 1 ? UI_TEXT.clips.linkCountOne : UI_TEXT.clips.linksCount.replace('{count}', formatUiNumber(draftCount));
     byId('clipsResults').dataset.empty = String(clipBatchItems.length === 0);
-    byId('clipsBatchSummary').textContent = format(UI_TEXT.clips.summary);
-    const progress = clipBatchItems.length ? Math.round((done + failed) * 100 / clipBatchItems.length) : 0;
+    const finished = clipRunItems.filter(item => item.state === 'done' || item.state === 'failed' || item.state === 'invalid').length;
+    byId('clipsBatchSummary').textContent = clipView === 'saved' ? clipLibraryCount() : clipRunItems.length
+        ? UI_TEXT.clips.runSummary.replace('{done}', formatUiNumber(finished)).replace('{total}', formatUiNumber(clipRunItems.length)) : format(UI_TEXT.clips.summary);
+    const progress = clipRunItems.length ? Math.round(finished * 100 / clipRunItems.length) : 0;
     const gauge = byId<HTMLElement>('clipsBatchProgress');
     gauge.setAttribute('aria-valuenow', String(progress));
     gauge.dataset.active = String(clipDownloadInFlight || progress > 0);
-    gauge.querySelector<HTMLElement>('span')!.style.transition = clipDownloadInFlight ? '' : 'none';
+    gauge.querySelector<HTMLElement>('span')!.style.transition = clipDownloadInFlight && gauge.dataset.run === String(clipRunRevision) ? '' : 'none';
+    gauge.dataset.run = String(clipRunRevision);
     gauge.querySelector<HTMLElement>('span')!.style.width = progress + '%';
     setClipDisabled(byId<HTMLTextAreaElement>('clipUrl'), workspaceLoading || clipEnqueueInFlight);
-    setClipDisabled(byId<HTMLButtonElement>('clipsClearBtn'), workspaceLoading || clipEnqueueInFlight || !draftCount);
+    setClipDisabled(byId<HTMLButtonElement>('clipsClearBtn'), workspaceLoading || clipEnqueueInFlight || clipFolderPicking || !draftCount);
     const addButton = byId<HTMLButtonElement>('btnClipQueue');
     setClipDisabled(addButton, workspaceLoading || clipEnqueueInFlight || !draftCount);
     setClipText(addButton, clipEnqueueInFlight ? UI_TEXT.clips.addingToQueue : UI_TEXT.clips.addToQueue);
     const button = byId<HTMLButtonElement>('btnClip');
-    setClipDisabled(button, clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || !ready);
+    setClipDisabled(button, clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || clipFolderPicking || !ready);
     setClipText(button, clipDownloadInFlight ? UI_TEXT.clips.loadingButton : UI_TEXT.clips.downloadButton);
     const toolbarButton = byId<HTMLButtonElement>('toolbarClipDownloadBtn');
     toolbarButton.disabled = button.disabled;
@@ -2642,17 +2798,12 @@ function renderClipBatchRow(item: ClipBatchItem, index: number): void {
         : transfer.phase === 'saving' ? (currentLanguage === 'de' ? 'Speichern …' : 'Saving …')
         : formatBytesForMetrics(transfer.bytes) + ' · ' + formatBytesForMetrics(transfer.bytesPerSecond) + '/s'
         : item.state === 'invalid' ? UI_TEXT.clips.invalidUrl : item.error || RendererClipDiscovery.status(item) || UI_TEXT.clips[item.state];
-    setClipText(elements.status, status);
-    elements.status.title = status;
+    setClipText(elements.status, item.state === 'done' ? '' : status);
+    elements.status.title = item.state === 'done' ? '' : status;
     const kind = item.state === 'done' ? 'done' : item.state === 'failed' || item.state === 'invalid' ? 'error' : item.state === 'active' || item.metadataState === 'loading' ? 'loading' : 'ready';
-    elements.statusTooltip.update({ kind, label: item.state === 'ready' ? UI_TEXT.clips.readyTooltip : status });
-    for (const [button, label] of [[elements.open, UI_TEXT.static.archiveOpen], [elements.folder, UI_TEXT.static.archiveShowInFolder], [elements.remove, UI_TEXT.clips.removeDownload]] as const) {
-        button.setAttribute('aria-label', label);
-        button.title = label;
-    }
-    elements.open.style.visibility = elements.folder.style.visibility = item.filename ? 'visible' : 'hidden';
-    elements.open.disabled = elements.folder.disabled = !item.filename;
-    elements.remove.disabled = clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight;
+    elements.controls.update({ kind, label: item.state === 'ready' ? UI_TEXT.clips.readyTooltip : status,
+        available: Boolean(item.filename), removable: true, disabled: clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || clipFolderPicking,
+        labels: clipActionLabels() });
     if (list.children[index] !== elements.row) list.insertBefore(elements.row, list.children[index] || null);
 }
 
@@ -2665,7 +2816,7 @@ function renderClipBatch(): void {
     const urls = new Set(clipBatchItems.map(item => item.url));
     for (const [url, elements] of clipBatchRows) {
         if (!urls.has(url)) {
-            elements.statusTooltip.destroy();
+            elements.controls.destroy();
             elements.row.remove();
             clipBatchRows.delete(url);
         }
@@ -2687,12 +2838,14 @@ function renderClipBatch(): void {
 }
 
 async function downloadClip(retryFailed = false): Promise<void> {
-    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight) return;
+    if (clipDownloadInFlight || workspaceLoading || clipEnqueueInFlight || clipFolderPicking) return;
     const pending = clipBatchItems.filter(item => retryFailed ? item.state === 'failed' : item.state === 'ready' || item.state === 'stopped');
     if (!pending.length) {
         showClipNotice(clipBatchItems.length ? UI_TEXT.clips.emptyBatch : UI_TEXT.clips.enterUrl, true);
         return;
     }
+    clipRunItems = [...pending];
+    clipRunRevision += 1;
     clipDownloadInFlight = true;
     clipBatchStopRequested = false;
     showClipNotice('');
@@ -2737,13 +2890,14 @@ async function downloadClip(retryFailed = false): Promise<void> {
         renderClipBatch();
         persistClipWorkspace();
     }
-    const done = clipBatchItems.filter(item => item.state === 'done').length;
-    const failed = clipBatchItems.filter(item => item.state === 'failed' || item.state === 'invalid').length;
+    const done = pending.filter(item => item.state === 'done').length;
+    const failed = pending.filter(item => item.state === 'failed' || item.state === 'invalid').length;
     const result = [
         done > 0 ? (done === 1 ? UI_TEXT.clips.finishedOne : UI_TEXT.clips.finished.replace('{done}', formatUiNumber(done))) : '',
         failed > 0 ? UI_TEXT.clips.failedCount.replace('{failed}', formatUiNumber(failed)) : ''
     ].filter(Boolean).join(' · ');
-    showClipNotice(result, failed > 0);
+    showClipNotice(failed > 0 ? result : '', failed > 0);
+    if (clipView === 'saved') void loadClipLibrary(true);
 }
 
 const segmentedIndicatorFrames = new WeakMap<HTMLElement, number>();

@@ -128,7 +128,8 @@ export function sanitizeConfigInput(value: unknown): Record<string, unknown> {
             continue;
         }
 
-        if (key === 'download_path') {
+        if (key === 'clip_download_path' && entry === '') { sanitized[key] = ''; continue; }
+        if (key === 'download_path' || key === 'clip_download_path') {
             if (typeof entry === 'string' && entry.length > 0 && entry.length <= MAX_WINDOWS_PATH_LENGTH && !entry.includes('\0')) sanitized[key] = entry;
             continue;
         }
@@ -221,5 +222,6 @@ export function sanitizeConfigInput(value: unknown): Record<string, unknown> {
 export function sanitizeImportedConfig(value: unknown): Record<string, unknown> {
     const sanitized = sanitizeConfigInput(value);
     delete sanitized.download_path;
+    delete sanitized.clip_download_path;
     return sanitized;
 }
