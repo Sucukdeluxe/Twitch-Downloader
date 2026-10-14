@@ -1506,24 +1506,32 @@ function getCutterMaximumZoom(): number {
     return Number((Math.floor(maximum * 20) / 20).toFixed(2));
 }
 
-function updateCutterZoom(value: number, animate = false, anchorClientX: number | null = null): void {
+function updateCutterTimelineView(view: 'overview' | 'selection' | 'custom'): void {
+    const overview = byId('cutterZoomOverviewBtn');
+    const selection = byId('cutterZoomSelectionBtn');
+    overview.parentElement!.dataset.view = view;
+    overview.setAttribute('aria-pressed', String(view === 'overview'));
+    selection.setAttribute('aria-pressed', String(view === 'selection'));
+}
+
+function updateCutterZoom(value: number, animate = false, anchorClientX: number | null = null, view: 'overview' | 'selection' | 'custom' | null = null): void {
     if (!cutterEditorState) return;
     const scroll = byId<HTMLElement>('cutterTimelineScroll');
     const timeline = byId<HTMLElement>('timeline');
-    const playheadPercent = clampCutterValue(getCutterVideo().currentTime / cutterEditorState.duration, 0, 1);
+    const previousZoom = cutterZoom;
     const scrollRect = scroll.getBoundingClientRect();
     const localAnchorX = anchorClientX === null
         ? scroll.clientWidth / 2
         : clampCutterValue(anchorClientX - scrollRect.left, 0, scroll.clientWidth);
     const currentWidth = Math.max(1, timeline.scrollWidth);
-    const anchorRatio = anchorClientX === null
-        ? playheadPercent
-        : clampCutterValue((scroll.scrollLeft + localAnchorX) / currentWidth, 0, 1);
+    const anchorRatio = clampCutterValue((scroll.scrollLeft + localAnchorX) / currentWidth, 0, 1);
     const maximumZoom = getCutterMaximumZoom();
     cutterZoom = Number(clampCutterValue(value, 1, maximumZoom).toFixed(3));
     const zoomInput = byId<HTMLInputElement>('cutterZoom');
     zoomInput.max = String(maximumZoom);
     zoomInput.value = String(cutterZoom);
+    const previousView = byId('cutterZoomOverviewBtn').parentElement!.dataset.view;
+    updateCutterTimelineView(view ?? (cutterZoom === 1 ? 'overview' : cutterZoom === previousZoom && previousView === 'selection' ? 'selection' : 'custom'));
     timeline.style.width = `${cutterZoom * 100}%`;
     renderCutterRuler();
     updateCutterEditorGeometry();
@@ -1542,12 +1550,12 @@ function updateCutterZoom(value: number, animate = false, anchorClientX: number 
 function setCutterTimelineView(view: 'overview' | 'selection'): void {
     if (!cutterEditorState || !cutterControlsEnabled) return;
     if (view === 'overview') {
-        updateCutterZoom(1);
+        updateCutterZoom(1, false, null, 'overview');
         return;
     }
     const range = cutterEditorState.cuts.find(cut => cut.id === cutterCutDraft?.id) || { start: cutterEditorState.trimStart, end: cutterEditorState.trimEnd };
     const span = Math.max(1 / cutterEditorState.fps, range.end - range.start);
-    updateCutterZoom(cutterEditorState.duration / (span * 1.15));
+    updateCutterZoom(cutterEditorState.duration / (span * 1.15), false, null, 'selection');
     const scroll = byId<HTMLElement>('cutterTimelineScroll');
     const timeline = byId<HTMLElement>('timeline');
     const center = (range.start + range.end) / 2 / cutterEditorState.duration;
@@ -1555,7 +1563,7 @@ function setCutterTimelineView(view: 'overview' | 'selection'): void {
 }
 
 function changeCutterZoom(delta: number): void {
-    updateCutterZoom(cutterZoom + delta, true);
+    updateCutterZoom(cutterZoom + delta);
 }
 
 function applyCutterWheelZoom(): void {

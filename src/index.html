@@ -533,9 +533,9 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                             <h3 id="cutterTimelineHeading">Zeitleiste</h3>
                                             <div class="cutter-timeline-timecode" id="cutterTimelineTimecode">00:00:00:00</div>
                                             <span class="cutter-waveform-status" id="cutterWaveformStatus" hidden></span>
-                                            <div class="cutter-timeline-views">
-                                                <button type="button" id="cutterZoomOverviewBtn" onclick="setCutterTimelineView('overview')" disabled>Gesamt</button>
-                                                <button type="button" id="cutterZoomSelectionBtn" onclick="setCutterTimelineView('selection')" disabled>Auswahl</button>
+                                            <div class="cutter-timeline-views" role="group" aria-labelledby="cutterTimelineHeading" data-view="overview">
+                                                <button type="button" id="cutterZoomOverviewBtn" onclick="setCutterTimelineView('overview')" aria-pressed="true" disabled>Gesamt</button>
+                                                <button type="button" id="cutterZoomSelectionBtn" onclick="setCutterTimelineView('selection')" aria-pressed="false" disabled>Auswahl</button>
                                             </div>
                                             <div class="cutter-zoom-controls">
                                                 <button type="button" class="cutter-icon-button" id="cutterZoomOutBtn" onclick="changeCutterZoom(-0.25)" disabled aria-label="Verkleinern"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"></path></svg></button>
