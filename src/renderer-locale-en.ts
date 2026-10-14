@@ -569,6 +569,7 @@ const UI_TEXT_EN = {
         ctxUnmarkDownloaded: 'Unmark downloaded'
     },
     clips: {
+        inputLimit: "The input can contain at most {count} characters. Nothing was pasted.",
         queueDuplicateOne: "This clip is already in the download list.",
         savedTitle: "Saved",
         folderOptions: "Folder options",

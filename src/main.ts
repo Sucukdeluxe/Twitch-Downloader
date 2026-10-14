@@ -1,3 +1,4 @@
+import { combineClipArchiveInventory, isWithinArchiveRoot } from './main/domain/clip-archive-inventory';
 import { clipLibraryPage } from './main/domain/clip-library';
 import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
@@ -4970,7 +4971,27 @@ const readArchiveInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, '
     if (directory === path.resolve(config.download_path) && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('archive-index-updated');
 });
 function clipDownloadRoot(): string { return config.clip_download_path || path.join(config.download_path, 'Clips'); }
-const readClipInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'clip-index.json'));
+const readClipInventory = createIndexedArchiveReader(path.join(APPDATA_DIR, 'clip-index.json'), 60000, directory => {
+    if (directory === path.resolve(clipDownloadRoot()) && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('archive-index-updated');
+});
+
+async function readCompleteArchive(refresh = false) {
+    const roots = [config.download_path, clipDownloadRoot()];
+    const primary = await readArchiveInventory(roots[0], refresh);
+    const clips = isWithinArchiveRoot(roots[0], roots[1])
+        ? { root: roots[1], rootExists: primary.rootExists, scannedAt: primary.scannedAt, files: [] }
+        : await readClipInventory(roots[1], refresh);
+    return { inventory: combineClipArchiveInventory(primary, clips), roots };
+}
+
+function archiveRootsCurrent(roots: string[]): boolean {
+    return roots[0] === config.download_path && roots[1] === clipDownloadRoot();
+}
+
+async function resolveCompleteArchivePaths(roots: string[], filenames: string[]): Promise<Map<string, string>> {
+    const maps = await Promise.all(roots.map(root => resolveArchiveFilePaths(root, filenames)));
+    return new Map(maps.flatMap(map => [...map]));
+}
 
 const archiveThumbnails = new ArchiveThumbnailService(path.join(APPDATA_DIR, 'cache', 'archive-thumbnails'), getFFmpegPath, command => recordManagedToolExecution('ffmpeg', command));
 
@@ -8216,7 +8237,8 @@ ipcMain.handle('open-debug-log-file', (event): boolean => {
 
 ipcMain.handle('get-archive-stats', async (event, range?: import('./main/domain/download-history-store').DownloadHistoryRange): Promise<ArchiveStats> => {
     if (!isTrustedRendererEvent(event)) throw new Error('File access denied');
-    return summarizeArchiveInventory(await readArchiveInventory(config.download_path, true), downloadHistoryStore?.summarize(new Date(), range) ?? emptyLifetimeDownloadStats());
+    const { inventory } = await readCompleteArchive(true);
+    return summarizeArchiveInventory(inventory, downloadHistoryStore?.summarize(new Date(), range) ?? emptyLifetimeDownloadStats());
 });
 ipcMain.handle('search-download-history', async (event, filter?: import('./main/domain/download-history-store').DownloadHistoryFilter) => {
     if (!isTrustedRendererEvent(event)) throw new Error('File access denied');
@@ -8269,10 +8291,12 @@ ipcMain.handle('prepare-archive-videos', async (event, requested: string[], targ
     if (!isTrustedRendererEvent(event) || !['cutter', 'merge'].includes(target) || !Array.isArray(requested)
         || !requested.length || requested.length > 500 || (target === 'cutter' && requested.length !== 1)
         || (target === 'cutter' && cutterExportActive) || (target === 'merge' && workspaceMergeActive)) throw new Error('File access denied');
-    const inventory = await readArchiveInventory(config.download_path, true);
+    const { inventory, roots } = await readCompleteArchive(true);
     const available = new Map(inventory.files.filter(file => ['vod', 'live', 'clip'].includes(file.type)).map(file => [normalizeComparablePath(file.fullPath), file]));
     const candidates = requested.map(filename => typeof filename === 'string' ? available.get(normalizeComparablePath(filename)) : undefined);
     if (candidates.some(file => !file) || new Set(requested.map(normalizeComparablePath)).size !== requested.length) throw new Error('File access denied');
+    const canonical = await resolveCompleteArchivePaths(roots, requested);
+    if (!archiveRootsCurrent(roots) || requested.some(filename => !canonical.has(filename))) throw new Error('File access denied');
     const references: MergeFileReference[] = [];
     for (const candidate of candidates) {
         const stat = await fs.promises.stat(candidate!.fullPath);
@@ -8286,13 +8310,12 @@ ipcMain.handle('prepare-archive-videos', async (event, requested: string[], targ
 
 ipcMain.handle('get-archive-thumbnail', async (event, filename: unknown): Promise<string | null> => {
     if (!isTrustedRendererEvent(event) || appShutdownStarted || typeof filename !== 'string') return null;
-    const directory = config.download_path;
-    const inventory = await readArchiveInventory(directory);
+    const { inventory, roots } = await readCompleteArchive();
     const file = inventory.files.find(file => normalizeComparablePath(file.fullPath) === normalizeComparablePath(filename));
     if (!file || !['vod', 'live', 'clip'].includes(file.type)) return null;
-    const paths = await resolveArchiveFilePaths(directory, [file.fullPath]);
+    const paths = await resolveCompleteArchivePaths(roots, [file.fullPath]);
     const canonical = paths.get(file.fullPath);
-    if (!canonical || directory !== config.download_path) return null;
+    if (!canonical || !archiveRootsCurrent(roots)) return null;
     return archiveThumbnails.load({ ...file, fullPath: canonical });
 });
 
@@ -8312,9 +8335,10 @@ ipcMain.handle('search-archive', async (event, filter: Partial<ArchiveSearchFilt
         limit: Number.isFinite(filter?.limit as number) ? Number(filter?.limit) : 200,
         offset: Number.isFinite(filter?.offset) ? Math.max(0, Math.floor(Number(filter?.offset))) : 0
     };
-    const directory = config.download_path;
-    const result = searchArchiveInventory(await readArchiveInventory(directory, filter?.refresh === true), normalized);
-    const paths = await resolveArchiveFilePaths(directory, result.hits.flatMap(hit => [hit.fullPath, hit.chatPath, hit.eventsPath].filter((filename): filename is string => Boolean(filename))));
+    const { inventory, roots } = await readCompleteArchive(filter?.refresh === true);
+    const result = searchArchiveInventory(inventory, normalized);
+    const paths = await resolveCompleteArchivePaths(roots, result.hits.flatMap(hit => [hit.fullPath, hit.chatPath, hit.eventsPath].filter((filename): filename is string => Boolean(filename))));
+    if (!archiveRootsCurrent(roots)) throw new Error('Archive folder changed');
     for (const hit of result.hits) {
         const canonical = paths.get(hit.fullPath);
         if (canonical) {
@@ -8329,7 +8353,7 @@ ipcMain.handle('search-archive', async (event, filter: Partial<ArchiveSearchFilt
             rememberResolvedRendererPath('chat-input', canonical);
         }
     }
-    result.refreshing = readArchiveInventory.isRefreshing(directory);
+    result.refreshing = readArchiveInventory.isRefreshing(roots[0]) || readClipInventory.isRefreshing(roots[1]);
     return result;
 });
 

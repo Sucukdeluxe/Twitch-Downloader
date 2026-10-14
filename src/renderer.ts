@@ -2160,7 +2160,7 @@ async function restoreWorkspace(): Promise<void> {
             if (session.automationPaused) showAppToast(currentLanguage === 'de' ? 'Sicherung wiederhergestellt. Automatik für diesen Start pausiert.' : 'Backup restored. Automation is paused for this session.');
             clipBatchItems = session.clips.map(item => ({ ...item, metadataState: item.metadataState === 'loading' ? 'pending' : item.metadataState }));
             try {
-                byId<HTMLTextAreaElement>('clipUrl').value = localStorage.getItem(clipDraftStorageKey)?.slice(0, 820000) || '';
+                byId<HTMLTextAreaElement>('clipUrl').value = localStorage.getItem(clipDraftStorageKey) || '';
             } catch { }
             mergeFiles = session.mergeFiles;
             isMerging = restoredMergeDownload = Boolean(session.mergeActive && !latestMergeFinish);
@@ -2427,8 +2427,13 @@ function pasteClipLinks(event: ClipboardEvent): void {
     const text = event.clipboardData?.getData('text/plain');
     if (!text || input.disabled) return;
     event.preventDefault();
+    const replacement = compactClipInput(text);
+    if (input.maxLength >= 0 && input.value.length - (input.selectionEnd - input.selectionStart) + replacement.length > input.maxLength) {
+        showClipNotice(UI_TEXT.clips.inputLimit.replace('{count}', formatUiNumber(input.maxLength)), true);
+        return;
+    }
     captureClipDraftSelection();
-    input.setRangeText(compactClipInput(text), input.selectionStart, input.selectionEnd, 'end');
+    input.setRangeText(replacement, input.selectionStart, input.selectionEnd, 'end');
     updateClipLinks();
 }
 
@@ -2558,6 +2563,7 @@ function syncClipStorage(): void {
     setClipText(byId('clipsLibraryPrevious'), UI_TEXT.clips.previousPage);
     setClipText(byId('clipsLibraryNext'), UI_TEXT.clips.nextPage);
     byId<HTMLButtonElement>('resetClipFolderBtn').disabled = !config.clip_download_path;
+    renderClipLibrary();
 }
 
 async function selectClipStorageFolder(): Promise<void> {
@@ -2567,9 +2573,7 @@ async function selectClipStorageFolder(): Promise<void> {
         config = await window.api.saveConfig({ clip_download_path: folder.displayPath }, folder.token);
         if (config.clip_download_path !== folder.displayPath) throw new Error('Folder rejected');
         syncClipStorage();
-        clipLibraryRequest += 1;
-        clipLibraryPage = null;
-        if (clipView === 'saved') await loadClipLibrary(true, 0);
+        await refreshClipLibraryDirectory();
     } catch { showAppToast(UI_TEXT.clips.folderFailed, 'warn'); }
 }
 
@@ -2577,9 +2581,7 @@ async function resetClipStorageFolder(): Promise<void> {
     try {
         config = await window.api.saveConfig({ clip_download_path: '' });
         syncClipStorage();
-        clipLibraryRequest += 1;
-        clipLibraryPage = null;
-        if (clipView === 'saved') await loadClipLibrary(true, 0);
+        await refreshClipLibraryDirectory();
     } catch { showAppToast(UI_TEXT.clips.folderFailed, 'warn'); }
 }
 
@@ -2647,6 +2649,68 @@ function changeClipLibraryPage(direction: number): void {
     if (clipLibraryPage) void loadClipLibrary(false, Math.max(0, clipLibraryPage.offset + direction * 100));
 }
 
+async function refreshClipLibraryDirectory(): Promise<void> {
+    clipLibraryRequest += 1;
+    clipLibraryPage = null;
+    clipLibraryControls.splice(0).forEach(control => control.destroy());
+    byId('clipsSavedList').replaceChildren();
+    const directory = byId<HTMLButtonElement>('clipsLibraryDirectory');
+    setClipText(directory, getClipDownloadDirectory());
+    directory.title = getClipDownloadDirectory();
+    directory.disabled = true;
+    byId<HTMLButtonElement>('clipsLibraryRefresh').disabled = false;
+    byId<HTMLButtonElement>('clipsLibraryPrevious').disabled = true;
+    byId<HTMLButtonElement>('clipsLibraryNext').disabled = true;
+    setClipText(byId('clipsLibraryPage'), '');
+    renderClipBatchSummary();
+    if (clipView === 'saved') await loadClipLibrary(true, 0);
+}
+
+function renderClipLibrary(): void {
+    const page = clipLibraryPage;
+    if (!page) return;
+    const list = byId('clipsSavedList');
+    const scrollTop = list.scrollTop;
+    clipLibraryControls.splice(0).forEach(control => control.destroy());
+    list.replaceChildren();
+    const directory = byId<HTMLButtonElement>('clipsLibraryDirectory');
+    setClipText(directory, page.directory);
+    directory.title = page.directory;
+    directory.disabled = !page.rootExists;
+    if (!page.files.length) {
+        const empty = document.createElement('li');
+        empty.className = 'clips-list-empty';
+        empty.textContent = UI_TEXT.clips.savedEmpty;
+        list.append(empty);
+    }
+    for (const file of page.files) {
+        const row = document.createElement('li');
+        row.className = 'clip-result-row done';
+        const content = document.createElement('div');
+        content.className = 'clip-result-content';
+        const title = document.createElement('span');
+        title.className = 'clip-result-label';
+        title.textContent = file.fileName;
+        title.title = file.fileName;
+        const meta = document.createElement('span');
+        meta.className = 'clip-result-status';
+        meta.textContent = [file.streamer, new Date(file.mtimeMs).toLocaleDateString(currentLanguage === 'de' ? 'de-DE' : 'en-US'), formatBytesForMetrics(file.size)].filter(Boolean).join(' · ');
+        content.append(title, meta);
+        const host = document.createElement('div');
+        host.className = 'clip-row-controls';
+        const control = window.VodPlayer.mountClipControls(host, { open: () => { void openSavedClip(file.fullPath, false); }, folder: () => { void openSavedClip(file.fullPath, true); }, remove: () => {} });
+        control.update({ kind: 'done', label: UI_TEXT.clips.done, available: true, removable: false, disabled: false, labels: clipActionLabels() });
+        clipLibraryControls.push(control);
+        row.append(content, host);
+        list.append(row);
+    }
+    byId<HTMLButtonElement>('clipsLibraryPrevious').disabled = page.offset === 0;
+    byId<HTMLButtonElement>('clipsLibraryNext').disabled = page.offset + page.files.length >= page.total;
+    setClipText(byId('clipsLibraryPage'), page.total ? formatUiNumber(page.offset + 1) + '–' + formatUiNumber(page.offset + page.files.length) + ' / ' + formatUiNumber(page.total) : '0');
+
+    list.scrollTop = scrollTop;
+}
+
 async function loadClipLibrary(refresh = false, offset = clipLibraryPage?.offset || 0): Promise<void> {
     const request = ++clipLibraryRequest;
     const button = byId<HTMLButtonElement>('clipsLibraryRefresh');
@@ -2658,42 +2722,7 @@ async function loadClipLibrary(refresh = false, offset = clipLibraryPage?.offset
         if (request !== clipLibraryRequest) return;
         if (!page) throw new Error('Library unavailable');
         clipLibraryPage = page;
-        clipLibraryControls.splice(0).forEach(control => control.destroy());
-        list.replaceChildren();
-        const directory = byId<HTMLButtonElement>('clipsLibraryDirectory');
-        setClipText(directory, page.directory);
-        directory.title = page.directory;
-        directory.disabled = !page.rootExists;
-        if (!page.files.length) {
-            const empty = document.createElement('li');
-            empty.className = 'clips-list-empty';
-            empty.textContent = UI_TEXT.clips.savedEmpty;
-            list.append(empty);
-        }
-        for (const file of page.files) {
-            const row = document.createElement('li');
-            row.className = 'clip-result-row done';
-            const content = document.createElement('div');
-            content.className = 'clip-result-content';
-            const title = document.createElement('span');
-            title.className = 'clip-result-label';
-            title.textContent = file.fileName;
-            title.title = file.fileName;
-            const meta = document.createElement('span');
-            meta.className = 'clip-result-status';
-            meta.textContent = [file.streamer, new Date(file.mtimeMs).toLocaleDateString(currentLanguage === 'de' ? 'de-DE' : 'en-US'), formatBytesForMetrics(file.size)].filter(Boolean).join(' · ');
-            content.append(title, meta);
-            const host = document.createElement('div');
-            host.className = 'clip-row-controls';
-            const control = window.VodPlayer.mountClipControls(host, { open: () => { void openSavedClip(file.fullPath, false); }, folder: () => { void openSavedClip(file.fullPath, true); }, remove: () => {} });
-            control.update({ kind: 'done', label: UI_TEXT.clips.done, available: true, removable: false, disabled: false, labels: clipActionLabels() });
-            clipLibraryControls.push(control);
-            row.append(content, host);
-            list.append(row);
-        }
-        byId<HTMLButtonElement>('clipsLibraryPrevious').disabled = page.offset === 0;
-        byId<HTMLButtonElement>('clipsLibraryNext').disabled = page.offset + page.files.length >= page.total;
-        setClipText(byId('clipsLibraryPage'), page.total ? formatUiNumber(page.offset + 1) + '–' + formatUiNumber(page.offset + page.files.length) + ' / ' + formatUiNumber(page.total) : '0');
+        renderClipLibrary();
         renderClipBatchSummary();
     } catch {
         if (request === clipLibraryRequest) { if (!clipLibraryPage) list.textContent = UI_TEXT.clips.libraryFailed; showClipNotice(UI_TEXT.clips.libraryFailed, true); }

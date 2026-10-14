@@ -45,6 +45,7 @@
     "src/main/domain/auto-vod-rules.ts",
     "src/main/domain/chat-reader.ts",
     "src/main/domain/chunk-index-store.ts",
+    "src/main/domain/clip-archive-inventory.ts",
     "src/main/domain/clip-discovery.ts",
     "src/main/domain/clip-library.ts",
     "src/main/domain/config-export.ts",

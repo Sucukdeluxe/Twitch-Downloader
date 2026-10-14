@@ -569,6 +569,7 @@ const UI_TEXT_DE = {
         ctxUnmarkDownloaded: 'Markierung entfernen'
     },
     clips: {
+        inputLimit: "Die Eingabe darf höchstens {count} Zeichen enthalten. Es wurde nichts eingefügt.",
         queueDuplicateOne: "Dieser Clip ist bereits in der Downloadliste.",
         savedTitle: "Gespeichert",
         folderOptions: "Ordneroptionen",
