@@ -179,6 +179,7 @@
     "src/vod-player/OmissionEditor.jsx",
     "src/vod-player/PlayerControls.jsx",
     "src/vod-player/SeekTimeline.jsx",
+    "src/vod-player/TimelineScrollbar.jsx",
     "src/vod-player/TitleHistory.jsx",
     "src/vod-player/Tooltip.jsx",
     "src/vod-player/ViewerEye.jsx",
