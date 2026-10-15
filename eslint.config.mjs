@@ -45,7 +45,7 @@ export default [
         }
     },
     {
-        files: ['scripts/**/*.js'],
+        files: ['scripts/**/*.{js,cjs}'],
         languageOptions: {
             sourceType: 'commonjs',
             globals: globals.node
@@ -77,7 +77,7 @@ export default [
         }
     },
     {
-        files: ['scripts/smoke-test*.js', 'scripts/capture-readme-screenshot.js', 'scripts/e2e-test-environment.js'],
+        files: ['scripts/smoke-test*.{js,cjs}', 'scripts/capture-readme-screenshot.js', 'scripts/e2e-test-environment.js'],
         languageOptions: {
             globals: {
                 ...globals.node,
