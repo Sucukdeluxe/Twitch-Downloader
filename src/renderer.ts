@@ -1783,7 +1783,7 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
 
     updateClipDuration();
     updateFilenameExamples();
-    RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog });
+    RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog, onBackdrop: closeClipDialog });
     clipPlayer = window.VodPlayer.mount(byId('clipPlayer'), {
         url, title, date, duration: clipTotalSeconds, language: config.language || 'de', start: 0, end: clipTotalSeconds,
         partMinutes: config.part_minutes || 60, downloadMode: config.download_mode,

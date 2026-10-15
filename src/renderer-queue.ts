@@ -259,10 +259,12 @@ async function chooseVodQuality(url: string, title: string): Promise<SelectedVod
     let loadingTimer: ReturnType<typeof setTimeout> | undefined;
     return await new Promise<SelectedVodQuality | null>(resolve => {
         let selectedQuality: SelectedVodQuality = { id: 'source', label: 'Source' };
+        let disposeBackdrop: (() => void) | undefined;
         const finish = (value: SelectedVodQuality | null): void => {
             if (settled) return;
             settled = true;
             clearTimeout(loadingTimer);
+            disposeBackdrop?.();
             void window.api.cancelVodQualities(requestId).catch(() => {});
             dialog.close();
             dialog.remove();
@@ -344,6 +346,7 @@ async function chooseVodQuality(url: string, title: string): Promise<SelectedVod
         dialog.addEventListener('close', () => finish(null));
         dialog.addEventListener('keydown', event => event.stopPropagation());
         dialog.showModal();
+        disposeBackdrop = RendererAccessibility.installBackdropDismiss(dialog, () => finish(null), () => dialog.open && Array.from(document.querySelectorAll('dialog[open]')).at(-1) === dialog);
         void load();
     });
 }

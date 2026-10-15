@@ -10,6 +10,7 @@ This update reorganizes VOD history into grouped sections, clarifies file verifi
 - Match the approved history design with its original colors, borders, typography and spacing, including narrow sidebars.
 - Highlight only the current category when a stream title continues across category changes, and locate the matching section.
 - Seek by clicking the history card surface while keeping title and trim actions separate; use a normal arrow cursor in the cards.
+- Dismiss VOD trimming and quality selection by clicking their backdrop; keep dialogs open when interacting or dragging inside them.
 - Keep the progress indicator full-width during file verification and other finalization steps without measurable progress, including when reduced motion is enabled.
 - Show the active section and application version in the window title, with a separate development label when applicable.
 

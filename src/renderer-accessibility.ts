@@ -1,11 +1,13 @@
 interface RendererDialogOptions {
     initialFocus?: HTMLElement | string | null;
     onEscape?: () => void;
+    onBackdrop?: () => void;
 }
 
 interface RendererOpenDialogState {
     returnFocus: HTMLElement | null;
     onEscape?: () => void;
+    disposeBackdrop?: () => void;
 }
 
 interface RendererFixedHeightVirtualListOptions {
@@ -123,19 +125,68 @@ const RendererAccessibility = (() => {
         return dialogStack.includes(id);
     }
 
+    function installBackdropDismiss(dialog: HTMLElement, dismiss: () => void, isActive: () => boolean): () => void {
+        let pointer: { id: number; x: number; y: number } | null = null;
+        let released = false;
+        const isBackdrop = (event: MouseEvent): boolean => {
+            if (event.target !== dialog) return false;
+            if (dialog.tagName !== 'DIALOG') return true;
+            const bounds = dialog.getBoundingClientRect();
+            return event.clientX < bounds.left || event.clientX >= bounds.right || event.clientY < bounds.top || event.clientY >= bounds.bottom;
+        };
+        const reset = (): void => { pointer = null; released = false; };
+        const onPointerDown = (event: PointerEvent): void => {
+            reset();
+            if (event.isPrimary && event.button === 0 && isActive() && isBackdrop(event)) {
+                pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            }
+        };
+        const onPointerMove = (event: PointerEvent): void => {
+            if (pointer?.id === event.pointerId && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6) reset();
+        };
+        const onPointerUp = (event: PointerEvent): void => {
+            released = pointer?.id === event.pointerId && event.button === 0 && isActive() && isBackdrop(event)
+                && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) <= 6;
+            if (!released) reset();
+        };
+        const onClick = (event: MouseEvent): void => {
+            const shouldDismiss = released && event.button === 0 && isActive() && isBackdrop(event);
+            reset();
+            if (!shouldDismiss) return;
+            event.preventDefault();
+            event.stopPropagation();
+            dismiss();
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('pointermove', onPointerMove, true);
+        document.addEventListener('pointerup', onPointerUp, true);
+        document.addEventListener('pointercancel', reset, true);
+        document.addEventListener('click', onClick, true);
+        window.addEventListener('blur', reset);
+        return () => {
+            reset();
+            document.removeEventListener('pointerdown', onPointerDown, true);
+            document.removeEventListener('pointermove', onPointerMove, true);
+            document.removeEventListener('pointerup', onPointerUp, true);
+            document.removeEventListener('pointercancel', reset, true);
+            document.removeEventListener('click', onClick, true);
+            window.removeEventListener('blur', reset);
+        };
+    }
+
     function openDialog(id: string, options: RendererDialogOptions = {}): void {
         const dialog = document.getElementById(id);
         if (!(dialog instanceof HTMLElement)) return;
+        const previous = dialogStates.get(id);
+        previous?.disposeBackdrop?.();
         const existing = dialogStack.indexOf(id);
-        if (existing >= 0) {
-            dialogStack.splice(existing, 1);
-        } else {
-            const active = document.activeElement;
-            dialogStates.set(id, {
-                returnFocus: active instanceof HTMLElement && active !== document.body ? active : null,
-                onEscape: options.onEscape
-            });
-        }
+        if (existing >= 0) dialogStack.splice(existing, 1);
+        const active = document.activeElement;
+        dialogStates.set(id, {
+            returnFocus: previous ? previous.returnFocus : active instanceof HTMLElement && active !== document.body ? active : null,
+            onEscape: options.onEscape,
+            disposeBackdrop: options.onBackdrop ? installBackdropDismiss(dialog, options.onBackdrop, () => dialogStack.at(-1) === id && !hasNativeDialog()) : undefined
+        });
         dialogStack.push(id);
         dialog.classList.add('show');
         dialog.setAttribute('aria-hidden', 'false');
@@ -151,6 +202,7 @@ const RendererAccessibility = (() => {
         const wasTopmost = index === dialogStack.length - 1;
         const state = dialogStates.get(id);
         dialogStack.splice(index, 1);
+        state?.disposeBackdrop?.();
         dialogStates.delete(id);
         dialog.classList.remove('show');
         dialog.setAttribute('aria-hidden', 'true');
@@ -246,6 +298,7 @@ const RendererAccessibility = (() => {
         createFixedHeightVirtualList,
         hasNativeDialog,
         isDialogOpen,
+        installBackdropDismiss,
         openDialog,
         closeDialog,
         closeTopmostDialog,
