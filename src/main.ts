@@ -6,7 +6,7 @@ import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
 import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs, isVodSourceReadTimeout } from './main/domain/vod-source-download';
-import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
+import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, resolveVodPlaybackSource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
 import { normalizeAutoVodRules, normalizeAutoVodRule, evaluateAutoVodRule, type AutoVodRules } from './main/domain/auto-vod-rules';
 import { createAudioTimelineFilter, validAudioProcessing, type AudioProcessingOptions } from './main/domain/audio-processing';
@@ -8194,19 +8194,23 @@ registerTrustedIpcHandler(ipcMain, 'cancel-vod-qualities', isTrustedRendererEven
 
 registerTrustedIpcHandler(ipcMain, 'open-vod-playback', isTrustedRendererEvent, () => Promise.resolve(null), async (_, request: unknown) => {
     if (appShutdownStarted) return null;
+    const openedAt = performance.now();
     try {
         const requestedQuality = config.streamlink_quality;
-        const directSource = typeof (request as { url?: unknown } | null)?.url === 'string'
-            ? await resolveVodQualitySource((request as { url: string }).url, requestedQuality)
-            : null;
-        return await vodPlaybackService.open(request, {
+        const result = await vodPlaybackService.open(request, {
             prepare: ensureStreamlinkInstalled,
             streamlink: getStreamlinkCommand,
             quality: getStreamlinkStreamArg(),
-            sourceUrl: directSource,
+            resolveSource: async signal => {
+                const source = await resolveVodPlaybackSource((request as { url: string }).url, requestedQuality, signal);
+                if (!signal.aborted) appendDebugLog('vod-playback-source', { mode: source ? 'direct' : 'streamlink', elapsedMs: Math.round(performance.now() - openedAt) });
+                return source;
+            },
         });
+        appendDebugLog('vod-playback-opened', { elapsedMs: Math.round(performance.now() - openedAt) });
+        return result;
     } catch {
-        appendDebugLog('vod-playback-unavailable');
+        appendDebugLog('vod-playback-unavailable', { elapsedMs: Math.round(performance.now() - openedAt) });
         return null;
     }
 });

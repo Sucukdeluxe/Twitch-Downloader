@@ -37,6 +37,7 @@ interface PlaybackTools {
     streamlink: () => { command: string; prefixArgs: string[] } | Promise<{ command: string; prefixArgs: string[] }>;
     quality: string;
     sourceUrl?: string | null;
+    resolveSource?: (signal: AbortSignal) => Promise<string | null>;
 }
 
 export class VodPlaybackService {
@@ -86,9 +87,11 @@ export class VodPlaybackService {
         try {
             await previous;
             signal.throwIfAborted();
+            const directSource = tools.sourceUrl || await tools.resolveSource?.(signal);
+            signal.throwIfAborted();
             let source: string;
-            if (tools.sourceUrl) {
-                source = validateVodMediaUrl(tools.sourceUrl).href;
+            if (directSource) {
+                source = validateVodMediaUrl(directSource).href;
             } else {
                 const prepared = await new Promise<boolean>((resolve, reject) => {
                     const abort = (): void => reject(new Error('Playback cancelled'));

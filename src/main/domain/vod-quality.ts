@@ -148,7 +148,7 @@ export function parseVodQualities(json: string, playlist = '', master = ''): Vod
     return [{ id: 'source', label: 'Source · ' + label(best) }, ...keys.map(id => ({ id, label: label(id) }))];
 }
 
-export function parseVodPlaylistQualities(playlist: string, master: string): VodQualityOption[] {
+function parseVodPlaylistStreams(playlist: string, master: string): Record<string, VodStream> {
     const streams: Record<string, VodStream> = {};
     const names = new Map<string, string>();
     let attributes: Record<string, string> | null = null;
@@ -189,12 +189,16 @@ export function parseVodPlaylistQualities(playlist: string, master: string): Vod
             if (source) streams.source = streams[id];
         }
     }
-    return parseVodQualities(JSON.stringify({ streams }), playlist, master);
+    return streams;
 }
 
-const directVodVariantCache = new Map<string, { expires: number; variants: UnavailableVodVariant[]; playlist: string; master: string }>();
+export function parseVodPlaylistQualities(playlist: string, master: string): VodQualityOption[] {
+    return parseVodQualities(JSON.stringify({ streams: parseVodPlaylistStreams(playlist, master) }), playlist, master);
+}
 
-async function loadDirectVodPlaylist(urlValue: string, signal?: AbortSignal): Promise<{ variants: UnavailableVodVariant[]; playlist: string; master: string }> {
+const directVodVariantCache = new Map<string, { expires: number; variants: UnavailableVodVariant[]; sources: Record<string, string>; playlist: string; master: string }>();
+
+async function loadDirectVodPlaylist(urlValue: string, signal?: AbortSignal): Promise<{ variants: UnavailableVodVariant[]; sources: Record<string, string>; playlist: string; master: string }> {
     const url = new URL(urlValue);
     if (url.protocol !== 'https:' || !['twitch.tv', 'www.twitch.tv'].includes(url.hostname) || url.port || url.username || url.password) throw new Error('Invalid VOD URL');
     const id = url.pathname.match(/^\/videos\/(\d+)\/?$/)?.[1];
@@ -228,27 +232,39 @@ async function loadDirectVodPlaylist(urlValue: string, signal?: AbortSignal): Pr
     const playlist = await masterResponse.text();
     requestSignal.throwIfAborted();
     if (playlist.length > 1048576 || !playlist.startsWith('#EXTM3U') || !/#EXT-X-STREAM-INF:[^\r\n]*RESOLUTION=\d+x\d+/i.test(playlist)) throw new Error('Invalid VOD playlist');
-    try { parseVodPlaylistQualities(playlist, masterUrl); } catch { throw new Error('Invalid VOD playlist'); }
+    const streams = parseVodPlaylistStreams(playlist, masterUrl);
+    let qualities: VodQualityOption[];
+    try { qualities = parseVodQualities(JSON.stringify({ streams }), playlist, masterUrl); } catch { throw new Error('Invalid VOD playlist'); }
+    const sources: Record<string, string> = {};
+    for (const [name, stream] of Object.entries(streams)) if (typeof stream.url === 'string') sources[name] = stream.url;
+    sources.source ||= sources[qualities[1]?.id];
     const referenceUrl = playlist.split(/\r?\n/).find(line => /^https?:\/\//.test(line.trim()))?.trim();
     const variants = referenceUrl ? parseUnavailableVodVariants(playlist, referenceUrl) : [];
-    const result = { expires: Date.now() + 120000, variants, playlist, master: masterUrl };
+    const result = { expires: Date.now() + 120000, variants, sources, playlist, master: masterUrl };
     if (directVodVariantCache.size >= 20) directVodVariantCache.delete(directVodVariantCache.keys().next().value!);
     directVodVariantCache.set(id, result);
     return result;
 }
 
-export async function resolveVodQualitySource(urlValue: string, quality?: string, signal?: AbortSignal): Promise<string | null> {
+async function resolveVodSource(urlValue: string, quality: string | undefined, signal: AbortSignal | undefined, playback: boolean): Promise<string | null> {
     const normalized = normalizeVodQuality(quality);
-    if (!normalized) return null;
-    if (normalized !== 'source' && Number(normalized.split('p')[0]) < 1100) return null;
+    if (!normalized || (!playback && normalized !== 'source' && Number(normalized.split('p')[0]) < 1100)) return null;
     try {
-        const { variants } = await loadDirectVodPlaylist(urlValue, signal);
+        const { variants, sources } = await loadDirectVodPlaylist(urlValue, signal);
         const source = variants.filter(value => value.source).sort((a, b) => b.height - a.height || (b.fps || 0) - (a.fps || 0))[0];
-        if (normalized === 'source') return source?.url || null;
-        return variants.find(value => value.id === normalized)?.url || null;
+        if (normalized === 'source') return source?.url || (playback ? sources.source : null) || null;
+        return (playback ? sources[normalized] : null) || variants.find(value => value.id === normalized)?.url || null;
     } catch {
         return null;
     }
+}
+
+export function resolveVodQualitySource(urlValue: string, quality?: string, signal?: AbortSignal): Promise<string | null> {
+    return resolveVodSource(urlValue, quality, signal, false);
+}
+
+export function resolveVodPlaybackSource(urlValue: string, quality?: string, signal?: AbortSignal): Promise<string | null> {
+    return resolveVodSource(urlValue, quality, signal, true);
 }
 
 async function loadVodPlaylist(json: string, signal: AbortSignal): Promise<{ playlist: string; master: string }> {
