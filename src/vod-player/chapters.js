@@ -13,12 +13,13 @@ export function chapterDuration(chapter) {
 }
 const signalColors = ['#00e5ff', '#ffb300', '#ff4081', '#76ff03', '#b388ff', '#ff6d00', '#40c4ff', '#ffea00', '#00e676', '#ff5252'];
 const categoryKey = chapter => chapter?.game_id || chapter?.name || '';
-export function chapterColor(chapter, chapters = []) {
+export function chapterColor(chapter, chapters = [], colors = signalColors) {
+  if (!colors.length) colors = signalColors;
   const key = categoryKey(chapter);
   if (!key) return '#777e8a';
   const keys = [...new Set(chapters.map(categoryKey).filter(Boolean))];
   const index = keys.indexOf(key);
-  return signalColors[(index < 0 ? [...key].reduce((hash,char)=>(hash*31+char.charCodeAt(0))%signalColors.length,0) : index) % signalColors.length];
+  return colors[(index < 0 ? [...key].reduce((hash,char)=>(hash*31+char.charCodeAt(0))%colors.length,0) : index) % colors.length];
 }
 export function chapterGradient(chapters,total) {
   if (!total || !chapters.length) return null;

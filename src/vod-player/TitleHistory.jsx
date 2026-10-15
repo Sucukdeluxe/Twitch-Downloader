@@ -7,6 +7,8 @@ import { createStreamClock, streamTimestamp } from "./stream-clock.js";
 import { projectTitles, titleAt, historySections, historyCounts, historyDuration } from "./title-history.js";
 import "./title-history.css";
 
+const historyCategoryColors = ['#66dae7','#e9c66d','#e99ab4','#aedb84','#cbb6ef','#e9a272','#8bcce5','#e8de87','#8bd5ae','#e99191'];
+
 export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds,onSeek,onTitleSeek,onHover,onFocus,onSelectRange,t}) {
   const [filter,setFilter] = useState('all');
   const [animated,setAnimated] = useState(false);
@@ -90,7 +92,7 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
                       <div className="history-category-head" data-current-chapter={chapter.id===currentChapter?.id || undefined} onPointerEnter={event=>{if(event.pointerType!=='touch')onHover(chapter.id);}} onPointerLeave={()=>onHover(null)} onPointerCancel={()=>onHover(null)} onFocusCapture={()=>onFocus(chapter.id)} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget))onFocus(null);}}>
                         <div className="history-category-identity"><button type="button" className="chapter-seek" onClick={()=>onSeek(chapter.start)} aria-label={t('play')+': '+(chapter.name||t('categoryUnavailable'))+' · '+timeLabel(chapter.start)}>
                           <span className="chapter-cover">{chapter.image?<ChannelImage src={chapter.image} alt="" loading="lazy"/>:<Gamepad2 size={24}/>}<Play className="chapter-cover-play" size={18}/></span>
-                          <span className="chapter-description"><span className="history-kind">{t('historyGame')}</span><strong><i style={{background:chapterColor(chapter,chapters)}}/>{chapter.name||t('categoryUnavailable')}</strong><span className={'history-active-label'+(chapter.id!==currentChapter?.id?' is-inactive':'')}>{t('historyActive')}</span></span>
+                          <span className="chapter-description"><span className="history-kind">{t('historyGame')}</span><strong><i style={{background:chapterColor(chapter,chapters,historyCategoryColors)}}/>{chapter.name||t('categoryUnavailable')}</strong><span className={'history-active-label'+(chapter.id!==currentChapter?.id?' is-inactive':'')}>{t('historyActive')}</span></span>
                         </button></div>
                         <div className="history-category-meta"><strong>{historyDuration(chapter.end-chapter.start,t('locale'))}</strong>{wallTime(timestamp)}</div>
                       </div>
