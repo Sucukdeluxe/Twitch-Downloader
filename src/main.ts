@@ -8968,6 +8968,14 @@ app.whenReady().then(async () => {
             ? { queue: [] as QueueItem[], interruptedMergeItemIds: new Set<string>() }
             : loadQueue(applicationAutomationPaused);
         downloadQueue = queueLoad.queue;
+        if (!applicationAutomationPaused) {
+            const count = downloadQueue.length;
+            downloadQueue = downloadQueue.filter(item => item.status !== 'completed');
+            if (downloadQueue.length !== count) {
+                appStateStore.saveQueue(downloadQueue);
+                appendDebugLog('queue-completed-cleared-on-startup', { count: count - downloadQueue.length });
+            }
+        }
         for (const item of downloadQueue) {
             if (item.mergeRecoveryBlocked) queueLoad.interruptedMergeItemIds.add(item.id);
         }

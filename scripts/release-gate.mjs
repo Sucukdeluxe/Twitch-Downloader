@@ -15,6 +15,7 @@ const checks = [
     ['ci-contract', ['scripts/smoke-test-ci-contract.js']],
     ['installer-contract', ['--test', 'scripts/smoke-test-installer.test.js']],
     ['installer-process-scope', ['scripts/smoke-test-installer-process-scope.cjs']],
+    ['queue-startup', ['scripts/smoke-test-queue-startup.cjs']],
     ['update-version', ['scripts/smoke-test-update-version-logic.js']],
     ...['clips-queue', 'clips-workspace', 'clips-four-fixes', 'clips-empty-reset', 'cutter-v2-regression', 'cutter-compact-verified', 'cutter-zoom-stability', 'cutter-waveform', 'full-queue-audit', 'layout-consistency', 'insights-integrated', 'full-workspace-audit', 'audit-regressions', 'cutter-layout-regressions'].flatMap(name => ['chromium', 'webkit'].map(browser => [name + '-' + browser, ['scripts/smoke-test-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : []), ...(name === 'full-workspace-audit' ? ['--expect-refined'] : [])]])),
     ['cutter-layout-native', ['scripts/smoke-test-cutter-v2-native.js']],
