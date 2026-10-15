@@ -17,16 +17,16 @@ const paths = {
   muted: "M3,9 L7,9 L12,5 L12,19 L7,15 L3,15 Z M16,9 L22,15 M22,9 L16,15",
 };
 
-export function PlayerIcon({ name, size = 26 }) {
+export function PlayerIcon({ name, size = 26, seconds = 10 }) {
   const solid = ["play", "pause", "stop"].includes(name);
   return <svg width={size} height={size} viewBox="0 0 24 24" fill={solid ? "currentColor" : "none"} stroke={solid ? "none" : "currentColor"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d={paths[name]} />
-    {(name === "back" || name === "forward") && <text x="12" y="14.5" textAnchor="middle" dominantBaseline="middle" fill="currentColor" stroke="none" fontFamily="Segoe UI, sans-serif" fontSize="10" fontWeight="600">10</text>}
+    {(name === "back" || name === "forward") && <text x="12" y="14.5" textAnchor="middle" dominantBaseline="middle" fill="currentColor" stroke="none" fontFamily="Segoe UI, sans-serif" fontSize="10" fontWeight="600">{seconds}</text>}
   </svg>;
 }
 
-export function PlayerButton({ name, label, className = "", ...props }) {
-  return <button type="button" className={`player-button ${className}`} aria-label={label} title={label} {...props}><PlayerIcon name={name} /></button>;
+export function PlayerButton({ name, label, seconds, className = "", ...props }) {
+  return <button type="button" className={`player-button ${className}`} aria-label={label} title={label} {...props}><PlayerIcon name={name} seconds={seconds} /></button>;
 }
 
 export function PlayerPanel({ label, trigger, root, children, className = "", onOpenChange, disabled = false }) {

@@ -983,6 +983,22 @@ async function startDownloadPolicyOverride(): Promise<void> {
     await refreshDownloadPolicyStatus();
 }
 
+function syncPlayerSeekPreference(value = config.player_seek_seconds): void {
+    const seconds = typeof value === 'number' && [10, 30, 60].includes(value) ? value : 10;
+    byId<HTMLInputElement>('playerSeekSeconds').value = String(seconds);
+    document.querySelectorAll<HTMLButtonElement>('[data-player-seek]').forEach(button => {
+        button.setAttribute('aria-pressed', String(Number(button.dataset.playerSeek) === seconds));
+    });
+    window.VodPlayer?.setSeekSeconds(seconds);
+}
+
+function selectPlayerSeekSeconds(seconds: number): void {
+    if (![10, 30, 60].includes(seconds)) return;
+    syncPlayerSeekPreference(seconds);
+    markSettingsInputChanged();
+    void flushSettingsAutoSave(false);
+}
+
 function collectDownloadSettingsPayload(): Partial<AppConfig> {
     const parsedPolicy = parseDownloadPolicyFormValue(
         byId<HTMLInputElement>('downloadThrottleMiBps').value,
@@ -992,6 +1008,7 @@ function collectDownloadSettingsPayload(): Partial<AppConfig> {
     return {
         language: byId<HTMLSelectElement>('languageSelect').value as LanguageCode,
         theme: byId<HTMLSelectElement>('themeSelect').value,
+        player_seek_seconds: Number(byId<HTMLInputElement>('playerSeekSeconds').value),
         sidebar_split_view: byId<HTMLInputElement>('sidebarSplitViewToggle').checked,
         download_mode: byId<HTMLSelectElement>('downloadMode').value as 'parts' | 'full',
         part_minutes: parseInt(byId<HTMLInputElement>('partMinutes').value, 10) || 120,
@@ -1056,6 +1073,7 @@ function getSettingsFingerprint(payload: Partial<AppConfig>): string {
     return JSON.stringify([
         effective.language ?? currentLanguage,
         effective.theme ?? 'twitch',
+        effective.player_seek_seconds ?? 10,
         effective.client_id ?? '',
         byId<HTMLInputElement>('clientSecret').value,
         effective.sidebar_split_view !== false,
@@ -1096,6 +1114,7 @@ function getSettingsFingerprint(payload: Partial<AppConfig>): string {
 }
 
 function syncSettingsFormFromConfig(syncSecrets = true): void {
+    syncPlayerSeekPreference();
     byId<HTMLInputElement>('clientId').value = config.client_id ?? '';
     if (syncSecrets) syncSecretFields();
     byId<HTMLInputElement>('sidebarSplitViewToggle').checked = config.sidebar_split_view !== false;

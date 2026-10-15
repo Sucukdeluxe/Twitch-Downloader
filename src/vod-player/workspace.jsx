@@ -1,5 +1,6 @@
 import { ClipControls, ClipFolderMenu } from './ClipControls.jsx';
 import './LocalCutterPlayer.jsx';
+import { setPlayerSeekSeconds } from './player-settings.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -315,6 +316,7 @@ function Workspace({ options, bind }) {
 }
 
 window.VodPlayer = {
+  setSeekSeconds: setPlayerSeekSeconds,
   mountClipControls(element, callbacks) {
     const root = createRoot(element);
     return { update(state) { root.render(<ClipControls {...state} {...callbacks}/>); }, destroy() { root.unmount(); } };

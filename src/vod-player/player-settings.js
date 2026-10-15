@@ -1,3 +1,22 @@
+import { normalizePlayerSeekSeconds } from '../player-preferences.ts';
+
+let seekSeconds = 10;
+const seekListeners = new Set();
+
+export function getPlayerSeekSeconds() { return seekSeconds; }
+
+export function subscribePlayerSeekSeconds(listener) {
+  seekListeners.add(listener);
+  return () => seekListeners.delete(listener);
+}
+
+export function setPlayerSeekSeconds(value) {
+  const next = normalizePlayerSeekSeconds(value);
+  if (next === seekSeconds) return;
+  seekSeconds = next;
+  for (const listener of seekListeners) listener();
+}
+
 export function ratePosition(rate) {
   return rate <= 1 ? (rate * 4 - 1) * 4 : rate * 4 + 8;
 }

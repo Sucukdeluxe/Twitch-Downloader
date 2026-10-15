@@ -58,6 +58,8 @@ const UI_TEXT_EN = {
         mergeTitle: 'Merge videos',
         mergeAdd: 'Add videos',
         designTitle: 'Design',
+        playerSeekLabel: 'Seek interval',
+        playerSeekHint: 'For skipping backward and forward in the VOD player and video editor.',
         themeLabel: 'Theme',
         themeLight: 'Light',
         themeDark: 'Dark',

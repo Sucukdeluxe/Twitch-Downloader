@@ -262,6 +262,8 @@ function applyLanguageToStaticUI(): void {
     setText('mergeAddBtn', UI_TEXT.static.mergeAdd);
     setText('btnMerge', UI_TEXT.merge.merge);
     setText('designTitle', UI_TEXT.static.designTitle);
+    setText('playerSeekLabel', UI_TEXT.static.playerSeekLabel);
+    setText('playerSeekHint', UI_TEXT.static.playerSeekHint);
     setText('themeLabel', UI_TEXT.static.themeLabel);
     setText('themeLightOption', UI_TEXT.static.themeLight);
     setText('themeDarkOption', UI_TEXT.static.themeDark);

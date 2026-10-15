@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add a saved 10-, 30- or 60-second seek interval for VOD playback and the video editor, with matching button icons, labels and VOD keyboard controls.
+
 ## 1.1.1 - 2026-10-15
 
 This update speeds up opening VODs for trimming and keeps development sessions separate during normal application updates.

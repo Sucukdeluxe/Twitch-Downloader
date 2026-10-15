@@ -34,6 +34,7 @@ import type { Transform } from 'node:stream';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan';
+import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
 import { remuxMp4 } from './main/domain/mp4-remux';
 import { VodPlaybackService } from './main/domain/vod-playback-service';
@@ -300,6 +301,7 @@ interface Config {
     part_minutes: number;
     language: 'de' | 'en';
     sidebar_split_view: boolean;
+    player_seek_seconds: number;
     filename_template_vod: string;
     filename_template_parts: string;
     filename_template_clip: string;
@@ -506,6 +508,7 @@ const defaultConfig: Config = {
     part_minutes: 120,
     language: 'en',
     sidebar_split_view: true,
+    player_seek_seconds: 10,
     filename_template_vod: DEFAULT_FILENAME_TEMPLATE_VOD,
     filename_template_parts: DEFAULT_FILENAME_TEMPLATE_PARTS,
     filename_template_clip: DEFAULT_FILENAME_TEMPLATE_CLIP,
@@ -579,6 +582,7 @@ function normalizeConfigTemplates(input: Config): Config {
         filename_template_parts: normalizeFilenameTemplate(input.filename_template_parts, DEFAULT_FILENAME_TEMPLATE_PARTS),
         filename_template_clip: normalizeFilenameTemplate(input.filename_template_clip, DEFAULT_FILENAME_TEMPLATE_CLIP),
         sidebar_split_view: input.sidebar_split_view !== false,
+        player_seek_seconds: normalizePlayerSeekSeconds(input.player_seek_seconds),
         smart_queue_scheduler: false,
         performance_mode: normalizePerformanceMode(input.performance_mode),
         prevent_duplicate_downloads: input.prevent_duplicate_downloads !== false,

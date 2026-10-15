@@ -2443,3 +2443,7 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #clipsLibraryDirectory { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; color: var(--workspace-text); background: transparent; border: 0; padding: 4px 0; font-size: 12px; }
 #clipsSavedList { list-style: none; flex: 1 1 160px; min-height: 160px; height: 160px; padding: 0; margin: 0; overflow: auto; scrollbar-gutter: stable; }
 .clips-library-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 12px; }
+
+.player-seek-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.player-seek-options .btn-secondary { min-width: 68px; min-height: 36px; font-size: 13px; user-select: none; background: var(--workspace-control); color: var(--workspace-text); border-color: var(--workspace-border); }
+.player-seek-options .btn-secondary[aria-pressed="true"] { border-color: var(--workspace-text); background: var(--workspace-control-hover); font-weight: 700; }

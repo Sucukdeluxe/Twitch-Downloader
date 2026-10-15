@@ -817,6 +817,16 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 <option value="en">en</option>
                             </select>
                         </div>
+                        <div class="form-group player-seek-setting">
+                            <label id="playerSeekLabel">Sprungweite beim Spulen</label>
+                            <div class="player-seek-options" role="group" aria-labelledby="playerSeekLabel">
+                                <button type="button" class="btn-secondary" data-player-seek="10" aria-pressed="true" onclick="selectPlayerSeekSeconds(10)">10 s</button>
+                                <button type="button" class="btn-secondary" data-player-seek="30" aria-pressed="false" onclick="selectPlayerSeekSeconds(30)">30 s</button>
+                                <button type="button" class="btn-secondary" data-player-seek="60" aria-pressed="false" onclick="selectPlayerSeekSeconds(60)">60 s</button>
+                            </div>
+                            <input type="hidden" id="playerSeekSeconds" value="10">
+                            <div class="form-note" id="playerSeekHint">Für Vor- und Zurückspulen im VOD-Player und beim Videoschneiden.</div>
+                        </div>
                         <div class="form-group sidebar-layout-setting">
                             <label class="toggle-row">
                                 <input type="checkbox" id="sidebarSplitViewToggle" checked onchange="applySidebarLayoutPreference(this.checked)">

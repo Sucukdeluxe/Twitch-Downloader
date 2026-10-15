@@ -1,4 +1,5 @@
 import { normalizeAutoVodRules } from './auto-vod-rules';
+import { PLAYER_SEEK_SECONDS } from '../../player-preferences';
 import {
     normalizeDownloadPolicy,
 } from './download-policy';
@@ -136,6 +137,11 @@ export function sanitizeConfigInput(value: unknown): Record<string, unknown> {
 
         if (TEMPLATE_KEYS.has(key)) {
             if (typeof entry === 'string' && entry.trim().length > 0 && entry.length <= MAX_TEMPLATE_LENGTH) sanitized[key] = entry;
+            continue;
+        }
+
+        if (key === 'player_seek_seconds') {
+            if (PLAYER_SEEK_SECONDS.some(seconds => seconds === entry)) sanitized[key] = entry;
             continue;
         }
 

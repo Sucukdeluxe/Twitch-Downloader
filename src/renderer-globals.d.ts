@@ -9,6 +9,7 @@ interface AppConfig {
     part_minutes?: number;
     language?: 'de' | 'en';
     sidebar_split_view?: boolean;
+    player_seek_seconds?: number;
     filename_template_vod?: string;
     filename_template_parts?: string;
     filename_template_clip?: string;
@@ -631,6 +632,7 @@ interface Window {
         }): { update(state: LocalCutterViewState): void; updatePosition(time: number): void; destroy(): void };
     };
     VodPlayer: {
+        setSeekSeconds(value: number): void;
         mountClipControls(element: HTMLElement, callbacks: { open(): void; folder(): void; remove(): void }): { update(state: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string; available: boolean; removable: boolean; disabled: boolean; labels: { open: string; folder: string; remove: string } }): void; destroy(): void };
         mountClipMenu(element: HTMLElement, callbacks: { select(): void; reset(): void }): { update(state: { disabled: boolean; labels: { options: string; select: string; reset: string } }): void; destroy(): void };
         mountStatusTooltip(element: HTMLElement): { update(options: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string }): void; destroy(): void };

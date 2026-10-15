@@ -58,6 +58,8 @@ const UI_TEXT_DE = {
         mergeTitle: 'Videos zusammenfügen',
         mergeAdd: 'Videos hinzufügen',
         designTitle: 'Design',
+        playerSeekLabel: 'Sprungweite beim Spulen',
+        playerSeekHint: 'Für Vor- und Zurückspulen im VOD-Player und beim Videoschneiden.',
         themeLabel: 'Theme',
         themeLight: 'Hell',
         themeDark: 'Dunkel',

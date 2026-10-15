@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, ChevronDown } from "lucide-react";
 import { PlayerIcon, PlayerButton, PlayerPanel, RateControl } from "./PlayerControls.jsx";
 import { locateTime, timeLabel } from "./timeline.js";
@@ -17,7 +17,10 @@ import { playerKeyAction } from "./player-keyboard.js";
 import { createPlaybackCheckpoint, checkpointPosition, checkpointSnapshot } from "./playback-checkpoint.js";
 import { clearMediaSource, setMediaSource } from './media-source.js';
 
+import { getPlayerSeekSeconds, subscribePlayerSeekSeconds } from './player-settings.js';
+
 export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster, started = true, broadcastStarted, viewerHistory, viewerGaps, titleHistory = [], vodTitle, requestedAt = 0, prepareMilliseconds, onStart, onProgress, onPosition, onTimeline, onError, t, chapters = [], seekRequest, chapterPreview, excerptRange, onExcerptRange, cutRange, cutLimits, onCutRange, cutText, omissions = [] }) {
+  const seekSeconds = useSyncExternalStore(subscribePlayerSeekSeconds, getPlayerSeekSeconds);
   const [checkpointStore] = useState(() => createPlaybackCheckpoint(userId, id));
   const [savedCheckpoint] = useState(() => checkpointStore.read());
   const initialized = useRef(false), lastCheckpoint = useRef(0), autoplayBlockedRef = useRef(false), wasStarted = useRef(started);
@@ -372,7 +375,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
       if (!started) { if (action === "toggle") onStart?.(); return; }
       if (!sourceReady || waitingForCheckpoint) return;
       if (action === "toggle") { clearTimeout(clickTimer.current); toggle(); }
-      if (action === "forward" || action === "back") skip(action === "forward" ? 10 : -10);
+      if (action === "forward" || action === "back") skip(action === "forward" ? seekSeconds : -seekSeconds);
       if (action === "louder" || action === "quieter") setVolume(value => Math.max(0, Math.min(1, value + (action === "louder" ? .05 : -.05))));
       if (action === "mute") mute();
       if (action === "fullscreen") toggleFullscreen();
@@ -432,9 +435,9 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
             onCommit={value=>{requestSeek(value);navigation.current.flush();revealControls();}}/>
           <span className="archive-clock archive-duration">{timeLabel(total)}</span></div>
         <div className="archive-control-row">
-          <PlayerButton name="back" label={t("skipBack")} disabled={!sourceReady || position <= 0} onClick={() => skip(-10)} />
+          <PlayerButton name="back" seconds={seekSeconds} label={t("skipBack").replace("{seconds}", seekSeconds)} disabled={!sourceReady || position <= 0} onClick={() => skip(-seekSeconds)} />
           <PlayerButton name={playing ? "pause" : "play"} label={t(playing ? "pause" : "playerPlay")} onClick={toggle} />
-          <PlayerButton name="forward" label={t("skipForward")} disabled={!sourceReady || !(total > 0) || position >= total - .001} onClick={() => skip(10)} />
+          <PlayerButton name="forward" seconds={seekSeconds} label={t("skipForward").replace("{seconds}", seekSeconds)} disabled={!sourceReady || !(total > 0) || position >= total - .001} onClick={() => skip(seekSeconds)} />
           <PlayerButton name={volume ? "volume" : "muted"} label={t(volume ? "mute" : "unmute")} onClick={mute} />
           <div className="player-volume-control"><input className="archive-volume" type="range" min="0" max="1" step="0.01" value={volume} aria-label={t("volume")} onChange={event => setVolume(Number(event.target.value))} style={{ "--range-progress": `${volume * 100}%` }} />
           <label className="player-volume-entry"><input type="number" min="0" max="100" value={Math.round(volume * 100)} aria-label={t("volumePercent")} onChange={event => setVolume(Math.max(0, Math.min(100, Number(event.target.value))) / 100)} /><span>%</span></label></div>

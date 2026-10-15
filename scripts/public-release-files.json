@@ -130,6 +130,7 @@
     "src/main/twitch/provider-refresh.ts",
     "src/main/updates/index.ts",
     "src/main/updates/update-lifecycle.ts",
+    "src/player-preferences.ts",
     "src/preload.ts",
     "src/renderer-accessibility.ts",
     "src/renderer-archive.ts",
