@@ -4,6 +4,7 @@
 
 This update adds a configurable seek interval and fixes the forward control at the end of VODs.
 
+- Keep the video editor rewind control disabled on the first frame despite sub-frame decoder timestamps.
 - Disable the VOD forward control at the final seekable position, including the media seek tolerance.
 
 - Add a saved 10-, 30- or 60-second seek interval for VOD playback and the video editor, with matching button icons, labels and VOD keyboard controls.

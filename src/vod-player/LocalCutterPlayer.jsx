@@ -46,7 +46,7 @@ function LocalCutterPlayer({ options, bind }) {
   const timeLabel = useRef(null);
   bind.current = setState;
   function updateSeekBounds(time) {
-    const start = time <= 0, end = !(state.duration > 0) || time >= state.duration - 1 / (state.fps || 30) - .000001;
+    const start = Math.round(Math.max(0, time) * (state.fps || 30)) === 0, end = !(state.duration > 0) || time >= state.duration - 1 / (state.fps || 30) - .000001;
     setSeekBounds(previous => previous.start === start && previous.end === end ? previous : { start, end });
   }
   bind.position = time => {
