@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, ChevronDown } from "lucide-react";
 import { PlayerIcon, PlayerButton, PlayerPanel, RateControl } from "./PlayerControls.jsx";
-import { locateTime, timeLabel } from "./timeline.js";
+import { isAtSeekableEnd, locateTime, seekableEnd, timeLabel } from "./timeline.js";
 import { latestSeek, activateMedia, applyMediaPosition, playWithFallback, frameAtTarget } from "./playback-navigation.js";
 import { SeekTimeline } from "./SeekTimeline.jsx";
 import { ExactTimeForm } from "./ExactTimeForm.jsx";
@@ -101,7 +101,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
     feedbackTimer.current = setTimeout(() => setFeedback(null), 700);
   }
   function skip(amount) {
-    if ((amount < 0 && positionValue.current <= 0) || (amount > 0 && positionValue.current >= total - .001)) return;
+    if ((amount < 0 && positionValue.current <= 0) || (amount > 0 && isAtSeekableEnd(positionValue.current, total))) return;
     requestSeek(positionValue.current + amount);
     showFeedback({ seek: amount });
     revealControls();
@@ -229,7 +229,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
     seekFrame.current = { element, callback };
   }
   function requestSeek(value) {
-    const target = Math.max(0, Math.min(value, Math.max(0, total - 0.01)));
+    const target = Math.max(0, Math.min(value, seekableEnd(total)));
     positionValue.current = target;
     queuedAt.current = performance.now();
     setPosition(target);
@@ -437,7 +437,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
         <div className="archive-control-row">
           <PlayerButton name="back" seconds={seekSeconds} label={t("skipBack").replace("{seconds}", seekSeconds)} disabled={!sourceReady || position <= 0} onClick={() => skip(-seekSeconds)} />
           <PlayerButton name={playing ? "pause" : "play"} label={t(playing ? "pause" : "playerPlay")} onClick={toggle} />
-          <PlayerButton name="forward" seconds={seekSeconds} label={t("skipForward").replace("{seconds}", seekSeconds)} disabled={!sourceReady || !(total > 0) || position >= total - .001} onClick={() => skip(seekSeconds)} />
+          <PlayerButton name="forward" seconds={seekSeconds} label={t("skipForward").replace("{seconds}", seekSeconds)} disabled={!sourceReady || !(total > 0) || isAtSeekableEnd(position, total)} onClick={() => skip(seekSeconds)} />
           <PlayerButton name={volume ? "volume" : "muted"} label={t(volume ? "mute" : "unmute")} onClick={mute} />
           <div className="player-volume-control"><input className="archive-volume" type="range" min="0" max="1" step="0.01" value={volume} aria-label={t("volume")} onChange={event => setVolume(Number(event.target.value))} style={{ "--range-progress": `${volume * 100}%` }} />
           <label className="player-volume-entry"><input type="number" min="0" max="100" value={Math.round(volume * 100)} aria-label={t("volumePercent")} onChange={event => setVolume(Math.max(0, Math.min(100, Number(event.target.value))) / 100)} /><span>%</span></label></div>

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disable the VOD forward control at the final seekable position, including the media seek tolerance.
+
 - Add a saved 10-, 30- or 60-second seek interval for VOD playback and the video editor, with matching button icons, labels and VOD keyboard controls.
 
 ## 1.1.1 - 2026-10-15

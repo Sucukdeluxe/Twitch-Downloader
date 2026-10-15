@@ -1,4 +1,5 @@
 import { mediaSource, setMediaSource } from './media-source.js';
+import { seekableEnd, SEEK_TOLERANCE } from './timeline.js';
 
 export function latestSeek(apply, delay = 50, timers = globalThis) {
   let timer = null, target = null;
@@ -69,7 +70,7 @@ export function activateMedia(previous, element, source, { play, volume, speed }
 
 export function applyMediaPosition(element, seconds) {
   if (element.readyState < 1 || !Number.isFinite(element.duration)) return false;
-  const target = Math.max(0, Math.min(seconds, Math.max(0, element.duration - 0.01)));
-  if (Math.abs(element.currentTime - target) > 0.01) element.currentTime = target;
+  const target = Math.max(0, Math.min(seconds, seekableEnd(element.duration)));
+  if (Math.abs(element.currentTime - target) > SEEK_TOLERANCE) element.currentTime = target;
   return true;
 }

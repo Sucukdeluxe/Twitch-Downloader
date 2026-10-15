@@ -1,6 +1,16 @@
+export const SEEK_TOLERANCE = 0.01;
+
+export function seekableEnd(duration) {
+  return Math.max(0, duration - 0.01);
+}
+
+export function isAtSeekableEnd(position, duration) {
+  return !(duration > 0) || position >= seekableEnd(duration) - SEEK_TOLERANCE - 0.000001;
+}
+
 export function locateTime(parts, seconds) {
   const total = parts.reduce((sum, part) => sum + Math.max(0, part.duration || 0), 0);
-  const target = Math.max(0, Math.min(Number(seconds) || 0, Math.max(0, total - 0.01)));
+  const target = Math.max(0, Math.min(Number(seconds) || 0, seekableEnd(total)));
   let start = 0;
   for (let index = 0; index < parts.length; index++) {
     const duration = Math.max(0, parts[index].duration || 0);
