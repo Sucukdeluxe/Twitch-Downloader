@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.2 - 2026-10-15
+
+This update adds a configurable seek interval and fixes the forward control at the end of VODs.
 
 - Disable the VOD forward control at the final seekable position, including the media seek tolerance.
 
