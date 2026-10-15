@@ -324,7 +324,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
       else { videos.current[active.current]?.pause(); setPlaying(false); }
     }
     const target = seekRequest.title ? titlePosition(seekRequest.title,timeline(),broadcastStarted).seconds : seekRequest.seconds;
-    if (target !== null && Number.isFinite(target)) requestSeek(target);
+    if (target !== null && Number.isFinite(target)) { requestSeek(target); if (seekRequest.immediate) navigation.current.flush(); }
     if (seekRequest.playing) resume(videos.current[active.current]);
     if (typeof seekRequest.playing === 'boolean') persistCheckpoint(true, true);
     revealControls();

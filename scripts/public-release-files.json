@@ -192,6 +192,7 @@
     "src/vod-player/fine-seek.js",
     "src/vod-player/local-cutter.css",
     "src/vod-player/media-source.js",
+    "src/vod-player/merge-timeline.js",
     "src/vod-player/merge-workspace.css",
     "src/vod-player/omission-ranges.js",
     "src/vod-player/playback-checkpoint.js",
