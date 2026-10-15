@@ -57,3 +57,27 @@ export function timelineEntries(chapters, titles, parts, started) {
   if (openingTitle) rows.unshift({id:openingTitle.id,titles:[openingTitle],seconds:openingTitle.seconds,at:openingTitle.at});
   return rows;
 }
+
+export function historySections(chapters = [], titles = [], parts = [], started) {
+  const sections = chapters.filter(chapter => Number.isFinite(chapter.start) && Number.isFinite(chapter.end) && chapter.end > chapter.start)
+    .map(chapter => ({ id:'chapter:'+chapter.id, chapter, titles:[], seconds:chapter.start, at:streamTimestamp(parts,started,chapter.start) }));
+  for (const title of titles) {
+    const section = Number.isFinite(title.seconds) ? sections.find(row => row.chapter && title.seconds >= row.chapter.start && title.seconds < row.chapter.end) : null;
+    if (section) section.titles.push(title);
+    else sections.push({ id:'title:'+title.id, chapter:null, titles:[title], seconds:title.seconds, at:title.at });
+  }
+  for (const section of sections) section.titles.sort((a,b) => a.at-b.at || a.id.localeCompare(b.id));
+  return sections.sort((a,b) => (a.at ?? Infinity)-(b.at ?? Infinity) || (a.seconds ?? Infinity)-(b.seconds ?? Infinity) || Number(!a.chapter)-Number(!b.chapter) || a.id.localeCompare(b.id));
+}
+
+export function historyCounts(chapters = [], titles = []) {
+  const categories = new Set(chapters.filter(chapter => chapter.end > chapter.start).map(chapter => chapter.game_id || chapter.name?.trim().toLowerCase()).filter(Boolean));
+  return { categories:categories.size, titleChanges:titles.filter(title => title.kind === 'changed').length };
+}
+
+export function historyDuration(seconds, locale = 'de') {
+  const value = Number.isFinite(seconds) ? Math.max(0,Math.floor(seconds)) : 0;
+  const number = new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'de-DE');
+  return [[Math.floor(value/3600),'h'],[Math.floor(value/60)%60,'min'],[value%60,'s']]
+    .filter(([count]) => count > 0).map(([count,unit]) => number.format(count)+' '+unit).join(' ') || '0 s';
+}

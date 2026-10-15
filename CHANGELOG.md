@@ -2,8 +2,10 @@
 
 ## 1.1.0 - Unreleased
 
-This update clarifies file verification activity and adds the application version to the window title.
+This update reorganizes VOD history into grouped sections, clarifies file verification activity and adds the application version to the window title.
 
+- Group categories and their title changes into bordered history sections, with smooth filter transitions and separate counters for categories and title changes.
+- Keep category trimming and title seeking available in the new layout, with readable text and reduced-motion support.
 - Keep the progress indicator full-width during file verification and other finalization steps without measurable progress, including when reduced motion is enabled.
 - Show the active section and application version in the window title, with a separate development label when applicable.
 
