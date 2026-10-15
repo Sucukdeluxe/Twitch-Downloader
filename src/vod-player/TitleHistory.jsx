@@ -44,6 +44,18 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
     const button = target.matches('button:not(:disabled)') ? target : target.querySelector('button:not(:disabled)');
     (button || target).focus({preventScroll:true});
   }
+  function seekCard(event, section) {
+    if (event.defaultPrevented || event.target.closest('button,a,input,select,textarea,summary,[role="button"],[contenteditable="true"]')) return;
+    const entry = event.target.closest('[data-title-id]');
+    if (entry) {
+      const title = section.titles.find(value=>value.id===entry.dataset.titleId);
+      if (Number.isFinite(title?.seconds)) onTitleSeek(title);
+      return;
+    }
+    if (filter !== 'titles' && section.chapter) { onSeek(section.chapter.start); return; }
+    const title = section.titles.find(value=>Number.isFinite(value.seconds));
+    if (title) onTitleSeek(title);
+  }
   function wallTime(timestamp) {
     if (!timestamp) return null;
     const date = new Date(timestamp.dateTime);
@@ -86,7 +98,7 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
           return <section key={section.id} className={'history-section'+(!shown?' is-collapsed':'')+(filter==='titles'?' titles-only':'')} aria-hidden={!shown} inert={!shown} data-section-id={section.id}>
             <div className="history-section-inner"><div className="history-section-content">
               <div className="history-time-marker"><i aria-hidden="true"/>{Number.isFinite(marker)?<button type="button" onClick={()=>(!chapter||filter==='titles')&&markerTitle?onTitleSeek(markerTitle):onSeek(marker)} aria-label={t('play')+': '+timeLabel(marker)}>{timeLabel(marker)}</button>:<span>{t(section.titles[0]?.status==='gap'?'historyGap':'historyPending')}</span>}</div>
-              <article className={'history-card'+(active?' is-current':'')} aria-current={active?'true':undefined}>
+              <article className={'history-card'+(active?' is-current':'')} aria-current={active?'true':undefined} onClick={event=>seekCard(event,section)}>
                 <div className={'history-fold history-category-fold'+(!showCategory?' is-collapsed':'')} aria-hidden={!showCategory} inert={!showCategory}>
                   <div className="history-fold-inner">
                     {chapter&&<>

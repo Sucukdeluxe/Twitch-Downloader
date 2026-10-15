@@ -27,6 +27,7 @@
 .title-history .history-time-marker>i { position:absolute; left:-16px; top:10px; width:7px; height:7px; border:1px solid var(--history-accent); border-radius:50%; background:var(--history-panel); }
 .title-history .history-time-marker button { border:0; background:var(--history-panel); padding:0 5px 0 0; font-size:13px; font-weight:600; line-height:1.5; color:var(--history-text); font-variant-numeric:tabular-nums; }
 .title-history .history-card { min-width:0; padding:12px; border:1px solid var(--history-border); border-radius:8px; background:var(--history-card); scroll-margin:10px; overflow:hidden; }
+.title-history .history-card,.title-history .history-card button,.title-history .history-time-marker button { cursor:default; }
 .title-history .history-card.is-current { border-color:var(--history-accent); background:var(--history-selected); box-shadow:none; }
 .title-history .history-card.is-current::after { content:none; }
 .title-history .history-category-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; min-width:0; }
