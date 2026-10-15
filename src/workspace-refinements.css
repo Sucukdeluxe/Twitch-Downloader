@@ -172,6 +172,10 @@
 }
 
 .update-banner.workspace-update {
+    --workspace-popover-bg: var(--workspace-panel-raised);
+    --workspace-popover-border: var(--workspace-border-strong);
+    --workspace-popover-text: var(--workspace-text);
+    --workspace-popover-muted: var(--workspace-text-muted);
     position: relative;
     display: none;
     width: auto;
@@ -193,32 +197,47 @@
 
 #workspaceUpdateButton,
 .workspace-update-button {
+    display: inline-flex;
     position: relative;
+    align-items: center;
+    justify-content: center;
     width: auto;
-    min-width: 90px;
+    min-width: 108px;
     height: 40px;
-    gap: 8px;
-    padding: 0 14px;
-    border-radius: 8px;
-    font-size: 14px;
+    gap: 9px;
+    padding: 0 12px 0 7px;
+    color: var(--workspace-text);
+    background: var(--workspace-panel-raised);
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: 9px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#workspaceUpdateButton svg {
+    box-sizing: content-box;
+    width: 16px;
+    height: 16px;
+    padding: 5px;
+    color: var(--workspace-success);
+    background: color-mix(in srgb, var(--workspace-success) 12%, transparent);
+    border-radius: 6px;
 }
 
 #workspaceUpdateButton:hover,
 .workspace-update-button:hover {
-    background: #8aa5dc;
-    border-color: #8aa5dc;
+    color: var(--workspace-text);
+    background: var(--workspace-control-hover);
+    border-color: color-mix(in srgb, var(--workspace-success) 45%, var(--workspace-border-strong));
+}
+
+#workspaceUpdateButton:focus-visible {
+    outline: 2px solid var(--workspace-success);
+    outline-offset: 3px;
 }
 
 .workspace-update.show #workspaceUpdateButton::after {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 7px;
-    height: 7px;
-    background: #ff9e98;
-    border: 1px solid var(--workspace-primary);
-    border-radius: 50%;
-    content: "";
+    content: none;
 }
 
 .workspace-update-popover {
@@ -228,16 +247,18 @@
     z-index: 600;
     display: flex;
     visibility: hidden;
-    width: 216px;
+    width: 260px;
+    max-width: calc(100vw - 24px);
     min-height: 68px;
     flex-direction: column;
     align-items: stretch;
-    gap: 7px;
-    padding: 8px;
+    gap: 12px;
+    padding: 12px;
     color: var(--workspace-popover-text);
     background: var(--workspace-popover-bg);
     border: 1px solid var(--workspace-popover-border);
-    border-radius: 5px;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px #0004;
     font-size: 13px;
     font-weight: 600;
     line-height: 1.35;
@@ -283,20 +304,20 @@
 .workspace-update-popover #updateButton {
     position: relative;
     z-index: 1;
-    min-height: 30px;
-    padding: 0 9px;
-    color: var(--workspace-primary-text);
-    background: var(--workspace-primary);
-    border: 1px solid var(--workspace-primary);
-    border-radius: var(--workspace-radius-small);
-    font-size: 11px;
+    min-height: 34px;
+    padding: 0 12px;
+    color: #fff;
+    background: #327348;
+    border: 1px solid #327348;
+    border-radius: 6px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
 }
 
 .workspace-update-popover #updateButton:hover:not(:disabled) {
-    background: var(--workspace-primary-hover);
-    border-color: var(--workspace-primary-hover);
+    background: #3b8253;
+    border-color: #3b8253;
 }
 
 .workspace-update-popover .update-banner-progress-wrap {
@@ -1343,12 +1364,8 @@
     border-color: rgba(255, 255, 255, 0.18);
 }
 
-#workspaceUpdateDismiss::before {
-    content: "\00d7";
-    font-size: 17px;
-    font-weight: 500;
-    line-height: 1;
-}
+#workspaceUpdateDismiss::before { content: none; }
+#workspaceUpdateDismiss svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 
 .workspace-update-popover-actions {
     position: relative;
@@ -1365,21 +1382,21 @@
 
 #workspaceUpdateLater {
     display: inline-flex;
-    min-height: 30px;
+    min-height: 34px;
     align-items: center;
     justify-content: center;
-    padding: 0 9px;
+    padding: 0 11px;
     color: var(--workspace-popover-text);
     background: transparent;
     border: 1px solid var(--workspace-popover-muted);
-    border-radius: var(--workspace-radius-small);
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
 }
 
 #workspaceUpdateLater:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--workspace-control-hover);
 }
 
 .workspace-update-popover .update-banner-progress-track {

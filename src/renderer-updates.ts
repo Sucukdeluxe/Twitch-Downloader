@@ -94,7 +94,7 @@ function setCheckButtonCheckingState(enabled: boolean): void {
     if (enabled) {
         byId('updateBanner').dataset.updateState = 'checking';
         byId('workspaceUpdateLabel').textContent = UI_TEXT.updates.checking;
-        workspaceButton.title = UI_TEXT.updates.checking;
+        workspaceButton.removeAttribute('title');
         workspaceButton.setAttribute('aria-label', UI_TEXT.updates.checking);
     } else {
         syncWorkspaceUpdateState(updateBannerState);
@@ -126,8 +126,8 @@ function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 
         button.removeAttribute('aria-disabled');
     }
     label.textContent = state === 'ready' ? UI_TEXT.updates.installNow : 'Update';
-    button.title = state === 'idle' ? UI_TEXT.static.checkUpdates : description;
-    button.setAttribute('aria-label', button.title);
+    button.removeAttribute('title');
+    button.setAttribute('aria-label', state === 'idle' ? UI_TEXT.static.checkUpdates : description);
     syncWorkspaceUpdateExpansion();
     byId<HTMLButtonElement>('workspaceUpdateLater').hidden = state === 'idle' || state === 'downloading';
     byId<HTMLButtonElement>('workspaceUpdateDismiss').hidden = state === 'idle';
