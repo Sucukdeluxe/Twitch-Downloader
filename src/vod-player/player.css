@@ -66,7 +66,7 @@
 .player-volume-entry input::-webkit-inner-spin-button { appearance: none; }
 .archive-control-spacer { flex: 1; min-width: 4px; }
 .player-button { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 auto; width: 44px; height: 44px; padding: 8px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: #fff; cursor: pointer; user-select: none; }
-.player-button:hover, .player-button[aria-expanded="true"] { background: #ffffff33; }
+.player-button:hover:not(:disabled), .player-button[aria-expanded="true"]:not(:disabled) { background: #ffffff33; }
 .player-button[aria-pressed="true"], .player-button.is-set { color: #c2baff; }
 .player-button:focus-visible, .archive-controls input:focus-visible { outline: 1px solid #fff; outline-offset: 2px; }
 .archive-player:focus, .archive-screen video:focus, .archive-player button:focus:not(:focus-visible), .player-panel button:focus:not(:focus-visible) { outline: none; }
@@ -117,3 +117,5 @@
   .player-start-button { width: 64px; height: 64px; }
   .player-feedback { scale: .75; }
 }
+
+.player-button:disabled { opacity: .4; cursor: default; }

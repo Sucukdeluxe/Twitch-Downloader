@@ -4,6 +4,7 @@
 
 This update speeds up opening VODs for trimming and keeps development sessions separate during normal application updates.
 
+- Disable ten-second seek buttons when the video is already at the start or end.
 - Remove completed queue entries when the application starts while preserving pending, paused and failed work, downloaded files and download history.
 - Restrict installer and uninstaller shutdown to the exact installed executable paths.
 - Give development builds a distinct executable filename so older installers cannot close them by matching the normal application name.

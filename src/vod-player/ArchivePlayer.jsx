@@ -98,6 +98,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
     feedbackTimer.current = setTimeout(() => setFeedback(null), 700);
   }
   function skip(amount) {
+    if ((amount < 0 && positionValue.current <= 0) || (amount > 0 && positionValue.current >= total - .001)) return;
     requestSeek(positionValue.current + amount);
     showFeedback({ seek: amount });
     revealControls();
@@ -409,7 +410,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
             const index = slots.current[which];
             latest.current.onProgress(offsetFor(index) + videos.current[which].duration);
             if (latest.current.parts[index + 1]) switchPart(index + 1, 0, true);
-            else { wanted.current = latest.current.live; setPlaying(false); setWaiting(latest.current.live); }
+            else { positionValue.current = offsetFor(index) + videos.current[which].duration; setPosition(positionValue.current); wanted.current = latest.current.live; setPlaying(false); setWaiting(latest.current.live); }
             persistCheckpoint(true, true);
           }}
           onError={() => { if (which === active.current) { setWaiting(false); latest.current.onError("playback_failed"); } }}
@@ -431,9 +432,9 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
             onCommit={value=>{requestSeek(value);navigation.current.flush();revealControls();}}/>
           <span className="archive-clock archive-duration">{timeLabel(total)}</span></div>
         <div className="archive-control-row">
-          <PlayerButton name="back" label={t("skipBack")} onClick={() => skip(-10)} />
+          <PlayerButton name="back" label={t("skipBack")} disabled={!sourceReady || position <= 0} onClick={() => skip(-10)} />
           <PlayerButton name={playing ? "pause" : "play"} label={t(playing ? "pause" : "playerPlay")} onClick={toggle} />
-          <PlayerButton name="forward" label={t("skipForward")} onClick={() => skip(10)} />
+          <PlayerButton name="forward" label={t("skipForward")} disabled={!sourceReady || !(total > 0) || position >= total - .001} onClick={() => skip(10)} />
           <PlayerButton name={volume ? "volume" : "muted"} label={t(volume ? "mute" : "unmute")} onClick={mute} />
           <div className="player-volume-control"><input className="archive-volume" type="range" min="0" max="1" step="0.01" value={volume} aria-label={t("volume")} onChange={event => setVolume(Number(event.target.value))} style={{ "--range-progress": `${volume * 100}%` }} />
           <label className="player-volume-entry"><input type="number" min="0" max="100" value={Math.round(volume * 100)} aria-label={t("volumePercent")} onChange={event => setVolume(Math.max(0, Math.min(100, Number(event.target.value))) / 100)} /><span>%</span></label></div>

@@ -39,15 +39,28 @@ function LocalCutterPlayer({ options, bind }) {
   const root = useRef(document.getElementById('cutterPlayer'));
   const lastVolume = useRef(1);
   const position = useRef(0);
+  const [seekBounds, setSeekBounds] = useState({ start: true, end: false });
   const timeLabel = useRef(null);
   bind.current = setState;
+  function updateSeekBounds(time) {
+    const start = time <= 0, end = !(state.duration > 0) || time >= state.duration - 1 / (state.fps || 30) - .000001;
+    setSeekBounds(previous => previous.start === start && previous.end === end ? previous : { start, end });
+  }
   bind.position = time => {
     position.current = time;
+    updateSeekBounds(time);
     if (timeLabel.current) timeLabel.current.textContent = options.format(time);
   };
   const t = key => playerTexts[state.language === 'de' ? 'de' : 'en'][key] || key;
   const de = state.language === 'de';
   const video = options.video;
+  useEffect(() => {
+    const update = () => updateSeekBounds(video.currentTime);
+    const events = ['timeupdate', 'seeked', 'ended', 'loadedmetadata', 'emptied'];
+    events.forEach(event => video.addEventListener(event, update));
+    update();
+    return () => events.forEach(event => video.removeEventListener(event, update));
+  }, [state.duration, state.fps, state.active, video]);
   useEffect(() => {
     const update = () => setMedia({ playing: !video.paused, volume: video.volume, muted: video.muted, rate: video.playbackRate });
     const events = ['play', 'pause', 'volumechange', 'ratechange', 'loadedmetadata', 'emptied'];
@@ -87,9 +100,9 @@ function LocalCutterPlayer({ options, bind }) {
   </PlayerPanel>;
   return <><LocalCutterRanges state={state} options={options} root={root} t={t}/><div className="archive-controls local-cutter-controls" hidden={!state.active}>
     <div className="archive-control-row">
-      <PlayerButton name="back" label={t('skipBack')} disabled={!state.enabled} onClick={() => options.seek(video.currentTime - 10)}/>
+      <PlayerButton name="back" label={t('skipBack')} disabled={!state.enabled || seekBounds.start} onClick={() => options.seek(video.currentTime - 10)}/>
       <PlayerButton name={media.playing ? 'pause' : 'play'} label={media.playing ? t('pause') : t('playerPlay')} disabled={!state.enabled} onClick={options.play}/>
-      <PlayerButton name="forward" label={t('skipForward')} disabled={!state.enabled} onClick={() => options.seek(video.currentTime + 10)}/>
+      <PlayerButton name="forward" label={t('skipForward')} disabled={!state.enabled || seekBounds.end} onClick={() => options.seek(video.currentTime + 10)}/>
       <div className="player-volume-control">
         <PlayerButton name={media.muted || !media.volume ? 'muted' : 'volume'} label={t(media.muted ? 'unmute' : 'mute')} onClick={mute}/>
         <input className="archive-volume" type="range" min="0" max="1" step="0.01" aria-label={t('volume')} value={media.muted ? 0 : media.volume} onChange={event => volume(Number(event.target.value))} style={{ '--range-progress': (media.muted ? 0 : media.volume * 100) + '%' }}/>
