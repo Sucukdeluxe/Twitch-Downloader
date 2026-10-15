@@ -1,11 +1,12 @@
 # Changelog
 
-## 1.1.0 - Unreleased
+## 1.1.0 - 2026-10-15
 
 This update reorganizes VOD history into grouped sections, clarifies file verification activity and adds the application version to the window title.
 
 - Restore measured viewer counts in VOD previews and the viewer-history curve above the timeline, including correct stream timing and explicit measurement gaps.
 - Restyle the update button and action popover with neutral surfaces, clearer controls and no duplicate hover tooltip.
+- Prevent tooltips from briefly shifting the workspace and status bar upward.
 - Group categories and their title changes into bordered history sections, with smooth filter transitions and separate counters for categories and title changes.
 - Keep category trimming and title seeking available in the new layout, with readable text and reduced-motion support.
 - Prevent duplicate current-section labels from overlapping category duration and date.
