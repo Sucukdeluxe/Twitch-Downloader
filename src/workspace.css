@@ -167,6 +167,10 @@ body {
     line-height: 1.35;
 }
 
+body > [data-floating-ui-portal] {
+    display: contents;
+}
+
 button,
 input,
 select,
