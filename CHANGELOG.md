@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 - 2026-10-15
 
-This update keeps development sessions separate when installing or updating the normal application.
+This update speeds up opening VODs for trimming and keeps development sessions separate during normal application updates.
 
 - Restrict installer and uninstaller shutdown to the exact installed executable paths.
 - Give development builds a distinct executable filename so older installers cannot close them by matching the normal application name.
