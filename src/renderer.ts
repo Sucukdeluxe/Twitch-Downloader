@@ -1,3 +1,5 @@
+let appVersion = '';
+
 const QUEUE_SYNC_FAST_MS = 900;
 const QUEUE_SYNC_DEFAULT_MS = 1800;
 const QUEUE_SYNC_IDLE_MS = 4500;
@@ -22,6 +24,7 @@ async function init(): Promise<void> {
     downloading = isDown;
     markQueueActivity();
 
+    appVersion = version;
     byId('versionText').textContent = `v${version}`;
     byId('versionInfo').textContent = `Version: v${version}`;
     setPageTitle(UI_TEXT.appName);
@@ -974,12 +977,13 @@ function setPageTitle(text: string): void {
     const sectionTitle = activeTab
         ? ((UI_TEXT.tabs as Record<string, string>)[activeTab] || text)
         : text;
+    const versionSuffix = appVersion ? ` | v${appVersion}` : '';
     const devSuffix = isDevelopment
         ? (currentLanguage === 'en' ? ' | Development version' : ' | Entwicklerversion')
         : '';
     document.title = sectionTitle && sectionTitle !== UI_TEXT.appName
-        ? `${UI_TEXT.appName} - ${sectionTitle}${devSuffix}`
-        : `${UI_TEXT.appName}${devSuffix}`;
+        ? `${UI_TEXT.appName} - ${sectionTitle}${versionSuffix}${devSuffix}`
+        : `${UI_TEXT.appName}${versionSuffix}${devSuffix}`;
 }
 let queueSyncInFlight = false;
 let lastQueueActivityAt = Date.now();

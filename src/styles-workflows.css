@@ -3870,17 +3870,19 @@ body.theme-light .modal {
 }
 
 .queue-progress-bar.is-finalizing {
-    width: 40% !important;
+    width: 100% !important;
+    transition: none;
     animation: queue-finalizing 1.6s ease-in-out infinite;
 }
 
 @keyframes queue-finalizing {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(350%); }
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .queue-progress-bar.is-finalizing { animation: none; transform: translateX(75%); }
+    .queue-progress-bar.is-finalizing { animation: none; }
+    .queue-item:has(.status.downloading) .queue-progress-bar.is-finalizing::after { display: none; animation: none; }
 }
 
 .queue-progress-info .queue-progress-status {

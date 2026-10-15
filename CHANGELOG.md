@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 - Unreleased
+
+This update clarifies file verification activity and adds the application version to the window title.
+
+- Keep the progress indicator full-width during file verification and other finalization steps without measurable progress, including when reduced motion is enabled.
+- Show the active section and application version in the window title, with a separate development label when applicable.
+
 ## 1.0.49 - 2026-10-15
 
 This patch prevents direct VOD downloads from remaining stuck when the server stops responding.

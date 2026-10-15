@@ -6787,7 +6787,7 @@ function createWindow(): void {
         height: 900,
         minWidth: 1200,
         minHeight: 700,
-        title: `${WINDOWS_APP_IDENTITY.name} [v${APP_VERSION}]`,
+        title: `${WINDOWS_APP_IDENTITY.name} | v${APP_VERSION}`,
         backgroundColor: '#0e0e10',
         icon: windowIconPath,
         autoHideMenuBar: true,
