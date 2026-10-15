@@ -37,11 +37,13 @@ function TrackClip({ clip, asset, index, left, width, viewport, audio, selected,
 export function MergeWorkspace({ files, language, locked, active, history, callbacks, timelineHost }) {
   const text = (de, en) => language === 'en' ? en : de;
   const [assets, setAssets] = useState({}), [selected, setSelected] = useState(files[0]?.id || ''), [, setPosition] = useState(0), [zoom, setZoom] = useState(1), [snap, setSnap] = useState(true), [viewport, setViewport] = useState({ left: 0, width: 1000 }), [muted, setMuted] = useState(false), [drag, setDrag] = useState(null), [seekRequest, setSeekRequest] = useState(null), [error, setError] = useState(false), [sourcesOpen, setSourcesOpen] = useState(false), [loadingPreview, setLoadingPreview] = useState(false);
-  const host = useRef(null), scroll = useRef(null), cache = useRef(new Map()), pointer = useRef(null), latest = useRef(null), previous = useRef(null), mounted = useRef(true), dialog = useRef(null), playerClock = useRef(0), clockOutput = useRef(null), head = useRef(null), activeClip = useRef(''), notifySelection = useRef(''), animation = useRef(0), seekFrame = useRef(0), pendingSeek = useRef(null), lastSeek = useRef(0), expectedSeek = useRef(null), pendingScroll = useRef(null), scrollFrame = useRef(0), pendingPreview = useRef(null), outsideDialog = useRef(false), scrollAnimation = useRef(0);
+  const host = useRef(null), scroll = useRef(null), cache = useRef(new Map()), pointer = useRef(null), latest = useRef(null), previous = useRef(null), mounted = useRef(true), dialog = useRef(null), playerClock = useRef(0), clockOutput = useRef(null), head = useRef(null), activeClip = useRef(''), notifySelection = useRef(''), animation = useRef(0), seekFrame = useRef(0), pendingSeek = useRef(null), lastSeek = useRef(0), expectedSeek = useRef(null), pendingScroll = useRef(null), scrollFrame = useRef(0), pendingPreview = useRef(null), outsideDialog = useRef(false), scrollAnimation = useRef(0), manualView = useRef(false);
   const layout = useMemo(() => timelineLayout(files), [files]);
-  const duration = layout.duration, displayDuration = Math.max(1, duration), contentWidth = Math.max(1, viewport.width - TIMELINE_INSET * 2) * zoom, canvasWidth = contentWidth + TIMELINE_INSET * 2, scale = contentWidth / displayDuration, maxZoom = maximumZoom(layout.clips);
+  const maxZoom = maximumZoom(layout.clips), currentZoom = files.length ? Math.max(1, Math.min(maxZoom, zoom)) : 1;
+  const duration = layout.duration, displayDuration = Math.max(1, duration), contentWidth = Math.max(1, viewport.width - TIMELINE_INSET * 2) * currentZoom, canvasWidth = contentWidth + TIMELINE_INSET * 2, scale = contentWidth / displayDuration;
   const parts = useMemo(() => files.map(file => ({ id: file.id, url: assets[file.id]?.url || '', duration: file.durationSeconds || 0 })), [files, assets]);
-  latest.current = { files, layout, scale, selected, locked, active, callbacks, duration, snap, viewport, zoom, maxZoom };
+  latest.current = { files, layout, scale, selected, locked, active, callbacks, duration, snap, viewport, zoom: currentZoom, maxZoom };
+  useLayoutEffect(() => { if (zoom !== currentZoom) setZoom(currentZoom); }, [zoom, currentZoom]);
   const publish = useCallback(() => { if (mounted.current) setAssets(Object.fromEntries(cache.current)); }, []);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; cancelAnimationFrame(animation.current); cancelAnimationFrame(seekFrame.current); cancelAnimationFrame(scrollFrame.current); cancelAnimationFrame(scrollAnimation.current); }; }, []);
   const key = files.map(file => file.id + ':' + file.token + ':' + !!file.missing).join('|');
@@ -75,6 +77,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     const node = scroll.current;
     if (!node) return;
     cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0;
+    manualView.current = true;
     const target = Math.max(0, Math.min(node.scrollWidth - node.clientWidth, left));
     if (!smooth || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { node.scrollLeft = target; updateViewport(); return; }
     const start = node.scrollLeft, started = performance.now();
@@ -119,7 +122,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     const time = boundedTime(value, shouldSnap);
     paintPosition(time); setPosition(time); setError(false);
     expectedSeek.current = { time, until: performance.now() + 2000 };
-    if (selectClip) { const anchor = timelinePosition(latest.current.layout.clips, time); setSelected(anchor.id); activeClip.current = anchor.id; }
+    if (selectClip) { manualView.current = false; const anchor = timelinePosition(latest.current.layout.clips, time); setSelected(anchor.id); activeClip.current = anchor.id; }
     dispatchSeek(time, resume);
   }, [boundedTime, paintPosition, dispatchSeek]);
   const scheduleSeek = value => {
@@ -166,7 +169,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     const anchor = timelinePosition(latest.current.layout.clips, value);
     if (activeClip.current !== anchor.id) { activeClip.current = anchor.id; setSelected(anchor.id); setError(false); }
     const scroller = scroll.current;
-    if (scroller && host.current?.querySelector('video.active')?.paused === false) { const x = TIMELINE_INSET + value * latest.current.scale; if (x > scroller.scrollLeft + scroller.clientWidth - 24 || x < scroller.scrollLeft) { scroller.scrollLeft = Math.max(0, x - scroller.clientWidth * .3); updateViewport(); } }
+    if (scroller && !manualView.current && host.current?.querySelector('video.active')?.paused === false) { const x = TIMELINE_INSET + value * latest.current.scale; if (x > scroller.scrollLeft + scroller.clientWidth - 24 || x < scroller.scrollLeft) { scroller.scrollLeft = Math.max(0, x - scroller.clientWidth * .3); updateViewport(); } }
   }, [paintPosition, updateViewport]);
   const currentFile = files.find(file => file.id === selected), info = assets[selected]?.info;
   useEffect(() => { const value = JSON.stringify([selected, info]); if (notifySelection.current !== value) { notifySelection.current = value; callbacks.selection?.(currentFile, info); } }, [selected, info, currentFile, callbacks]);
@@ -195,7 +198,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     if (file && locked) return;
     event.preventDefault(); event.stopPropagation(); (event.currentTarget.closest('.merge-playhead') || event.currentTarget).focus({ preventScroll: true }); cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0;
     if (file) {
-      setSelected(file.id);
+      manualView.current = true; setSelected(file.id);
       pointer.current = { kind: 'reorder', id: file.id, x: event.clientX, clientX: event.clientX, grab: event.clientX - event.currentTarget.getBoundingClientRect().left, moving: false, target: files.findIndex(entry => entry.id === file.id) };
     } else {
       pointer.current = { kind: 'scrub', clientX: event.clientX, original: playerClock.current, resume: playing() };
@@ -214,6 +217,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
   const changeZoom = useCallback((value, fraction = .5) => {
     const current = latest.current, node = scroll.current;
     if (!node) return;
+    manualView.current = true;
     cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0;
     const next = Math.max(1, Math.min(current.maxZoom, value));
     if (next === current.zoom) return;
@@ -239,8 +243,8 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
   }, [changeZoom, updateViewport, scrollTimeline]);
-  const fitAll = () => { cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0; pendingScroll.current = null; setZoom(1); scroll.current.scrollLeft = 0; updateViewport(); };
-  function fitSelection(id = selected) { cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0; const clip = layout.clips.find(entry => entry.file.id === id); if (!clip) return; pendingScroll.current = { time: clip.start + clip.duration / 2, fraction: .5 }; setZoom(Math.min(maxZoom, Math.max(1, displayDuration / clip.duration * .8))); if (zoom === Math.min(maxZoom, Math.max(1, displayDuration / clip.duration * .8))) { scroll.current.scrollLeft = Math.max(0, TIMELINE_INSET + (clip.start + clip.duration / 2) * scale - viewport.width / 2); pendingScroll.current = null; updateViewport(); } }
+  const fitAll = () => { manualView.current = false; cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0; pendingScroll.current = null; setZoom(1); scroll.current.scrollLeft = 0; updateViewport(); };
+  function fitSelection(id = selected) { manualView.current = true; cancelAnimationFrame(scrollAnimation.current); scrollAnimation.current = 0; const clip = layout.clips.find(entry => entry.file.id === id); if (!clip) return; pendingScroll.current = { time: clip.start + clip.duration / 2, fraction: .5 }; setZoom(Math.min(maxZoom, Math.max(1, displayDuration / clip.duration * .8))); if (zoom === Math.min(maxZoom, Math.max(1, displayDuration / clip.duration * .8))) { scroll.current.scrollLeft = Math.max(0, TIMELINE_INSET + (clip.start + clip.duration / 2) * scale - viewport.width / 2); pendingScroll.current = null; updateViewport(); } }
   const keyDown = (event, file) => { if (locked) return; if (event.key === 'Delete') { event.preventDefault(); callbacks.remove(file.id); } else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); reorder(file.id, event.key === 'ArrowLeft' ? -1 : 1); } else if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); (event.key.toLowerCase() === 'y' || event.shiftKey ? callbacks.redo : callbacks.undo)(); } else if (['Enter', ' '].includes(event.key)) { event.preventDefault(); select(file.id); } };
   const step = [1, 2, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200].find(value => value * scale >= 80) || 14400;
   const startTick = Math.max(0, Math.floor((viewport.left - TIMELINE_INSET) / scale / step));
@@ -250,7 +254,7 @@ export function MergeWorkspace({ files, language, locked, active, history, callb
     <header className="merge-timeline-toolbar"><strong>{text('Sequenz', 'Sequence')}</strong><output ref={clockOutput}>{clock(playerClock.current)}</output><span className="merge-total">/ {clock(duration)}</span><span className="merge-separator"/>
       <IconButton label={text('Rückgängig · Strg+Z', 'Undo · Ctrl+Z')} disabled={locked || !history.undo} onClick={callbacks.undo}><Undo2/></IconButton><IconButton label={text('Wiederholen · Strg+Y', 'Redo · Ctrl+Y')} disabled={locked || !history.redo} onClick={callbacks.redo}><Redo2/></IconButton><span className="merge-separator"/>
       <IconButton label={text('Clip nach links', 'Move clip left')} disabled={locked || !selected || files[0]?.id === selected} onClick={() => reorder(selected, -1)}><ChevronLeft/></IconButton><IconButton label={text('Clip nach rechts', 'Move clip right')} disabled={locked || !selected || files.at(-1)?.id === selected} onClick={() => reorder(selected, 1)}><ChevronRight/></IconButton><IconButton label={text('Clip entfernen', 'Remove clip')} disabled={locked || !selected} onClick={() => callbacks.remove(selected)}><Trash2/></IconButton>
-      <span className="merge-grow"/><ToolButton label={text('Einrasten', 'Snap')} className={'merge-tool ' + (snap ? 'active' : '')} aria-pressed={snap} onClick={() => setSnap(!snap)}><span>{text('Einrasten', 'Snap')}</span><Magnet/></ToolButton><ToolButton label={text('Quelldateien', 'Source files')} className="merge-tool" onClick={() => setSourcesOpen(true)}><Files/><span>{text('Quelldateien', 'Source files')}</span></ToolButton><span className="merge-separator"/><button type="button" className="merge-tool" onClick={fitAll}>{text('Gesamt', 'Fit')}</button><ToolButton label={text('Auswahl', 'Selection')} className="merge-tool" disabled={!currentFile || !layout.ready} onClick={() => fitSelection()}><ScanLine/><span>{text('Auswahl', 'Selection')}</span></ToolButton><div className="merge-zoom"><IconButton label={text('Verkleinern', 'Zoom out')} onClick={() => changeZoom(zoom / 1.4)}>−</IconButton><input aria-label={text('Timeline-Zoom', 'Timeline zoom')} aria-valuetext={zoom.toFixed(1) + '×'} type="range" min="0" max="100" step=".1" value={Math.log(Math.min(zoom, maxZoom)) / Math.log(maxZoom) * 100} onChange={event => changeZoom(Math.pow(maxZoom, Number(event.target.value) / 100))}/><IconButton label={text('Vergrößern', 'Zoom in')} onClick={() => changeZoom(zoom * 1.4)}>+</IconButton><output className="merge-zoom-value">{zoom.toLocaleString(language === 'en' ? 'en-US' : 'de-DE', { maximumFractionDigits: 1 })}×</output></div>
+      <span className="merge-grow"/><ToolButton label={text('Einrasten', 'Snap')} className={'merge-tool ' + (snap ? 'active' : '')} aria-pressed={snap} onClick={() => setSnap(!snap)}><span>{text('Einrasten', 'Snap')}</span><Magnet/></ToolButton><ToolButton label={text('Quelldateien', 'Source files')} className="merge-tool" onClick={() => setSourcesOpen(true)}><Files/><span>{text('Quelldateien', 'Source files')}</span></ToolButton><span className="merge-separator"/><button type="button" className="merge-tool" onClick={fitAll}>{text('Gesamt', 'Fit')}</button><ToolButton label={text('Auswahl', 'Selection')} className="merge-tool" disabled={!currentFile || !layout.ready} onClick={() => fitSelection()}><ScanLine/><span>{text('Auswahl', 'Selection')}</span></ToolButton><div className="merge-zoom"><IconButton label={text('Verkleinern', 'Zoom out')} onClick={() => changeZoom(currentZoom / 1.4)}>−</IconButton><input aria-label={text('Timeline-Zoom', 'Timeline zoom')} aria-valuetext={currentZoom.toFixed(1) + '×'} type="range" min="0" max="100" step=".1" value={Math.log(currentZoom) / Math.log(maxZoom) * 100} onChange={event => changeZoom(Math.pow(maxZoom, Number(event.target.value) / 100))}/><IconButton label={text('Vergrößern', 'Zoom in')} onClick={() => changeZoom(currentZoom * 1.4)}>+</IconButton><output className="merge-zoom-value">{currentZoom.toLocaleString(language === 'en' ? 'en-US' : 'de-DE', { maximumFractionDigits: 1 })}×</output></div>
     </header>
     <div className="merge-tracks"><aside className="merge-track-labels"><span className="merge-ruler-label">{text('Spuren', 'Tracks')}</span><div className="merge-track-heading"><b>V1</b><span>Video</span></div><div className="merge-track-heading"><b>A1</b><span>Audio</span><IconButton label={muted ? text('Audio aktivieren', 'Unmute audio') : text('Stummschalten', 'Mute audio')} aria-pressed={muted} onClick={() => host.current?.querySelector('.archive-control-row button[aria-label="' + playerTexts[language]?.[muted ? 'unmute' : 'mute'] + '"]')?.click()}>{muted ? <VolumeX/> : <Volume2/>}</IconButton></div></aside>
     <div className="merge-timeline-scroll" id="merge-timeline-viewport" ref={scroll} onScroll={() => { if (!scrollFrame.current) scrollFrame.current = requestAnimationFrame(() => { scrollFrame.current = 0; updateViewport(); }); }}><div className={'merge-timeline-canvas ' + (muted ? 'audio-muted' : '')} style={{ width: canvasWidth, '--merge-tick-step': step * scale + 'px' }} onPointerMove={event => movePointer(event.clientX)} onPointerUp={endPointer} onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer}>

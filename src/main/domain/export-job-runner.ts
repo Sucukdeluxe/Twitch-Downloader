@@ -1,4 +1,5 @@
 import { compareMergeMedia, type MergeCompatibility } from './merge-compatibility';
+import { createAudioTimelineFilter } from './audio-processing';
 import { spawn, execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -151,12 +152,15 @@ export function createExportJobRunner(options: ExportJobRunnerOptions) {
                         for (let a = 0; a < audios[0].length; a++) {
                             const layout = audios[0][a].channel_layout || (audios[0][a].channels === 1 ? 'mono' : audios[0][a].channels === 2 ? 'stereo' : '');
                             if (!/^[a-z0-9.()+-]+$/i.test(layout)) throw new Error('Unsupported merge channel layout');
-                            filters.push('[' + i + ':a:' + a + ']asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=' + layout + '[a' + i + '_' + a + ']');
+                            filters.push('[' + i + ':a:' + a + ']' + createAudioTimelineFilter(48000) + ',aformat=sample_fmts=fltp:channel_layouts=' + layout + '[a' + i + '_' + a + ']');
                         }
                     }
                     const labels = sources.map((_, i) => '[v' + i + ']' + audios[0].map((_, a) => '[a' + i + '_' + a + ']').join('')).join('');
                     filters.push(labels + 'concat=n=' + sources.length + ':v=1:a=' + audios[0].length + '[vout]' + audios[0].map((_, a) => '[aout' + a + ']').join(''));
-                    args = ['-hide_banner', '-nostdin', '-y', ...sources.flatMap(source => ['-i', source.path]), '-filter_complex', filters.join(';'), '-map', '[vout]', ...audios[0].flatMap((_, a) => ['-map', '[aout' + a + ']']), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', ...audios[0].flatMap((stream, index) => /^[a-z]{2,3}$/i.test(stream.tags?.language || '') ? ['-metadata:s:a:' + index, 'language=' + stream.tags!.language] : []), '-progress', 'pipe:1', '-nostats', temporary];
+                    args = ['-hide_banner', '-nostdin', '-y', '-copyts', ...sources.flatMap((source, index) => {
+                        const start = Number(videos[index].start_time ?? probes[index].format.start_time);
+                        return ['-itsoffset', String(Number.isFinite(start) ? -start : 0), '-i', source.path];
+                    }), '-filter_complex', filters.join(';'), '-map', '[vout]', ...audios[0].flatMap((_, a) => ['-map', '[aout' + a + ']']), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', ...audios[0].flatMap((stream, index) => /^[a-z]{2,3}$/i.test(stream.tags?.language || '') ? ['-metadata:s:a:' + index, 'language=' + stream.tags!.language] : []), '-progress', 'pipe:1', '-nostats', temporary];
                 }
             }
             try { await runExportProcess(tools.ffmpeg, args, duration, context); }

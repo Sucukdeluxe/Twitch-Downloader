@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.3 - 2026-10-15
+
+This update introduces a timeline workspace for combining videos and fixes timeline navigation and audio timing.
+
+- Arrange linked video and audio clips on a timeline with previews, waveforms, undo and redo.
+- Zoom around the mouse pointer and use a larger horizontal scrollbar without losing your chosen view during playback.
+- Keep zoom controls consistent after adding or removing clips.
+- Preserve audio start offsets when re-encoding merged videos.
+- Browse source files in a centered dialog with previews and readable controls.
+- Wait for valid video timing before starting the merge preview.
+
 ## 1.1.2 - 2026-10-15
 
 This update adds a configurable seek interval and fixes the forward control at the end of VODs.
