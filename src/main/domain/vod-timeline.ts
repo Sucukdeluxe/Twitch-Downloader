@@ -26,6 +26,11 @@ export interface VodTitleEvent {
     priority: number;
 }
 
+export interface VodViewerSample {
+    at: number;
+    viewers: number;
+}
+
 export interface VodTimeline {
     vodId: string;
     title: string;
@@ -34,6 +39,8 @@ export interface VodTimeline {
     login: string;
     chapters: VodChapter[];
     titleHistory: VodTitleEvent[];
+    viewerHistory: VodViewerSample[][];
+    viewerGaps: [VodViewerSample, VodViewerSample][];
     chaptersStatus: 'available' | 'empty' | 'unavailable';
     titlesStatus: 'local' | 'streamrecorder' | 'unavailable';
 }
@@ -123,15 +130,20 @@ export async function readLocalVodTitles(directory: string, timeline: VodTimelin
     } catch { return []; }
 }
 
-export function normalizeStreamrecorderTitles(value: unknown, timeline: VodTimeline): VodTitleEvent[] {
+function streamrecorderEnvelope(value: unknown, timeline: VodTimeline): (Record<string, unknown> & { started: number; ended: number }) | null {
     const data = record(value);
     if (!data || data.source !== 'streamrecorder' || data.login !== timeline.login
         || typeof data.streamId !== 'string' || !/^\d{1,30}$/.test(data.streamId)
         || typeof data.started !== 'number' || !Number.isSafeInteger(data.started)
         || Math.abs(data.started - timeline.started) > 60000
         || typeof data.ended !== 'number' || !Number.isSafeInteger(data.ended)
-        || data.ended <= data.started || data.ended - data.started > 7 * 86400000
-        || !Array.isArray(data.titleHistory) || data.titleHistory.length > 512) return [];
+        || data.ended <= data.started || data.ended - data.started > 7 * 86400000) return null;
+    return data as Record<string, unknown> & { started: number; ended: number };
+}
+
+export function normalizeStreamrecorderTitles(value: unknown, timeline: VodTimeline): VodTitleEvent[] {
+    const data = streamrecorderEnvelope(value, timeline);
+    if (!data || !Array.isArray(data.titleHistory) || data.titleHistory.length > 512) return [];
     const result: VodTitleEvent[] = [];
     const ids = new Set<string>();
     const end = timeline.started + timeline.duration * 1000;
@@ -156,8 +168,35 @@ export function normalizeStreamrecorderTitles(value: unknown, timeline: VodTimel
     return result;
 }
 
-export async function readStreamrecorderVodTitles(timeline: VodTimeline, signal: AbortSignal, fetchHistory: typeof fetch = fetch): Promise<VodTitleEvent[]> {
-    if (!/^[a-z0-9_]{1,25}$/.test(timeline.login)) return [];
+export function normalizeStreamrecorderViewers(value: unknown, timeline: VodTimeline): { history: VodViewerSample[][]; gaps: [VodViewerSample, VodViewerSample][] } {
+    const empty = { history: [], gaps: [] };
+    const data = streamrecorderEnvelope(value, timeline);
+    if (!data || !Array.isArray(data.viewerHistory) || data.viewerHistory.length > 50000) return empty;
+    const history: VodViewerSample[][] = [];
+    const gaps: [VodViewerSample, VodViewerSample][] = [];
+    let count = 0;
+    let previous: VodViewerSample | undefined;
+    for (const source of data.viewerHistory) {
+        if (!Array.isArray(source) || !source.length || (count += source.length) > 50000) return empty;
+        const run: VodViewerSample[] = [];
+        for (const entry of source) {
+            const point = record(entry);
+            if (!point || typeof point.at !== 'number' || !Number.isSafeInteger(point.at) || point.at < data.started || point.at > data.ended
+                || typeof point.viewers !== 'number' || !Number.isSafeInteger(point.viewers) || point.viewers < 0
+                || (previous && point.at <= previous.at) || (run.length && point.at - run.at(-1)!.at > 30000)) return empty;
+            const sample = { at:point.at, viewers:point.viewers };
+            if (!run.length && previous && sample.at - previous.at > 30000) gaps.push([previous, sample]);
+            run.push(sample);
+            previous = sample;
+        }
+        history.push(run);
+    }
+    return { history, gaps };
+}
+
+export async function readStreamrecorderVodHistory(timeline: VodTimeline, signal: AbortSignal, fetchHistory: typeof fetch = fetch): Promise<{ titles: VodTitleEvent[]; history: VodViewerSample[][]; gaps: [VodViewerSample, VodViewerSample][] }> {
+    const empty = { titles: [], history: [], gaps: [] };
+    if (!/^[a-z0-9_]{1,25}$/.test(timeline.login)) return empty;
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
@@ -167,22 +206,27 @@ export async function readStreamrecorderVodTitles(timeline: VodTimeline, signal:
         const response = await fetchHistory('https://streamrecorder.eu/api/streamers/' + timeline.login + '/title-history?started=' + timeline.started, {
             method: 'GET', credentials: 'omit', redirect: 'error', signal: controller.signal, headers: { Accept: 'application/json' },
         });
-        if (!response.ok) { await response.body?.cancel(); return []; }
+        if (!response.ok) { await response.body?.cancel(); return empty; }
         const reader = response.body?.getReader();
-        if (!reader) return [];
+        if (!reader) return empty;
         const chunks: Uint8Array[] = [];
         let bytes = 0;
         while (true) {
             const chunk = await reader.read();
             if (chunk.done) break;
             bytes += chunk.value.byteLength;
-            if (bytes > 2 * 1024 * 1024) { await reader.cancel(); return []; }
+            if (bytes > 2 * 1024 * 1024) { await reader.cancel(); return empty; }
             chunks.push(chunk.value);
         }
         controller.signal.throwIfAborted();
-        return normalizeStreamrecorderTitles(JSON.parse(Buffer.concat(chunks).toString('utf8')), timeline);
-    } catch { return []; }
+        const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        return { titles:normalizeStreamrecorderTitles(payload, timeline), ...normalizeStreamrecorderViewers(payload, timeline) };
+    } catch { return empty; }
     finally { clearTimeout(timeout); signal.removeEventListener('abort', abort); controller.abort(); }
+}
+
+export async function readStreamrecorderVodTitles(timeline: VodTimeline, signal: AbortSignal, fetchHistory: typeof fetch = fetch): Promise<VodTitleEvent[]> {
+    return (await readStreamrecorderVodHistory(timeline, signal, fetchHistory)).titles;
 }
 
 export class VodTimelineService {
@@ -233,7 +277,7 @@ export class VodTimelineService {
                 if (result && (result.started !== started || result.login !== text(record(video.owner)?.login).toLowerCase())) return null;
                 const moments = record(video.moments), batch = moments?.edges;
                 result = { vodId, title: text(video.title), started, duration,
-                    login: text(record(video.owner)?.login).toLowerCase(), chapters: [], titleHistory: [],
+                    login: text(record(video.owner)?.login).toLowerCase(), chapters: [], titleHistory: [], viewerHistory: [], viewerGaps: [],
                     chaptersStatus: Array.isArray(batch) ? 'empty' : 'unavailable', titlesStatus: 'unavailable' };
                 if (!Array.isArray(batch)) break;
                 edges.push(...batch);
@@ -249,11 +293,13 @@ export class VodTimelineService {
             if (result.chapters.length) result.chaptersStatus = 'available';
             clearTimeout(timeout);
             const [remote, local] = await Promise.all([
-                readStreamrecorderVodTitles(result, signal, this.fetchHistory),
+                readStreamrecorderVodHistory(result, signal, this.fetchHistory),
                 readLocalVodTitles(downloadDirectory, result, signal),
             ]);
-            result.titleHistory = remote.length ? remote : local;
-            result.titlesStatus = remote.length ? 'streamrecorder' : local.length ? 'local' : 'unavailable';
+            result.titleHistory = remote.titles.length ? remote.titles : local;
+            result.viewerHistory = remote.history;
+            result.viewerGaps = remote.gaps;
+            result.titlesStatus = remote.titles.length ? 'streamrecorder' : local.length ? 'local' : 'unavailable';
             signal.throwIfAborted();
             return result;
         } finally {

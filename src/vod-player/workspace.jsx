@@ -274,7 +274,7 @@ function Workspace({ options, bind }) {
   }}>
     <WorkspaceBoundary text={text} onFailure={() => { stopPreview(); selectedPlayback.current = false; setSelectionPlaying(false); setSeekRequest({ seconds:position, playing:false }); }}>
     {session ? <ArchivePlayer key={session.id} id={options.url} userId="tvm-local" parts={parts} seconds={range.start}
-      broadcastStarted={started} started t={t} chapters={chapters} titleHistory={metadata?.titleHistory || []} vodTitle={metadata?.title || options.title} chapterPreview={chapterPreview} onProgress={() => {}} onError={() => setError(true)}
+      broadcastStarted={started} viewerHistory={metadata?.viewerHistory} viewerGaps={metadata?.viewerGaps} started t={t} chapters={chapters} titleHistory={metadata?.titleHistory || []} vodTitle={metadata?.title || options.title} chapterPreview={chapterPreview} onProgress={() => {}} onError={() => setError(true)}
       onPosition={onPosition} onTimeline={onTimeline} seekRequest={seekRequest} excerptRange={omitting ? selection : null} onExcerptRange={changeExcerpt} cutRange={omitting && (editing === null || !draftBounds) ? null : range} cutLimits={omitting ? draftBounds : null} onCutRange={changeRange} cutText={text} omissions={visibleOmissions}/>
       : !error && <div className="vod-player-loading" role="status"><span className="vod-loading-symbol"/>{text.loading}</div>}
     {error && <div className="vod-player-error" role="status"><span>{text.failed}</span><button type="button" className="btn-secondary" onClick={() => setAttempt(value => value + 1)}>{text.retry}</button></div>}
@@ -299,7 +299,7 @@ function Workspace({ options, bind }) {
       filename={part => options.filename?.(part) || ''}/>, document.getElementById('clipOmissionPanel'))}
     {['start', 'end'].map(which => createPortal(<button type="button" className="vod-set-boundary" disabled={!session} aria-label={which === 'start' ? text.markStart : text.markEnd} title={which === 'start' ? text.markStart : text.markEnd} onClick={() => mark(which, true)}>{text.setHere}</button>, document.getElementById(which === 'start' ? 'clipMarkStart' : 'clipMarkEnd'), which))}
     {!omitting && createPortal(<><CutTimeline omissions={visibleOmissions} chapters={chapters} duration={Math.max(.1, duration)} range={range} position={position} onChange={changeRange} onSeek={seek} text={text}
-      finePreview={{root:host, parts, broadcastStarted:started, chapters, titleHistory:metadata?.titleHistory || [], vodTitle:metadata?.title || options.title, omissions:visibleOmissions, t}}/>
+      finePreview={{root:host, parts, broadcastStarted:started, chapters, viewerHistory:metadata?.viewerHistory, viewerGaps:metadata?.viewerGaps, titleHistory:metadata?.titleHistory || [], vodTitle:metadata?.title || options.title, omissions:visibleOmissions, t}}/>
     <div className="vod-mark-actions" title={text.keyboard}>
       <button type="button" className="btn-secondary" disabled={!session} onClick={playRange}>{selectionPlaying || previewing ? text.stopRange : text.playRange}</button>
       <button type="button" className="btn-secondary" onClick={() => changeRange(0, duration)}>{text.full}</button>
