@@ -1,7 +1,40 @@
-!macro customInit
-  ; Kill running Twitch Downloader / legacy Twitch VOD Manager process before installation
-  nsExec::ExecToLog 'taskkill /F /IM "Twitch Downloader.exe"'
-  nsExec::ExecToLog 'taskkill /F /IM "Twitch VOD Manager.exe"'
+!macro customCheckAppRunning
+  Push $R0
+  Push $R1
+  Push $R2
+  StrCpy $R2 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
+  IfFileExists "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" 0 +2
+    StrCpy $R2 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\close-installed-app.ps1 "${BUILD_RESOURCES_DIR}\close-installed-app.ps1"
+  nsExec::ExecToStack '"$R2" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\close-installed-app.ps1" -InstallDirectory "$INSTDIR" -Mode Check'
+  Pop $R0
+  Pop $R1
+  ${if} $R0 == 10
+    ${ifNot} ${Silent}
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDCANCEL IDOK closeInstalledApp
+      SetErrorLevel 2
+      Quit
+    ${endIf}
+    closeInstalledApp:
+      nsExec::ExecToStack '"$R2" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\close-installed-app.ps1" -InstallDirectory "$INSTDIR" -Mode Close'
+      Pop $R0
+      Pop $R1
+      ${if} $R0 != 0
+        DetailPrint "$R1"
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY closeInstalledApp
+        SetErrorLevel 2
+        Quit
+      ${endIf}
+  ${elseIf} $R0 != 0
+    DetailPrint "$R1"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(appCannotBeClosed)"
+    SetErrorLevel 2
+    Quit
+  ${endIf}
+  Pop $R2
+  Pop $R1
+  Pop $R0
 !macroend
 
 !macro removeOrphanedRegistration ROOT

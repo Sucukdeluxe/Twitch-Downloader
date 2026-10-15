@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+This update keeps development sessions separate when installing or updating the normal application.
+
+- Restrict installer and uninstaller shutdown to the exact installed executable paths.
+- Give development builds a distinct executable filename so older installers cannot close them by matching the normal application name.
+
 ## 1.1.0 - 2026-10-15
 
 This update reorganizes VOD history into grouped sections, clarifies file verification activity and adds the application version to the window title.

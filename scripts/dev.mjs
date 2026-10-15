@@ -86,7 +86,7 @@ async function ensureDevelopmentBuild() {
             const { prepareWindowsDevExecutable } = await import(helperPath);
             electronExecutable = await prepareWindowsDevExecutable({
                 sourcePath: electronSourceExecutable,
-                destinationPath: resolve(rootDirectory, 'node_modules', 'electron', 'dist', 'Twitch Downloader.exe'),
+                destinationPath: resolve(rootDirectory, 'node_modules', 'electron', 'dist', 'Twitch Downloader Development.exe'),
                 iconPath: resolve(rootDirectory, 'build', 'icon.ico'),
                 version: developmentAppVersion,
             });

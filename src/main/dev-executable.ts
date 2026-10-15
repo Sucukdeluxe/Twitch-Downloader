@@ -41,10 +41,10 @@ export async function prepareWindowsDevExecutable(options: WindowsDevExecutableO
         const languages = versionInfo.getAllLanguagesForStringValues();
         const language = languages[0] || { lang: 0x0409, codepage: 1200 };
         versionInfo.setStringValues(language, {
-            FileDescription: 'Twitch Downloader',
-            ProductName: 'Twitch Downloader',
-            InternalName: 'Twitch Downloader',
-            OriginalFilename: 'Twitch Downloader.exe'
+            FileDescription: 'Twitch Downloader Development',
+            ProductName: 'Twitch Downloader Development',
+            InternalName: 'Twitch Downloader Development',
+            OriginalFilename: path.basename(destination)
         });
         versionInfo.setFileVersion(options.version);
         versionInfo.setProductVersion(options.version);

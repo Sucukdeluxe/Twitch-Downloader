@@ -28,7 +28,7 @@ export async function runtimeFiles(root) {
 export async function releaseFingerprint(root) {
     const hash = createHash('sha256');
     hash.update(await sourceFingerprint(root));
-    const files = [...await runtimeFiles(root), 'scripts/package-release.mjs', 'scripts/release-gate.mjs', 'scripts/release-tools.mjs', 'scripts/public-release-files.json'];
+    const files = [...await runtimeFiles(root), 'build/installer.nsh', 'build/close-installed-app.ps1', 'scripts/package-release.mjs', 'scripts/release-gate.mjs', 'scripts/release-tools.mjs', 'scripts/public-release-files.json'];
     for (const file of files) { hash.update(file); hash.update(await readFile(resolve(root, file))); }
     return hash.digest('hex');
 }
