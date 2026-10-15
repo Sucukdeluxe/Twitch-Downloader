@@ -632,6 +632,8 @@ interface Window {
         }): { update(state: LocalCutterViewState): void; updatePosition(time: number): void; destroy(): void };
     };
     VodPlayer: {
+        mountMerge(element: HTMLElement, callbacks: { add(): void; reorder(ids: string[]): void; remove(id: string): void; undo(): void; redo(): void; selection(file: MergeFileReference | undefined, info?: { width: number; height: number; fps: number }): void }): { update(state: { files: MergeFileReference[]; language: string; locked: boolean; active: boolean; history: { undo: boolean; redo: boolean }; timelineHost: HTMLElement }): void; destroy(): void };
+
         setSeekSeconds(value: number): void;
         mountClipControls(element: HTMLElement, callbacks: { open(): void; folder(): void; remove(): void }): { update(state: { kind: 'ready' | 'done' | 'error' | 'loading'; label: string; available: boolean; removable: boolean; disabled: boolean; labels: { open: string; folder: string; remove: string } }): void; destroy(): void };
         mountClipMenu(element: HTMLElement, callbacks: { select(): void; reset(): void }): { update(state: { disabled: boolean; labels: { options: string; select: string; reset: string } }): void; destroy(): void };

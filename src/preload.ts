@@ -206,6 +206,8 @@ contextBridge.exposeInMainWorld('api', {
     saveClipWorkspace: (items: import('./main/domain/workspace-session').WorkspaceClip[]) => ipcRenderer.invoke('save-clip-workspace', items),
     saveMergeWorkspace: (ids: string[]) => ipcRenderer.invoke('save-merge-workspace', ids),
     getMergeVideoInfo: (id: string) => ipcRenderer.invoke('get-merge-video-info', id),
+    getMergePreview: (id: string): Promise<string | null> => ipcRenderer.invoke('get-merge-preview', id),
+    getMergeAssets: (id: string, kind: 'thumbnails' | 'waveform'): Promise<string[] | number[][] | null> => ipcRenderer.invoke('get-merge-assets', id, kind),
     getClipInfo: (url: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null> => ipcRenderer.invoke('get-clip-info', url),
 
     // Files
@@ -319,7 +321,7 @@ contextBridge.exposeInMainWorld('api', {
     listExportJobs: () => ipcRenderer.invoke('editing-jobs-list'),
     enqueueCutterExport: (token: string, project: unknown) => ipcRenderer.invoke('editing-job-cut', token, project),
     inspectMergeExport: (ids: string[]) => ipcRenderer.invoke('editing-merge-inspect', ids),
-    enqueueMergeExport: (ids: string[], mode: 'copy' | 'encode') => ipcRenderer.invoke('editing-job-merge', ids, mode),
+    enqueueMergeExport: (ids: string[], mode: 'copy' | 'encode', output?: { name: string; directory?: string }) => ipcRenderer.invoke('editing-job-merge', ids, mode, output),
     exportJobAction: (action: string, id?: string) => ipcRenderer.invoke('editing-job-action', action, id),
     onExportJobsChanged: (callback: (state: unknown) => void) => {
         const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);

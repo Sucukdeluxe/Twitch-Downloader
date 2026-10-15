@@ -3007,19 +3007,10 @@ function formatMergeDuration(seconds: number): string {
 }
 
 function renderMergeDurations(): void {
-    const durations = new Map(mergeFiles.map(file => [file.id, file]));
-    byId<HTMLElement>('mergeFileList').querySelectorAll<HTMLElement>('[data-file-id]').forEach(row => {
-        const file = durations.get(row.dataset.fileId!);
-        if (!file) return;
-        const duration = row.querySelector<HTMLElement>('.file-duration')!;
-        duration.textContent = file.missing ? (currentLanguage === 'de' ? 'Datei fehlt oder wurde geändert' : 'File missing or changed')
-            : file.durationSeconds === undefined ? mergeInfoRequests.has(file.id) ? '…' : '—' : formatMergeDuration(file.durationSeconds);
-        row.classList.toggle('file-unavailable', Boolean(file.missing));
-    });
     const total = mergeFiles.reduce((sum, file) => sum + (file.durationSeconds || 0), 0);
     const complete = mergeFiles.every(file => file.durationSeconds !== undefined && !file.missing);
-    byId('mergeTotalDuration').textContent = mergeFiles.length ? formatUiNumber(mergeFiles.length) + (mergeFiles.length === 1 ? ' Video · ' : currentLanguage === 'de' ? ' Videos · ' : ' videos · ') + (complete ? formatMergeDuration(total) : '—') : '';
-    byId<HTMLButtonElement>('btnMerge').disabled = workspaceLoading || isMerging || mergeFilePickerInFlight || mergeFiles.length < 2 || mergeFiles.some(file => file.missing);
+    byId('mergeTotalDuration').textContent = mergeFiles.length ? formatUiNumber(mergeFiles.length) + (mergeFiles.length === 1 ? ' Video · ' : currentLanguage === 'de' ? ' Videos · ' : ' videos · ') + (complete ? formatMergeDuration(total) : '…') : '';
+    renderMergeWorkspace();
 }
 
 function requestMergeDurations(): void {
@@ -3061,6 +3052,7 @@ function dropMergeFile(targetId: string, after: boolean): void {
 async function addArchiveToMerge(files: MergeFileReference[]): Promise<void> {
     if (workspaceLoading || isMerging || mergeFilePickerInFlight) throw new Error('Merge unavailable');
     if (mergeFiles.length + files.length > 500) throw new Error('Maximum 500 videos');
+    rememberMergeEdit();
     mergeFiles = [...mergeFiles, ...files];
     persistMergeWorkspace();
     requestMergeDurations();
@@ -3076,6 +3068,7 @@ async function addMergeFiles(): Promise<void> {
         const files = await window.api.selectMultipleVideos();
         if (files?.length) {
             if (mergeFiles.length + files.length > 500) showAppToast(currentLanguage === 'de' ? 'Maximal 500 Videos.' : 'Maximum 500 videos.', 'warn');
+            rememberMergeEdit();
             mergeFiles = [...mergeFiles, ...files].slice(0, 500);
             persistMergeWorkspace();
             requestMergeDurations();
@@ -3089,113 +3082,9 @@ async function addMergeFiles(): Promise<void> {
 }
 
 function renderMergeFiles(): void {
-    const list = byId<HTMLElement>('mergeFileList');
-    byId<HTMLButtonElement>('btnMerge').disabled = workspaceLoading || isMerging || mergeFilePickerInFlight || mergeFiles.length < 2 || mergeFiles.some(file => file.missing);
     byId('btnMerge').textContent = isMerging ? UI_TEXT.merge.merging : UI_TEXT.merge.merge;
     byId<HTMLButtonElement>('mergeAddBtn').disabled = workspaceLoading || isMerging || mergeFilePickerInFlight || mergeFiles.length >= 500;
-    if (!mergeFiles.length) {
-        const wrap = document.createElement('div');
-        wrap.className = 'empty-state merge-empty-state';
-        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('fill', 'currentColor');
-        icon.setAttribute('aria-hidden', 'true');
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z');
-        icon.append(path);
-        const text = document.createElement('p');
-        text.textContent = UI_TEXT.merge.empty;
-        wrap.append(icon, text);
-        list.replaceChildren(wrap);
-        renderMergeDurations();
-        return;
-    }
-    const scrollTop = list.scrollTop;
-    const fragment = document.createDocumentFragment();
-    mergeFiles.forEach((file, index) => {
-        const row = document.createElement('div');
-        row.className = 'file-item';
-        row.dataset.index = String(index);
-        row.dataset.fileId = file.id;
-        const grip = document.createElement('button');
-        grip.type = 'button';
-        grip.className = 'file-drag';
-        grip.draggable = !isMerging && !mergeFilePickerInFlight;
-        grip.disabled = isMerging || mergeFilePickerInFlight;
-        grip.setAttribute('aria-label', currentLanguage === 'de' ? 'Reihenfolge ändern' : 'Reorder');
-        const gripIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        gripIcon.setAttribute('viewBox', '0 0 24 24');
-        gripIcon.setAttribute('aria-hidden', 'true');
-        for (const x of [8, 16]) for (const y of [5, 12, 19]) {
-            const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            dot.setAttribute('cx', String(x)); dot.setAttribute('cy', String(y)); dot.setAttribute('r', '1.6'); gripIcon.append(dot);
-        }
-        grip.append(gripIcon);
-        grip.addEventListener('dragstart', event => {
-            if (isMerging || mergeFilePickerInFlight) { event.preventDefault(); return; }
-            draggedMergeId = file.id;
-            event.dataTransfer!.effectAllowed = 'move';
-            event.dataTransfer!.setData('text/plain', file.id);
-            event.dataTransfer!.setDragImage(row, 30, row.clientHeight / 2);
-            row.classList.add('dragging');
-        });
-        grip.addEventListener('dragend', clearMergeDrag);
-        row.addEventListener('dragover', event => {
-            if (!draggedMergeId || isMerging || mergeFilePickerInFlight) return;
-            event.preventDefault();
-            event.dataTransfer!.dropEffect = 'move';
-            const after = event.clientY >= row.getBoundingClientRect().top + row.clientHeight / 2;
-            list.querySelectorAll('.drop-before, .drop-after').forEach(item => item.classList.remove('drop-before', 'drop-after'));
-            if (draggedMergeId !== file.id) row.classList.add(after ? 'drop-after' : 'drop-before');
-            const bounds = list.getBoundingClientRect();
-            if (event.clientY < bounds.top + 40) list.scrollTop -= 24;
-            if (event.clientY > bounds.bottom - 40) list.scrollTop += 24;
-        });
-        row.addEventListener('drop', event => {
-            if (!draggedMergeId) return;
-            event.preventDefault();
-            dropMergeFile(file.id, event.clientY >= row.getBoundingClientRect().top + row.clientHeight / 2);
-        });
-        const number = document.createElement('div');
-        number.className = 'file-order';
-        number.textContent = formatUiNumber(index + 1);
-        const name = document.createElement('div');
-        name.className = 'file-name';
-        name.textContent = file.name;
-        name.title = file.name;
-        const content = document.createElement('div');
-        content.className = 'file-content';
-        const duration = document.createElement('span');
-        duration.className = 'file-duration';
-        content.append(name, duration);
-        const actions = document.createElement('div');
-        actions.className = 'file-actions';
-        const addAction = (label: string, pathData: string, disabled: boolean, callback: () => void, remove = false) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'file-btn' + (remove ? ' remove' : '');
-            button.disabled = disabled || isMerging || mergeFilePickerInFlight;
-            button.setAttribute('aria-label', label);
-            button.title = label;
-            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            icon.setAttribute('viewBox', '0 0 24 24');
-            icon.setAttribute('aria-hidden', 'true');
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', pathData);
-            icon.append(path);
-            button.append(icon);
-            button.addEventListener('click', callback);
-            actions.append(button);
-        };
-        addAction(UI_TEXT.merge.moveUpAria, 'm6 14 6-6 6 6', index === 0, () => moveMergeFile(index, -1));
-        addAction(UI_TEXT.merge.moveDownAria, 'm6 10 6 6 6-6', index === mergeFiles.length - 1, () => moveMergeFile(index, 1));
-        addAction(UI_TEXT.merge.removeAria, 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7', false, () => removeMergeFile(index), true);
-        row.append(grip, number, content, actions);
-        fragment.append(row);
-    });
-    list.replaceChildren(fragment);
     renderMergeDurations();
-    list.scrollTop = scrollTop;
 }
 
 function moveMergeFile(index: number, direction: number): void {
@@ -3204,18 +3093,19 @@ function moveMergeFile(index: number, direction: number): void {
     [mergeFiles[index], mergeFiles[next]] = [mergeFiles[next], mergeFiles[index]];
     renderMergeFiles();
     persistMergeWorkspace();
-    byId<HTMLElement>('mergeFileList').children[next]?.querySelector<HTMLButtonElement>(direction < 0 ? '.file-btn' : '.file-btn:nth-child(2)')?.focus({ preventScroll: true });
+
 }
 
 function removeMergeFile(index: number): void {
     if (isMerging || mergeFilePickerInFlight || !Number.isInteger(index) || !mergeFiles[index]) return;
+    rememberMergeEdit();
     mergeFiles.splice(index, 1);
     renderMergeFiles();
     persistMergeWorkspace();
 }
 
 async function startMerging(): Promise<void> {
-    await showMergeExportOptions(true);
+    await submitMergeTimeline(true);
 }
 
 void init();

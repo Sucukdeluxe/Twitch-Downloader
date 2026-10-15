@@ -1,3 +1,4 @@
+import { MergeMediaService } from './main/domain/merge-media';
 import { createCutterWaveformAccumulator } from './main/domain/cutter-waveform';
 import { combineClipArchiveInventory, isWithinArchiveRoot } from './main/domain/clip-archive-inventory';
 import { clipLibraryPage } from './main/domain/clip-library';
@@ -8823,18 +8824,32 @@ ipcMain.handle('save-merge-workspace', (event, ids: unknown) => {
     return workspaceSession.save();
 });
 
-ipcMain.handle('get-merge-video-info', async (event, id: string) => {
-    if (!isTrustedRendererEvent(event)) return { missing: true };
+const mergeMedia = new MergeMediaService({ temp: app.getPath('temp'), ffmpeg: getFFmpegPath, info: file => getVideoInfo(file, currentEditorProcesses), record: executable => recordManagedToolExecution('ffmpeg', executable) });
+function resolveMergeMedia(event: IpcMainInvokeEvent, id: unknown): WorkspaceMergeFile | null {
+    if (!isTrustedRendererEvent(event) || typeof id !== 'string' || appShutdownStarted) return null;
     const file = mergeWorkspaceFiles.get(id);
-    if (!file || restoreMergeReference(event, file).missing) return { missing: true };
-    if (file.durationSeconds !== undefined) return { durationSeconds: file.durationSeconds };
-    if (!(await ensureFfmpegInstalled()) || appShutdownStarted) return {};
-    const info = await getVideoInfo(file.path, currentEditorProcesses);
-    if (info && Number.isFinite(info.duration) && info.duration >= 0) {
-        file.durationSeconds = info.duration;
-        workspaceSession.save();
-    }
-    return { durationSeconds: file.durationSeconds };
+    return file && !restoreMergeReference(event, file).missing ? file : null;
+}
+ipcMain.handle('get-merge-video-info', async (event, id: unknown) => {
+    const file = resolveMergeMedia(event, id);
+    if (!file) return { missing: true };
+    if (!await ensureFfmpegInstalled() || appShutdownStarted) return {};
+    const info = await mergeMedia.describe(file);
+    if (!resolveMergeMedia(event, id)) return { missing: true };
+    if (info && Number.isFinite(info.duration) && info.duration > 0) { file.durationSeconds = info.duration; void workspaceSession.save(); }
+    return { durationSeconds: file.durationSeconds, info };
+});
+ipcMain.handle('get-merge-preview', async (event, id: unknown) => {
+    const file = resolveMergeMedia(event, id);
+    if (!file || !await ensureFfmpegInstalled()) return null;
+    const sourceUrl = await mergeMedia.preview(file);
+    return resolveMergeMedia(event, id) ? sourceUrl : null;
+});
+ipcMain.handle('get-merge-assets', async (event, id: unknown, kind: unknown) => {
+    const file = resolveMergeMedia(event, id);
+    if (!file || !['thumbnails', 'waveform'].includes(String(kind)) || !await ensureFfmpegInstalled()) return null;
+    const result = kind === 'thumbnails' ? await mergeMedia.thumbnails(file) : await mergeMedia.waveform(file);
+    return resolveMergeMedia(event, id) ? result : null;
 });
 
 let workspaceMergeActive = false;
@@ -9113,6 +9128,7 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
     await runResilientSteps([
         ['storage-cleanup', async () => { cleanupAbortController.abort(); await cleanupPending; }],
         ['editing-workflows', async () => { await editingWorkflows?.dispose(); }],
+        ['merge-media', () => mergeMedia.dispose()],
         ['archive-thumbnails', () => archiveThumbnails.dispose()],
         ['vod-playback', () => vodPlaybackService.close()],
         ['clip-playback', () => clipPlaybackService.close()],
@@ -9336,6 +9352,7 @@ async function initializeEditingWorkflowIntegration(): Promise<void> {
                 return { path: source.path, size: source.size, mtimeMs: source.mtimeMs };
             });
         },
+        mergeDirectory: (event, token) => resolveFileCapability(event, token, 'selected-folder'),
         sourceCapability: (event, filePath) => issueFileCapability(event, 'cutter-input', filePath, 'input-file', VIDEO_FILE_EXTENSIONS),
         mediaBusy: () => cutterExportActive || workspaceMergeActive,
         resolveTools: async () => ({ ffmpeg: await getFFmpegPath(), ffprobe: await getFFprobePath() }),

@@ -1,3 +1,4 @@
+import { MergeWorkspace } from './MergeWorkspace.jsx';
 import { ClipControls, ClipFolderMenu } from './ClipControls.jsx';
 import './LocalCutterPlayer.jsx';
 import { setPlayerSeekSeconds } from './player-settings.js';
@@ -316,6 +317,10 @@ function Workspace({ options, bind }) {
 }
 
 window.VodPlayer = {
+  mountMerge(element, callbacks) {
+    const root = createRoot(element);
+    return { update(state) { root.render(<MergeWorkspace {...state} callbacks={callbacks}/>); }, destroy() { root.unmount(); } };
+  },
   setSeekSeconds: setPlayerSeekSeconds,
   mountClipControls(element, callbacks) {
     const root = createRoot(element);

@@ -328,7 +328,7 @@
                 <div class="context-panel-heading" data-context-heading>Zusammenfügen</div>
                 <nav class="context-list" aria-label="Merge sections">
                     <button type="button" class="context-link active" onclick="focusWorkspaceTarget('mergeAddBtn', this)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16v12H4zM12 9v6M9 12h6"></path></svg><span data-label-source="mergeAddBtn">Videos hinzufügen</span></button>
-                    <button type="button" class="context-link" onclick="focusWorkspaceTarget('mergeFileList', this)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"></path></svg><span data-label-source="mergeTitle">Videos zusammenfügen</span></button>
+                    <button type="button" class="context-link" onclick="focusWorkspaceTarget('mergeTimelineRoot', this)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"></path></svg><span data-label-source="mergeTitle">Videos zusammenfügen</span></button>
                     <button type="button" class="context-link" onclick="focusWorkspaceTarget('btnMerge', this)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 5h4a3 3 0 0 1 3 3v8a3 3 0 0 0 3 3h4M16 16l3 3-3 3"></path></svg><span data-label-source="btnMerge">Zusammenfügen</span></button>
                 </nav>
             </section>
@@ -665,32 +665,27 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                 <!-- Merge Tab -->
                 <div class="tab-content" id="mergeTab">
                     <div class="merge-container">
-                        <div class="merge-header">
-                            <h3 id="mergeTitle">Videos zusammenfügen</h3>
-
-                            <button type="button" class="btn-primary" id="mergeAddBtn" disabled onclick="addMergeFiles()">Videos hinzufügen</button>
-                        </div>
-
-                        <div class="file-list" id="mergeFileList">
-                            <div class="empty-state merge-empty-state">
-                                <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                                <p id="mergeEmptyText">Keine Videos ausgewählt</p>
-                            </div>
-                        </div>
-
-                        <div class="progress-container" id="mergeProgress">
-                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Merge progress" id="mergeProgressGauge">
-                                <div class="progress-bar-fill" id="mergeProgressBar"></div>
-                            </div>
-                            <div class="progress-text" id="mergeProgressText">0%</div>
-                        </div>
-
-                        <div class="merge-actions">
-                            <output id="mergeTotalDuration" class="merge-total-duration"></output>
-                            <button type="button" class="btn-primary" id="btnMerge" onclick="startMerging()" disabled>Zusammenfügen</button>
+                        <div class="merge-header"><div><h3 id="mergeTitle">Videos zusammenfügen</h3><output id="mergeTotalDuration" class="merge-total-duration"></output></div><button type="button" class="btn-primary" id="mergeAddBtn" disabled onclick="addMergeFiles()">Videos hinzufügen</button></div>
+                        <div class="merge-editor-grid">
+                            <div id="mergePreviewRoot"></div>
+                            <aside class="merge-output">
+                                <header><strong id="mergeOutputTitle">Ausgabe</strong><button type="button" class="btn-secondary" id="mergeJobsButton" onclick="openMergeJobs()">Exportaufträge</button></header>
+                                <div class="merge-output-body">
+                                    <p id="mergeSelectedInfo" class="merge-inspection"></p>
+                                    <label><span id="mergeFilenameLabel">Dateiname</span><input id="mergeFilename" value="Zusammengefügt.mp4" maxlength="180" oninput="updateMergeOutput()"></label>
+                                    <label><span id="mergeFolderLabel">Speicherort</span><button type="button" class="merge-folder" onclick="selectMergeFolder()"><span id="mergeFolderValue">Ordner der ersten Datei</span><span aria-hidden="true">…</span></button></label>
+                                    <button type="button" class="merge-mode" id="mergeModeCopy" aria-pressed="true" onclick="setMergeMode('copy')"><strong id="mergeCopyLabel">Original beibehalten</strong><small id="mergeCopyHint">Schnell · kein Qualitätsverlust</small></button>
+                                    <button type="button" class="merge-mode" id="mergeModeEncode" aria-pressed="false" onclick="setMergeMode('encode')"><strong id="mergeEncodeLabel">Neu codieren</strong><small id="mergeEncodeHint">H.264 / AAC · Format des ersten Videos</small></button>
+                                    <p class="merge-inspection" id="mergeInspection" role="status"></p>
+                                </div>
+                                <div class="merge-actions"><button type="button" class="btn-primary" id="btnMerge" onclick="startMerging()" disabled>Zusammenfügen</button></div>
+                                <div class="progress-container" id="mergeProgress"><div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Merge progress" id="mergeProgressGauge"><div class="progress-bar-fill" id="mergeProgressBar"></div></div><div class="progress-text" id="mergeProgressText">0%</div></div>
+                            </aside>
+                            <div id="mergeTimelineRoot"></div>
                         </div>
                     </div>
                 </div>
+                <dialog id="mergeJobsDialog"><button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Schließen</button></dialog>
 
                 <!-- Statistics Tab -->
                 <div class="tab-content" id="statsTab">
@@ -1205,6 +1200,7 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
     <script defer src="../dist/renderer-vod-library.js"></script>
     <script defer src="../dist/renderer-auto-vod-rules.js"></script>
     <script defer src="../dist/renderer-development.js"></script>
+    <script defer src="../dist/renderer-merge.js"></script>
     <script defer src="../dist/renderer.js"></script>
 </body>
 </html>

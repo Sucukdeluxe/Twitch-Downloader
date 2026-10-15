@@ -21,7 +21,7 @@ interface EditingWorkflowApi {
     listExportJobs(): Promise<EditingWorkflowResponse>;
     enqueueCutterExport(token: string, project: unknown): Promise<EditingWorkflowResponse>;
     inspectMergeExport(ids: string[]): Promise<EditingWorkflowResponse>;
-    enqueueMergeExport(ids: string[], mode: 'copy' | 'encode'): Promise<EditingWorkflowResponse>;
+    enqueueMergeExport(ids: string[], mode: 'copy' | 'encode', output?: { name: string; directory?: string }): Promise<EditingWorkflowResponse>;
     exportJobAction(action: 'start' | 'pause' | 'cancel' | 'retry' | 'remove' | 'reveal' | 'move-up' | 'move-down' | 'clear-completed', id?: string): Promise<EditingWorkflowResponse>;
     onExportJobsChanged(callback: (state: { jobs: EditingWorkflowJob[]; paused: boolean }) => void): () => void;
 }
@@ -227,7 +227,7 @@ function initializeEditingWorkflows(): void {
     const list = document.createElement('div'); list.id = 'editingJobList'; list.className = 'editing-job-list'; panel.append(list); host.append(panel);
     const mergeToolbar = document.querySelector('#mergeTab .merge-actions');
     if (mergeToolbar) {
-        const mergeButton = editingButton(editingText('Export vormerken', 'Queue export'), () => { void showMergeExportOptions(false); });
+        const mergeButton = editingButton(editingText('Export vormerken', 'Queue export'), () => { void submitMergeTimeline(false); });
         mergeButton.id = 'editingMergeQueue';
         const actions = document.createElement('div'); actions.className = 'editing-merge-queue-actions';
         actions.append(mergeButton);
@@ -238,7 +238,7 @@ function initializeEditingWorkflows(): void {
     document.body.append(mergeMode);
     const movePanel = () => {
         const mergeTab = document.getElementById('mergeTab');
-        const target = mergeTab?.classList.contains('active') ? mergeTab.querySelector('.merge-container') : host;
+        const target = mergeTab?.classList.contains('active') ? document.getElementById('mergeJobsDialog') : host;
         if (target && panel.parentElement !== target) target.append(panel);
     };
     const observer = new MutationObserver(movePanel);

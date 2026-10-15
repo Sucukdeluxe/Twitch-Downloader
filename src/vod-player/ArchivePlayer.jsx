@@ -19,14 +19,14 @@ import { clearMediaSource, setMediaSource } from './media-source.js';
 
 import { getPlayerSeekSeconds, subscribePlayerSeekSeconds } from './player-settings.js';
 
-export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster, started = true, broadcastStarted, viewerHistory, viewerGaps, titleHistory = [], vodTitle, requestedAt = 0, prepareMilliseconds, onStart, onProgress, onPosition, onTimeline, onError, t, chapters = [], seekRequest, chapterPreview, excerptRange, onExcerptRange, cutRange, cutLimits, onCutRange, cutText, omissions = [] }) {
+export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster, started = true, initialPlaying = true, rememberPlayback = true, broadcastStarted, viewerHistory, viewerGaps, titleHistory = [], vodTitle, requestedAt = 0, prepareMilliseconds, onStart, onProgress, onPosition, onTimeline, onError, t, chapters = [], seekRequest, chapterPreview, excerptRange, onExcerptRange, cutRange, cutLimits, onCutRange, cutText, omissions = [] }) {
   const seekSeconds = useSyncExternalStore(subscribePlayerSeekSeconds, getPlayerSeekSeconds);
-  const [checkpointStore] = useState(() => createPlaybackCheckpoint(userId, id));
+  const [checkpointStore] = useState(() => rememberPlayback ? createPlaybackCheckpoint(userId, id) : { read: () => null, write: () => {} });
   const [savedCheckpoint] = useState(() => checkpointStore.read());
   const initialized = useRef(false), lastCheckpoint = useRef(0), autoplayBlockedRef = useRef(false), wasStarted = useRef(started);
   const [restoreWaitExpired, setRestoreWaitExpired] = useState(false);
   const root = useRef(null), videos = useRef([]), slots = useRef([-1, -1]);
-  const active = useRef(0), wanted = useRef(savedCheckpoint?.playing ?? true), pending = useRef([null, null]);
+  const active = useRef(0), wanted = useRef(savedCheckpoint?.playing ?? initialPlaying), pending = useRef([null, null]);
   const latest = useRef(null), measured = useRef({}), lastSaved = useRef(0);
   const frameObservers = useRef(new Map());
   const playbackStats = useRef(null), didPlay = useRef(false);
@@ -287,7 +287,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
   useEffect(() => {
     if (!sourceReady || waitingForCheckpoint) return;
     const initial = checkpointPosition(savedCheckpoint, timeline(), seconds);
-    switchPart(initial.index, initial.offset, started && (savedCheckpoint?.playing ?? true));
+    switchPart(initial.index, initial.offset, started && (savedCheckpoint?.playing ?? initialPlaying));
     initialized.current = true;
     return () => {
       latest.current.persist(true, true);

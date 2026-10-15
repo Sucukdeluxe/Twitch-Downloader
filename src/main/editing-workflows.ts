@@ -16,6 +16,7 @@ export interface EditingWorkflowDependencies extends ExportJobRunnerOptions {
     mergeSources(event: IpcMainInvokeEvent, ids: string[]): Promise<CutterProjectSource[]>;
     sourceCapability(event: IpcMainInvokeEvent, filePath: string): unknown;
     mediaBusy(): boolean;
+    mergeDirectory?(event: IpcMainInvokeEvent, token: string): string | null;
     log(error: unknown): void;
 }
 export interface EditingJobSummary {
@@ -131,11 +132,25 @@ export async function registerEditingWorkflows(dependencies: EditingWorkflowDepe
         const compatibility = await inspectMergeSources(sources, dependencies, AbortSignal.any([inspectController.signal, AbortSignal.timeout(120000)]));
         return { success: true, compatibility };
     });
-    handle('editing-job-merge', async (event, ids: unknown, mode: unknown) => {
+    handle('editing-job-merge', async (event, ids: unknown, mode: unknown, output?: unknown) => {
         if (!Array.isArray(ids) || ids.length < 2 || ids.length > 500 || !ids.every(id => typeof id === 'string') || (mode !== 'copy' && mode !== 'encode')) throw new Error('Invalid merge');
         const sources = await dependencies.mergeSources(event, ids);
         if (sources.length !== ids.length) throw new Error('Merge source changed');
-        const selected = await destination(path.join(path.dirname(sources[0].path), 'merged.mp4'), ['mp4', 'mkv']);
+        let directory = path.dirname(sources[0].path), name = 'merged.mp4';
+        if (output !== undefined) {
+            if (!output || typeof output !== 'object' || Array.isArray(output)) throw new Error('Invalid output');
+            const options = output as Record<string, unknown>;
+            if (typeof options.name !== 'string' || !options.name.trim() || options.name.length > 180 || /[<>:"/\\|?*]/.test(options.name) || Array.from(options.name).some(character => character.charCodeAt(0) < 32)) throw new Error('Invalid output name');
+            name = options.name.trim();
+            if (!/\.(mp4|mkv)$/i.test(name)) name += '.mp4';
+            if (options.directory !== undefined) {
+                if (typeof options.directory !== 'string') throw new Error('Invalid directory');
+                const selectedDirectory = dependencies.mergeDirectory?.(event, options.directory);
+                if (!selectedDirectory) throw new Error('Directory unavailable');
+                directory = selectedDirectory;
+            }
+        }
+        const selected = await destination(path.join(directory, name), ['mp4', 'mkv']);
         if (!selected) return { success: false, cancelled: true };
         const job = await queue.enqueue(path.basename(selected.outputPath), { kind: 'merge', sources, mode, ...selected });
         return { success: true, job: summarize([job])[0] };
