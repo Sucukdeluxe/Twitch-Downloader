@@ -8,6 +8,7 @@ This update reorganizes VOD history into grouped sections, clarifies file verifi
 - Keep category trimming and title seeking available in the new layout, with readable text and reduced-motion support.
 - Prevent duplicate current-section labels from overlapping category duration and date.
 - Match the approved history design with its original colors, borders, typography and spacing, including narrow sidebars.
+- Highlight only the current category when a stream title continues across category changes, and locate the matching section.
 - Keep the progress indicator full-width during file verification and other finalization steps without measurable progress, including when reduced motion is enabled.
 - Show the active section and application version in the window title, with a separate development label when applicable.
 

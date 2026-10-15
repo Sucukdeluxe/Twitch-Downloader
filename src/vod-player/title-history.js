@@ -81,3 +81,9 @@ export function historyDuration(seconds, locale = 'de') {
   return [[Math.floor(value/3600),'h'],[Math.floor(value/60)%60,'min'],[value%60,'s']]
     .filter(([count]) => count > 0).map(([count,unit]) => number.format(count)+' '+unit).join(' ') || '0 s';
 }
+
+export function currentHistorySection(sections, filter, chapter, title) {
+  if (filter !== 'titles' && chapter) return sections.find(section => section.chapter?.id === chapter.id)?.id ?? null;
+  if (filter !== 'games' && title) return sections.find(section => section.titles.some(entry => entry.id === title.id))?.id ?? null;
+  return null;
+}

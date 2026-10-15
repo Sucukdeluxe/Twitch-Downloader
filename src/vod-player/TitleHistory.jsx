@@ -4,7 +4,7 @@ import { ChannelImage } from "./ChannelImage.jsx";
 import { chapterAt, chapterColor } from "./chapters.js";
 import { timeLabel } from "./timeline.js";
 import { createStreamClock, streamTimestamp } from "./stream-clock.js";
-import { projectTitles, titleAt, historySections, historyCounts, historyDuration } from "./title-history.js";
+import { projectTitles, titleAt, historySections, historyCounts, historyDuration, currentHistorySection } from "./title-history.js";
 import "./title-history.css";
 
 const historyCategoryColors = ['#66dae7','#e9c66d','#e99ab4','#aedb84','#cbb6ef','#e9a272','#8bcce5','#e8de87','#8bd5ae','#e99191'];
@@ -23,7 +23,8 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
   const sections = useMemo(()=>historySections(chapters,titles,parts,started),[chapters,titles,parts,started]);
   const counts = useMemo(()=>historyCounts(chapters,titles),[chapters,titles]);
   const currentChapter = chapterAt(chapters,seconds), currentTitle = titleAt(history,streamTimestamp(parts,started,seconds));
-  const hasCurrent = filter === 'games' ? Boolean(currentChapter) : filter === 'titles' ? Boolean(currentTitle) : Boolean(currentChapter || currentTitle);
+  const activeSectionId = currentHistorySection(sections,filter,currentChapter,currentTitle);
+  const hasCurrent = activeSectionId !== null;
   const visible = sections.some(section=>filter === 'all' || (filter === 'games' ? section.chapter : section.titles.length));
   useLayoutEffect(()=>{setFilter('all');setAnimated(false);if(list.current)list.current.scrollTop=0;},[id]);
   function changeFilter(value) {
@@ -35,8 +36,9 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
     onFocus(null);
   }
   function focusCurrent() {
-    const target = list.current?.querySelector('.history-title-fold:not(.is-collapsed) [data-current-title="true"]')
-      || list.current?.querySelector('.history-category-fold:not(.is-collapsed) [data-current-chapter="true"]');
+    const card = list.current?.querySelector('.history-card[aria-current="true"]');
+    const target = (filter !== 'titles' && card?.querySelector('[data-current-chapter="true"]'))
+      || card?.querySelector('[data-current-title="true"]') || card;
     if (!target) return;
     target.scrollIntoView({block:'nearest',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
     const button = target.matches('button:not(:disabled)') ? target : target.querySelector('button:not(:disabled)');
@@ -77,8 +79,7 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
           const showCategory = Boolean(chapter) && filter !== 'titles';
           const showTitles = section.titles.length > 0 && filter !== 'games';
           const shown = showCategory || showTitles;
-          const activeTitle = section.titles.some(title=>title.id===currentTitle?.id);
-          const active = (showCategory && chapter.id===currentChapter?.id) || (showTitles && activeTitle);
+          const active = section.id===activeSectionId;
           const marker = filter === 'titles' ? section.titles[0]?.seconds : section.seconds;
           const markerTitle = section.titles.find(title=>Number.isFinite(title.seconds));
           const timestamp = chapter ? clock(streamTimestamp(parts,started,chapter.start),0) : null;
