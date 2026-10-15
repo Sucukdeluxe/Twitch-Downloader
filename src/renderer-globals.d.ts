@@ -532,7 +532,8 @@ interface ApiBridge {
     openClipPlayback(request: { id: string; url: string }): Promise<{ id: string; sourceUrl: string; quality: string } | null>;
     closeClipPlayback(id: string): Promise<void>;
     openVodPlayback(request: { id: string; url: string }): Promise<{ id: string; sourceUrl: string; quality: string } | null>;
-    getVodTimeline(request: { id: string; url: string }): Promise<import('./main/domain/vod-timeline').VodTimeline | null>;
+    onVodTimelineProgress(callback: (update: { id: string; timeline: import('./main/domain/vod-timeline').VodTimeline }) => void): () => void;
+    getVodTimeline(request: { id: string; url: string; refresh?: boolean }): Promise<import('./main/domain/vod-timeline').VodTimeline | null>;
     closeVodPlayback(id: string): Promise<void>;
     searchTwitchChannels(query: string): Promise<import('./main/twitch/channel-search').TwitchChannelSearchResult>;
     getLiveStatusSnapshot(): Promise<Record<string, boolean>>;

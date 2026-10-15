@@ -86,17 +86,17 @@ export class VodPlaybackService {
         try {
             await previous;
             signal.throwIfAborted();
-            const prepared = await new Promise<boolean>((resolve, reject) => {
-                const abort = (): void => reject(new Error('Playback cancelled'));
-                signal.addEventListener('abort', abort, { once: true });
-                tools.prepare().then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
-            });
-            signal.throwIfAborted();
-            if (!prepared) throw new Error('Playback tools unavailable');
             let source: string;
             if (tools.sourceUrl) {
                 source = validateVodMediaUrl(tools.sourceUrl).href;
             } else {
+                const prepared = await new Promise<boolean>((resolve, reject) => {
+                    const abort = (): void => reject(new Error('Playback cancelled'));
+                    signal.addEventListener('abort', abort, { once: true });
+                    tools.prepare().then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+                });
+                signal.throwIfAborted();
+                if (!prepared) throw new Error('Playback tools unavailable');
                 const streamlink = await tools.streamlink();
                 const output = await runMediaProcess(streamlink.command, [
                     ...streamlink.prefixArgs, '--loglevel', 'none', '--stream-url', request.url, tools.quality,

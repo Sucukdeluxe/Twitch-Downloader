@@ -8221,9 +8221,11 @@ registerTrustedIpcHandler(ipcMain, 'close-clip-playback', isTrustedRendererEvent
     if (typeof id === 'string') await clipPlaybackService.close(id);
 });
 
-registerTrustedIpcHandler(ipcMain, 'get-vod-timeline', isTrustedRendererEvent, () => Promise.resolve(null), async (_, request: unknown) => {
+registerTrustedIpcHandler(ipcMain, 'get-vod-timeline', isTrustedRendererEvent, () => Promise.resolve(null), async (event, request: unknown) => {
     if (appShutdownStarted) return null;
-    try { return await vodTimelineService.load(request, config.download_path); }
+    try { return await vodTimelineService.load(request, config.download_path, timeline => {
+        if (!event.sender.isDestroyed()) event.sender.send('vod-timeline-progress', { id: (request as { id: string }).id, timeline });
+    }); }
     catch { return null; }
 });
 

@@ -6,6 +6,8 @@ This update keeps development sessions separate when installing or updating the 
 
 - Restrict installer and uninstaller shutdown to the exact installed executable paths.
 - Give development builds a distinct executable filename so older installers cannot close them by matching the normal application name.
+- Show VOD categories as soon as they arrive and briefly reuse completed timelines when reopening the same VOD.
+- Start direct VOD playback without repeating Streamlink preparation.
 
 ## 1.1.0 - 2026-10-15
 

@@ -170,7 +170,12 @@ contextBridge.exposeInMainWorld('api', {
     openClipPlayback: (request: { id: string; url: string }) => ipcRenderer.invoke('open-clip-playback', request),
     closeClipPlayback: (id: string) => ipcRenderer.invoke('close-clip-playback', id),
     openVodPlayback: (request: { id: string; url: string }) => ipcRenderer.invoke('open-vod-playback', request),
-    getVodTimeline: (request: { id: string; url: string }) => ipcRenderer.invoke('get-vod-timeline', request),
+    getVodTimeline: (request: { id: string; url: string; refresh?: boolean }) => ipcRenderer.invoke('get-vod-timeline', request),
+    onVodTimelineProgress: (callback: (update: { id: string; timeline: import('./main/domain/vod-timeline').VodTimeline }) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, update: { id: string; timeline: import('./main/domain/vod-timeline').VodTimeline }) => callback(update);
+        ipcRenderer.on('vod-timeline-progress', listener);
+        return () => { ipcRenderer.removeListener('vod-timeline-progress', listener); };
+    },
     closeVodPlayback: (id: string) => ipcRenderer.invoke('close-vod-playback', id),
 
     // Queue

@@ -9,7 +9,7 @@ import "./title-history.css";
 
 const historyCategoryColors = ['#66dae7','#e9c66d','#e99ab4','#aedb84','#cbb6ef','#e9a272','#8bcce5','#e8de87','#8bd5ae','#e99191'];
 
-export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds,onSeek,onTitleSeek,onHover,onFocus,onSelectRange,t}) {
+export function TitleHistory({id,loading=false,chapters=[],history=[],parts=[],started,seconds,onSeek,onTitleSeek,onHover,onFocus,onSelectRange,t}) {
   const [filter,setFilter] = useState('all');
   const [animated,setAnimated] = useState(false);
   const list = useRef(null);
@@ -83,7 +83,7 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
       </div>
       <button type="button" className="history-current" disabled={!hasCurrent} onClick={focusCurrent} aria-label={t('historyCurrent')} title={t('historyCurrent')}><LocateFixed size={18}/></button>
     </div>
-    <div className="history-summary"><span><strong>{number.format(counts.categories)}</strong> {t(counts.categories===1?'historyCategorySingular':'historyCategories')}</span><span><strong>{number.format(counts.titleChanges)}</strong> {t(counts.titleChanges===1?'historyChangeSingular':'historyChanges')}</span></div>
+    <div className="history-summary"><span><strong>{number.format(counts.categories)}</strong> {t(counts.categories===1?'historyCategorySingular':'historyCategories')}</span><span>{loading?t('historyLoading'):<><strong>{number.format(counts.titleChanges)}</strong> {t(counts.titleChanges===1?'historyChangeSingular':'historyChanges')}</>}</span></div>
     <div ref={list} className="chapter-list history-list" onKeyDown={event=>{if(event.key==='Escape'){onHover(null);onFocus(null);}}}>
       <div className="history-sections">
         {sections.map(section=>{
@@ -122,7 +122,7 @@ export function TitleHistory({id,chapters=[],history=[],parts=[],started,seconds
           </section>;
         })}
       </div>
-      {!visible&&<p className="history-empty">{t('historyEmpty')}</p>}
+      {!visible&&<p className="history-empty">{t(loading?'historyLoading':'historyEmpty')}</p>}
     </div>
   </div>;
 }

@@ -231,6 +231,7 @@ export async function readStreamrecorderVodTitles(timeline: VodTimeline, signal:
 
 export class VodTimelineService {
     private current: { id: string; controller: AbortController } | null = null;
+    private readonly cache = new Map<string, { expires: number; timeline: VodTimeline }>();
 
     constructor(private readonly fetchMetadata: typeof fetch = fetch, private readonly fetchHistory: typeof fetch = fetchMetadata) {}
 
@@ -240,15 +241,24 @@ export class VodTimelineService {
         this.current = null;
     }
 
-    async load(value: unknown, downloadDirectory: string): Promise<VodTimeline | null> {
+    async load(value: unknown, downloadDirectory: string, onChapters?: (timeline: VodTimeline) => void): Promise<VodTimeline | null> {
         const request = validateVodPlaybackRequest(value);
         this.close();
+        const vodId = new URL(request.url).pathname.split('/').at(-1)!;
+        const directory = path.resolve(downloadDirectory);
+        const key = JSON.stringify([vodId, process.platform === 'win32' ? directory.toLowerCase() : directory]);
+        for (const [cachedKey, entry] of this.cache) if (entry.expires <= Date.now()) this.cache.delete(cachedKey);
+        const cached = this.cache.get(key);
+        if (cached && (value as { refresh?: unknown }).refresh !== true) {
+            this.cache.delete(key);
+            this.cache.set(key, cached);
+            return structuredClone(cached.timeline);
+        }
         const controller = new AbortController();
         this.current = { id: request.id, controller };
         const signal = controller.signal;
         const timeout = setTimeout(() => controller.abort(), 15000);
         try {
-            const vodId = new URL(request.url).pathname.split('/').at(-1)!;
             const edges: unknown[] = [], cursors = new Set<string>();
             let after: string | null = null, result: VodTimeline | null = null;
             for (let page = 0; page < 20; page++) {
@@ -291,6 +301,8 @@ export class VodTimelineService {
             if (!result) return null;
             result.chapters = normalizeVodChapters(edges, result.duration);
             if (result.chapters.length) result.chaptersStatus = 'available';
+            signal.throwIfAborted();
+            onChapters?.(structuredClone(result));
             clearTimeout(timeout);
             const [remote, local] = await Promise.all([
                 readStreamrecorderVodHistory(result, signal, this.fetchHistory),
@@ -301,6 +313,9 @@ export class VodTimelineService {
             result.viewerGaps = remote.gaps;
             result.titlesStatus = remote.titles.length ? 'streamrecorder' : local.length ? 'local' : 'unavailable';
             signal.throwIfAborted();
+            this.cache.delete(key);
+            if (this.cache.size >= 20) this.cache.delete(this.cache.keys().next().value!);
+            this.cache.set(key, { expires: Date.now() + 30000, timeline: structuredClone(result) });
             return result;
         } finally {
             clearTimeout(timeout);

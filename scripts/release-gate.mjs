@@ -31,6 +31,7 @@ const checks = [
     ['roadmap-native', ['scripts/smoke-test-roadmap-native.js']],
     ...['archive', 'clips'].flatMap(name => ['chromium', 'webkit'].map(browser => ['roadmap-' + name + '-' + browser, ['scripts/smoke-test-roadmap-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : [])]])),
     ['vod-playback', ['scripts/smoke-test-full-vod-audit.js']],
+    ['vod-loading-lifecycle', ['scripts/smoke-test-vod-loading-lifecycle.cjs']],
     ['vod-read-timeout', ['scripts/smoke-test-vod-stall-production-timeout.js', 'ffmpeg']],
     ['vod-stall-queue', ['scripts/smoke-test-vod-stall-native.js', 'ffmpeg', 'ffprobe']],
     ['vod-healthy-ranges', ['scripts/smoke-test-vod-stall-healthy.js', 'ffmpeg', 'ffprobe']],
