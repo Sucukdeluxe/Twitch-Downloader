@@ -835,7 +835,7 @@ const UI_TEXT_DE = {
         ready: 'bereit zur Installation!',
         installNow: 'Jetzt installieren & neu starten',
         modalAvailableTitle: 'Update verfügbar',
-        modalAvailableMessage: 'Eine neue Version von Twitch Downloader ist verfügbar.',
+        modalAvailableMessage: 'Eine neue Version vom Twitch Downloader ist verfügbar.',
         modalReadyTitle: 'Update bereit',
         modalReadyMessage: 'Version {version} wurde heruntergeladen. Jetzt installieren und neu starten?',
         modalDismiss: 'Später',
