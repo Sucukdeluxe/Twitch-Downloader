@@ -25,6 +25,7 @@ async function init(): Promise<void> {
     markQueueActivity();
 
     appVersion = version;
+    restoreDevelopmentUpdatePreview();
     byId('versionText').textContent = `v${version}`;
     byId('versionInfo').textContent = `Version: v${version}`;
     setPageTitle(UI_TEXT.appName);

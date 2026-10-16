@@ -13,6 +13,44 @@ let workspaceUpdatePopoverPostponed = false;
 
 const SKIPPED_UPDATE_VERSION_KEY = 'twitch-vod-manager:skipped-update-version';
 
+const DEVELOPMENT_UPDATE_PREVIEW_KEY = 'twitch-downloader:development-update-preview';
+
+function getDevelopmentUpdatePreview(): UpdateInfo | null {
+    if (typeof location === 'undefined' || new URLSearchParams(location.search).get('development') !== '1') return null;
+    try {
+        const info: unknown = JSON.parse(safeLocalStorageGet(DEVELOPMENT_UPDATE_PREVIEW_KEY));
+        if (!info || typeof info !== 'object' || !('version' in info) || typeof info.version !== 'string') return null;
+        return info as UpdateInfo;
+    } catch {
+        return null;
+    }
+}
+
+function restoreDevelopmentUpdatePreview(): boolean {
+    const info = getDevelopmentUpdatePreview();
+    if (!info) return false;
+    updateCheckInProgress = false;
+    updateDownloadInProgress = false;
+    updateDownloadOperation = null;
+    setCheckButtonCheckingState(false);
+    setUpdateBannerAvailableUi(info);
+    return true;
+}
+
+function setDevelopmentUpdatePreview(info: UpdateInfo | null): void {
+    if (new URLSearchParams(location.search).get('development') !== '1') return;
+    if (info) {
+        safeLocalStorageSet(DEVELOPMENT_UPDATE_PREVIEW_KEY, JSON.stringify(info));
+        restoreDevelopmentUpdatePreview();
+    } else {
+        safeLocalStorageRemove(DEVELOPMENT_UPDATE_PREVIEW_KEY);
+        latestUpdateInfo = null;
+        latestUpdateVersion = '';
+        dismissUpdateModal();
+        hideUpdateBanner();
+    }
+}
+
 function getSkippedUpdateVersion(): string {
     return safeLocalStorageGet(SKIPPED_UPDATE_VERSION_KEY);
 }
@@ -499,6 +537,7 @@ function dismissUpdateModal(): void {
 }
 
 function skipUpdateVersion(): void {
+    if (getDevelopmentUpdatePreview()) { dismissUpdateModal(); return; }
     const v = (latestUpdateInfo?.version || latestUpdateVersion || '').trim();
     if (v) {
         persistSkippedUpdateVersion(v);
@@ -583,6 +622,7 @@ function refreshUpdateUiTexts(): void {
 }
 
 async function checkUpdateSilent(): Promise<void> {
+    if (restoreDevelopmentUpdatePreview()) { openUpdateModal(); return; }
     try {
         shouldOpenUpdateModalOnAvailable = true;
         await window.api.checkUpdate();
@@ -593,6 +633,7 @@ async function checkUpdateSilent(): Promise<void> {
 }
 
 async function checkUpdate(): Promise<void> {
+    if (restoreDevelopmentUpdatePreview()) { openUpdateModal(); return; }
     manualUpdateCheckPending = true;
     manualUpdateOutcomeHandled = false;
     shouldOpenUpdateModalOnAvailable = true;
@@ -691,6 +732,10 @@ function handleUpdateDownloadFailure(operation: { failureHandled: boolean }): vo
 }
 
 function downloadUpdate(): void {
+    if (getDevelopmentUpdatePreview()) {
+        notifyUpdate(getIntlLocale().startsWith('de') ? 'Testvorschau: Es wird kein Update heruntergeladen.' : 'Test preview: No update will be downloaded.');
+        return;
+    }
     if (updateReady) {
         dismissUpdateModal();
         void window.api.installUpdate();
@@ -732,6 +777,7 @@ function downloadUpdate(): void {
 }
 
 window.api.onUpdateChecking(() => {
+    if (getDevelopmentUpdatePreview()) return;
     if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     updateCheckInProgress = true;
     if (manualUpdateCheckPending) {
@@ -740,6 +786,7 @@ window.api.onUpdateChecking(() => {
 });
 
 window.api.onUpdateAvailable((info: UpdateInfo) => {
+    if (getDevelopmentUpdatePreview()) return;
     if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     const activeInfo = rememberUpdateInfo(info);
     updateCheckInProgress = false;
@@ -777,6 +824,7 @@ window.api.onUpdateAvailable((info: UpdateInfo) => {
 
 
 window.api.onUpdateNotAvailable(() => {
+    if (getDevelopmentUpdatePreview()) return;
     if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     updateCheckInProgress = false;
     setCheckButtonCheckingState(false);
@@ -794,6 +842,7 @@ window.api.onUpdateNotAvailable(() => {
 });
 
 window.api.onUpdateDownloadProgress((progress: UpdateDownloadProgress) => {
+    if (getDevelopmentUpdatePreview()) return;
     updateDownloadInProgress = true;
     updateBannerState = 'downloading';
     latestDownloadProgress = progress;
@@ -814,6 +863,7 @@ window.api.onUpdateDownloadProgress((progress: UpdateDownloadProgress) => {
 });
 
 window.api.onUpdateDownloaded((info: UpdateInfo) => {
+    if (getDevelopmentUpdatePreview()) return;
     // Once a version is actually downloaded the user clearly stopped
     // skipping it — clear the skip flag so future updates aren't masked
     // by a stale entry.
@@ -825,6 +875,7 @@ window.api.onUpdateDownloaded((info: UpdateInfo) => {
 });
 
 window.api.onUpdateError((payload) => {
+    if (getDevelopmentUpdatePreview()) return;
     if (payload.kind === 'check') {
         if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
         updateCheckInProgress = false;
