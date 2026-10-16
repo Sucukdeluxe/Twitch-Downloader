@@ -225,31 +225,31 @@
                 <span id="logoText">Twitch Downloader</span><span id="developmentBadge" class="development-badge" hidden>Entwickler-Version</span>
             </div>
             <nav class="nav top-nav" aria-label="Main navigation">
-                <button class="nav-item top-nav-item active" type="button" aria-current="page" data-tab="vods" onclick="showTab('vods')" title="Twitch VODs">
+                <button class="nav-item top-nav-item active" type="button" aria-current="page" data-tab="vods" onclick="showTab('vods')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3z"></path></svg>
                     <span class="top-nav-label" id="navVodsText">Twitch VODs</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="clips" onclick="showTab('clips')" title="Twitch Clips">
+                <button class="nav-item top-nav-item" type="button" data-tab="clips" onclick="showTab('clips')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4z"></path><path d="m17 10 4-2v8l-4-2"></path></svg>
                     <span class="top-nav-label" id="navClipsText">Twitch Clips</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="cutter" onclick="showTab('cutter')" title="Video schneiden">
+                <button class="nav-item top-nav-item" type="button" data-tab="cutter" onclick="showTab('cutter')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="3"></circle><circle cx="6" cy="17" r="3"></circle><path d="m8.6 8.5 11 7M8.6 15.5 20 8"></path></svg>
                     <span class="top-nav-label" id="navCutterText">Video schneiden</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="merge" onclick="showTab('merge')" title="Videos zusammenfügen">
+                <button class="nav-item top-nav-item" type="button" data-tab="merge" onclick="showTab('merge')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h4a3 3 0 0 1 3 3v8a3 3 0 0 0 3 3h4"></path><path d="m16 16 3 3-3 3M5 19h4a3 3 0 0 0 3-3V8a3 3 0 0 1 3-3h4"></path><path d="m16 2 3 3-3 3"></path></svg>
                     <span class="top-nav-label" id="navMergeText">Videos zusammenfügen</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="stats" onclick="showTab('stats')" title="Statistik">
+                <button class="nav-item top-nav-item" type="button" data-tab="stats" onclick="showTab('stats')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"></path></svg>
                     <span class="top-nav-label" id="navStatsText">Statistik</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="archive" onclick="showTab('archive')" title="Archiv">
+                <button class="nav-item top-nav-item" type="button" data-tab="archive" onclick="showTab('archive')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4zM3 3h18v4H3z"></path><path d="M9 11h6"></path></svg>
                     <span class="top-nav-label" id="navArchiveText">Archiv</span>
                 </button>
-                <button class="nav-item top-nav-item" type="button" data-tab="settings" onclick="showTab('settings')" title="Einstellungen">
+                <button class="nav-item top-nav-item" type="button" data-tab="settings" onclick="showTab('settings')">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.82 2.82-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1a1.7 1.7 0 0 0-1.08-1.55 1.7 1.7 0 0 0-1.88.35l-.06.06-2.82-2.82.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1a1.7 1.7 0 0 0 1.55-1.08 1.7 1.7 0 0 0-.35-1.88l-.06-.06 2.82-2.82.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.48 4.65a1.7 1.7 0 0 0 1.88-.35l.06-.06 2.82 2.82-.06.06A1.7 1.7 0 0 0 19.4 9c.16.38.36.72.6 1 .3.3.68.5 1.1.6h.1v4h-.1a1.7 1.7 0 0 0-1.7.4z"></path></svg>
                     <span class="top-nav-label" id="navSettingsText">Einstellungen</span>
                 </button>

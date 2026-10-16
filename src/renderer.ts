@@ -773,7 +773,6 @@ function createChatViewerRow(m: ChatViewerMessage, index: number, activeIndex: n
     message.textContent = ' ' + (m.msg || m.text || '');
     row.appendChild(message);
     const accessibleLabel = getChatViewerAccessibleLabel(m);
-    row.title = accessibleLabel;
     row.setAttribute('aria-label', accessibleLabel);
     return row;
 }
@@ -1198,7 +1197,8 @@ function syncWorkspaceLabels(): void {
 
     document.querySelectorAll<HTMLElement>('.top-nav-item').forEach((item) => {
         const label = item.querySelector<HTMLElement>('.top-nav-label')?.textContent?.trim();
-        if (label) item.title = label;
+        item.removeAttribute('title');
+        if (label) item.setAttribute('aria-label', label);
     });
 }
 

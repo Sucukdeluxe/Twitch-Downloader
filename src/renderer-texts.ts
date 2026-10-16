@@ -106,7 +106,8 @@ function applyLanguageToStaticUI(): void {
             archive: UI_TEXT.static.navArchive,
             settings: UI_TEXT.static.navSettings
         };
-        button.title = tab ? titles[tab] || '' : '';
+        button.removeAttribute('title');
+        if (tab && titles[tab]) button.setAttribute('aria-label', titles[tab]);
     });
     setText('archiveResultsNavText', UI_TEXT.static.archiveResults);
     setText('archiveTitle', UI_TEXT.static.archiveTitle);

@@ -620,6 +620,14 @@ function getQueueProgressStatusText(item: QueueItem): string {
     return UI_TEXT.queue.failed;
 }
 
+function getQueueStatusTooltip(item: QueueItem): string {
+    if (item.status === 'error' && item.last_error) return item.last_error;
+    if (item.status === 'downloading' && (item.progressStatus || (item.currentPart && item.totalParts))) {
+        return getQueueProgressStatusText(item);
+    }
+    return '';
+}
+
 function getQueueProgressMetricsText(item: QueueItem): string {
     const parts: string[] = [];
     if (item.progressPhase === 'finalizing' && item.finalization) {
@@ -830,7 +838,11 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
     const badge = el.querySelector<HTMLElement>('.queue-status-badge');
     const label = badge?.querySelector<HTMLElement>('.queue-status-label');
     const indicator = badge?.querySelector<HTMLElement>('.status');
-    if (badge) badge.title = getQueueProgressStatusText(item);
+    if (badge) {
+        const progressStatus = getQueueStatusTooltip(item);
+        if (!progressStatus) badge.removeAttribute('title');
+        else badge.title = progressStatus;
+    }
     if (label) label.textContent = getQueueStatusLabel(item);
     if (indicator && indicator.className !== 'status ' + item.status) {
         indicator.className = 'status ' + item.status;
@@ -989,6 +1001,7 @@ function renderQueueItem(item: QueueItem): string {
     const safeTitle = escapeHtml(item.title || UI_TEXT.vods.untitled);
     const safeStatusLabel = escapeHtml(getQueueStatusLabel(item));
     const safeProgressStatus = escapeHtml(getQueueProgressStatusText(item));
+    const statusTooltip = escapeHtml(getQueueStatusTooltip(item));
     const safeProgressMetrics = escapeHtml(getQueueProgressMetricsText(item));
     const safeDate = escapeHtml(formatUiDate(item.date));
     const displayedProgress = getQueueDisplayedProgress(item);
@@ -1028,7 +1041,7 @@ function renderQueueItem(item: QueueItem): string {
                     <div class="queue-progress-bar${isFinalizing ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
                 </div>
                 <button class="queue-footer queue-details-toggle" type="button" aria-label="${escapeHtml(UI_TEXT.queue.toggleDetails)}" aria-describedby="${detailsId}-status ${detailsId}-date" aria-expanded="${expandedQueueIds.has(item.id) ? 'true' : 'false'}" aria-controls="${detailsId}" data-queue-action="details">
-                    <span class="queue-status-badge" title="${safeProgressStatus}"><span class="status ${item.status}" aria-hidden="true">${renderQueueStatusIcon(item.status)}</span><span class="queue-status-label" id="${detailsId}-status">${safeStatusLabel}</span></span>
+                    <span class="queue-status-badge"${statusTooltip ? ` title="${statusTooltip}"` : ''}><span class="status ${item.status}" aria-hidden="true">${renderQueueStatusIcon(item.status)}</span><span class="queue-status-label" id="${detailsId}-status">${safeStatusLabel}</span></span>
                     <time class="queue-date" id="${detailsId}-date" datetime="${escapeHtml(item.date)}">${safeDate}</time>
                     <svg class="queue-details-chevron" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 10 5 5 5-5"/></svg>
                 </button>

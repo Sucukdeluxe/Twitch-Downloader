@@ -59,7 +59,7 @@ export function TitleHistory({id,loading=false,chapters=[],history=[],parts=[],s
   function wallTime(timestamp) {
     if (!timestamp) return null;
     const date = new Date(timestamp.dateTime);
-    return <time className="history-wall-clock" dateTime={timestamp.dateTime} title={timestamp.label}><span>{dateFormat.format(date)}</span><span>{timeFormat.format(date)}</span></time>;
+    return <time className="history-wall-clock" dateTime={timestamp.dateTime}><span>{dateFormat.format(date)}</span><span>{timeFormat.format(date)}</span></time>;
   }
   function titleEntry(title) {
     const playable = Number.isFinite(title.seconds), timestamp = clock(title.at,0);

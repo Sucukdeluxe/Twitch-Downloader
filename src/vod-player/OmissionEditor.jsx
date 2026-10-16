@@ -44,7 +44,7 @@ function DraftRange({ range, selection, gaps, duration, number, language, onRang
     <strong>{t.range} {number.toLocaleString(language)}</strong>
     <div className="vod-omission-times">{['start','end'].map(which => <label key={which}><span aria-hidden="true">{which === 'start' ? 'I' : 'O'}</span><input type="text" aria-label={t[which]} aria-invalid={!valid} title={!valid ? invalidTime : t[which]} spellCheck="false" autoComplete="off" value={inputs[which]} onChange={event => change(which, event.target.value)} onBlur={() => { if (valid) setInputs(current => ({ ...current, [which]:cutTime(which === 'start' ? start : end) })); }}/></label>)}</div>
     <div className="vod-omission-length"><span>{t.length}</span><time>{valid ? cutTime(end - start) : '—'}</time></div>
-    <div className="vod-omission-row-actions"><button type="button" className="vod-omission-confirm" disabled={!valid} aria-label={t.apply} title={t.apply} onClick={() => onApply({ start, end })}><Check size={17}/><span>{t.apply}</span></button><button type="button" data-action="cancel-range" aria-label={t.cancel} title={t.cancel} onClick={onCancel}><X size={17}/></button></div>
+    <div className="vod-omission-row-actions"><button type="button" className="vod-omission-confirm" disabled={!valid} aria-label={t.apply} onClick={() => onApply({ start, end })}><Check size={17}/><span>{t.apply}</span></button><button type="button" data-action="cancel-range" aria-label={t.cancel} title={t.cancel} onClick={onCancel}><X size={17}/></button></div>
     {!valid && <p className="vod-omission-validation" role="status">{invalidTime}</p>}
   </li>;
 }
@@ -57,7 +57,7 @@ export function OmissionEditor({ active, gaps, selection, onSelection, ranges, p
   return <section className="vod-omission-editor" aria-label={t.excluded}>
     <div className="vod-omission-actions">
       {selection && <div className="vod-omission-scope" role="status"><Scissors size={14}/><span>{t.downloadExcerpt}: {cutTime(selection.start)} – {cutTime(selection.end)}</span><button type="button" onClick={onSelection}>{t.clip}</button></div>}
-      <button type="button" className="vod-omission-new" onClick={onNew} disabled={editing !== null || ranges.length >= 256 || !gaps.length} title={!gaps.length ? t.noGap : t.add}><Plus size={16}/>{t.add}</button>
+      <button type="button" className="vod-omission-new" onClick={onNew} disabled={editing !== null || ranges.length >= 256 || !gaps.length} title={!gaps.length ? t.noGap : undefined}><Plus size={16}/>{t.add}</button>
       <button type="button" className="vod-omission-preview" onClick={onPreview} disabled={!canPreview || editing !== null || !plan?.parts.length || !ranges.length} aria-pressed={previewing}>{previewing ? <Square size={14}/> : <Play size={14}/>}<span>{previewing ? t.stop : t.preview}</span></button>
       <div className="vod-omission-history"><button type="button" aria-label={t.undo} title={t.undo} onClick={onUndo} disabled={!canUndo || editing !== null}><Undo2 size={16}/></button><button type="button" aria-label={t.redo} title={t.redo} onClick={onRedo} disabled={!canRedo || editing !== null}><Redo2 size={16}/></button></div>
       <div className="vod-output-summary">{plan ? <><span>{t.removed} <b>{cutTime(plan.omittedDuration)}</b></span><span>{t.remaining} <b>{cutTime(plan.duration)}</b></span></> : <span role="status">{t.invalid}</span>}</div>
