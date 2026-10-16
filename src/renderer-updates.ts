@@ -458,6 +458,9 @@ function positionUpdateModal(): void {
     const overlay = byId<HTMLElement>('updateModal');
     const dialog = overlay.querySelector<HTMLElement>('.update-modal');
     if (!dialog || !overlay.classList.contains('show')) return;
+    const panel = byId<HTMLElement>('updateChangelogPanel');
+    const fixedHeight = dialog.offsetHeight - panel.offsetHeight;
+    dialog.style.setProperty('--update-fixed-height', `${fixedHeight}px`);
     const top = Math.max(24, Math.min(updateModalAnchorTop, window.innerHeight - dialog.offsetHeight - 24));
     dialog.style.top = `${top}px`;
 }
@@ -468,6 +471,7 @@ function anchorUpdateModal(): void {
     const panel = byId<HTMLElement>('updateChangelogPanel');
     panel.style.transition = 'none';
     updateModalCollapsedHeight = dialog.offsetHeight;
+    dialog.style.setProperty('--update-fixed-height', `${updateModalCollapsedHeight}px`);
     panel.style.removeProperty('transition');
     updateModalAnchorTop = Math.max(24, (window.innerHeight - updateModalCollapsedHeight) / 2);
     if (!updateModalResizeObserver) {

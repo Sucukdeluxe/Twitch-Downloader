@@ -3139,3 +3139,16 @@ body.theme-light #updateModal .update-preserve svg { color: #39774f; }
 #updateModal .update-modal::-webkit-scrollbar { width: 10px; }
 #updateModal .update-modal::-webkit-scrollbar-thumb { background: #77717f; border: 2px solid var(--update-bg); border-radius: 8px; }
 #updateModal .update-modal::-webkit-scrollbar-track { background: var(--update-bg); }
+
+#updateModal .update-modal { overflow: hidden; scrollbar-gutter: auto; }
+#updateModal .update-changelog-panel-inner {
+    max-height: max(0px, calc(100dvh - var(--update-fixed-height, 540px) - 48px));
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+#updateModal .update-changelog-panel-inner::-webkit-scrollbar { width: 10px; }
+#updateModal .update-changelog-panel-inner::-webkit-scrollbar-thumb { background: #77717f; border: 2px solid var(--update-bg); border-radius: 8px; }
+#updateModal .update-changelog-panel-inner::-webkit-scrollbar-track { background: var(--update-bg); }
