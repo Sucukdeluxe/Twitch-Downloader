@@ -508,8 +508,8 @@ function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string
                 </div>
             </div>
             <div class="vod-actions">
-                <button type="button" class="vod-btn secondary" data-vod-action="trim">${escapeHtml(UI_TEXT.vods.trimButton)}</button>
-                <button type="button" class="vod-btn primary" data-vod-action="queue">${escapeHtml(UI_TEXT.vods.addQueue)}</button>
+                <button type="button" class="vod-btn secondary" data-vod-action="trim"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.5 7.5 12 12m-12-3 12-12"/></svg><span>${escapeHtml(UI_TEXT.vods.trimButton)}</span></button>
+                <button type="button" class="vod-btn primary" data-vod-action="queue"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h13M4 11h9M4 16h6M18 12v8m-4-4h8"/></svg><span>${escapeHtml(UI_TEXT.vods.addQueue)}</span></button>
             </div>
         </div>
     `;
