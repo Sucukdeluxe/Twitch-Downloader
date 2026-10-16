@@ -388,6 +388,7 @@
                     <button type="button" class="toolbar-primary" onclick="performArchiveSearch()"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"></circle><path d="m15 15 5 5"></path></svg><span data-label-source="btnArchiveSearch">Suchen</span></button>
                 </div>
                 <div class="toolbar-context" data-toolbar-for="settings" hidden>
+                    <header class="settings-page-heading"><h2 id="settingsGroupTitle">Allgemein</h2><div id="settingsSaveNotice" class="settings-save-notice" role="status" hidden=""><span id="settingsSaveMessage"></span><button type="button" class="btn-secondary" id="settingsSaveRetry" onclick="flushSettingsAutoSave(true)">Erneut speichern</button></div></header>
                     <label class="workspace-settings-search" for="settingsSearchInput">
                         <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"></circle><path d="m15 15 5 5"></path></svg>
                         <input type="search" id="settingsSearchInput" placeholder="Search settings…" oninput="filterSettings(this.value)" autocomplete="off">
@@ -762,10 +763,35 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
 
                 <!-- Settings Tab -->
                 <div class="tab-content" id="settingsTab" data-settings-pane="general">
-                    <header class="settings-page-heading"><h2 id="settingsGroupTitle">Allgemein</h2><div id="settingsSaveNotice" class="settings-save-notice" role="status" hidden><span id="settingsSaveMessage"></span><button type="button" class="btn-secondary" id="settingsSaveRetry" onclick="flushSettingsAutoSave(true)">Erneut speichern</button></div></header>
-                    <div class="settings-card" data-settings-pane="design" data-settings-group="general">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                <div class="settings-card" data-settings-pane="design" data-settings-group="general">
                         <h3 id="designTitle">Design</h3>
-                        <div class="form-group">
+
+
+
+
+                    <div class="general-settings-grid"><div class="form-group">
                             <label id="themeLabel" for="themeSelect">Theme</label>
                             <div class="workspace-theme-picker" id="workspaceThemePicker" role="group" aria-labelledby="themeLabel">
                                 <button type="button" class="workspace-theme-choice" data-theme="light" aria-pressed="false" onclick="selectWorkspaceTheme('light')">
@@ -789,8 +815,7 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 <option value="light" id="themeLightOption">Light</option>
                                 <option value="system">System</option>
                             </select>
-                        </div>
-                        <div class="form-group">
+                        </div><div class="form-group">
                             <label id="languageLabel">Sprache</label>
                             <div class="language-picker" id="languagePicker" role="group" aria-labelledby="languageLabel">
                                 <button type="button" class="lang-option" id="langOptionEn" onclick="selectLanguageOption('en')" aria-pressed="false">
@@ -811,8 +836,7 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 <option value="de">de</option>
                                 <option value="en">en</option>
                             </select>
-                        </div>
-                        <div class="form-group player-seek-setting">
+                        </div><div class="form-group player-seek-setting">
                             <label id="playerSeekLabel">Sprungweite beim Spulen</label>
                             <div class="player-seek-options" role="group" aria-labelledby="playerSeekLabel">
                                 <button type="button" class="btn-secondary" data-player-seek="10" aria-pressed="true" onclick="selectPlayerSeekSeconds(10)">10 s</button>
@@ -821,17 +845,17 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                             </div>
                             <input type="hidden" id="playerSeekSeconds" value="10">
                             <div class="form-note" id="playerSeekHint">Für Vor- und Zurückspulen im VOD-Player und beim Videoschneiden.</div>
-                        </div>
-                        <div class="form-group sidebar-layout-setting">
+                        </div><div class="form-group sidebar-layout-setting">
                             <label class="toggle-row">
-                                <input type="checkbox" id="sidebarSplitViewToggle" checked onchange="applySidebarLayoutPreference(this.checked)">
+                                <input type="checkbox" id="sidebarSplitViewToggle" checked="" onchange="applySidebarLayoutPreference(this.checked)">
                                 <span id="sidebarSplitViewLabel">Streamer und Queue gleichzeitig anzeigen</span>
                             </label>
 
-                        </div>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="api" data-settings-group="api" hidden>
+                        </div></div></div><div class="settings-card" data-settings-pane="updates" data-settings-group="general" hidden="">
+                        <h3 id="updateTitle">Updates</h3>
+                        <p id="versionInfo" class="card-intro">Version: v1.1.4</p>
+                        <button type="button" class="btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()">Nach Updates suchen</button>
+                    </div><div class="settings-card settings-behavior-card" data-settings-pane="behavior" data-settings-group="general" hidden=""><h4 id="queueAutomationTitle">Programmstart und Meldungen</h4><div class="download-settings-toggles"><label class="toggle-row"><input type="checkbox" id="persistQueueToggle" checked=""><span id="persistQueueLabel">Warteschlange speichern</span></label><label class="toggle-row"><input type="checkbox" id="autoResumeQueueToggle"><span id="autoResumeQueueLabel">Beim Start fortsetzen</span></label><label class="toggle-row"><input type="checkbox" id="notifyEachCompletionToggle"><span id="notifyEachCompletionLabel">Fertige Downloads melden</span></label></div></div><div class="settings-card" data-settings-pane="api" data-settings-group="api" hidden="">
                         <h3 id="apiTitle">Twitch API</h3>
                         <p id="apiHelpText" class="card-intro">
 
@@ -845,188 +869,125 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                             <label id="clientSecretLabel" for="clientSecret">Client Secret</label>
                             <input type="password" id="clientSecret" placeholder="Twitch Client Secret">
                         </div>
-                        <button type="button" class="btn-primary" id="saveSettingsBtn" onclick="saveSettings()">Speichern & Verbinden</button>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="downloads" data-settings-group="downloads" hidden>
-                        <h3 id="downloadSettingsTitle" hidden>Download-Einstellungen</h3>
-                        <div class="form-group download-settings-storage">
-                            <label id="storageLabel" for="downloadPath">Speicherort</label>
-                            <div class="form-row">
-                                <input type="text" id="downloadPath" readonly>
-                                <button type="button" class="btn-secondary" id="selectFolderBtn" onclick="selectFolder()">Ordner</button>
-                                <button type="button" class="btn-secondary" id="openFolderBtn" onclick="openFolder()">Öffnen</button>
-                            </div>
-                        </div>
-                        <div class="form-group download-settings-storage">
-                            <label id="clipStorageLabel" for="clipDownloadPath">Clip-Speicherort</label>
-                            <div class="form-row">
-                                <input type="text" id="clipDownloadPath" readonly>
-                                <button type="button" class="btn-secondary" id="selectClipFolderBtn" onclick="selectClipStorageFolder()">Ordner</button>
-                                <button type="button" class="btn-secondary" id="resetClipFolderBtn" onclick="resetClipStorageFolder()">Standard</button>
-                                <button type="button" class="btn-secondary" id="openClipFolderBtn" onclick="openClipLibraryFolder()">Öffnen</button>
-                            </div>
-                        </div>
-                        <div class="download-settings-layout">
-                            <div class="download-settings-column">
-                                <section class="download-settings-section download-basics-grid">
-                                    <h4 id="downloadBasicsTitle">Download und Qualität</h4>
-                                    <div class="form-group">
+                        <button type="button" class="btn-primary" id="saveSettingsBtn" onclick="saveSettings()">Speichern &amp; Verbinden</button>
+                    </div><div class="settings-card settings-organized" data-settings-pane="downloads" data-settings-group="downloads" hidden=""><h3 id="downloadSettingsTitle" hidden="">Download-Einstellungen</h3><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="downloadBasicsTitle" class="settings-section-title">Download und Qualität</span><span id="settingsDownloadHint" class="settings-section-hint">Qualität, Aufteilung und gleichzeitige Downloads.</span></div></summary><div class="settings-section-body"><div class="settings-fields-grid"><div class="form-group">
                                         <label id="modeLabel" for="downloadMode">Download-Modus</label>
                                         <select id="downloadMode">
                                             <option value="full" id="modeFullText">Ganzes VOD</option>
                                             <option value="parts" id="modePartsText">In Teile splitten</option>
                                         </select>
-                                    </div>
-                                    <div class="form-group">
+                                    </div><div class="form-group">
                                         <label id="partMinutesLabel" for="partMinutes">Part-Länge (Min.)</label>
                                         <input type="number" id="partMinutes" value="120" min="10" max="480">
-                                    </div>
-                                    <div class="form-group">
+                                    </div><div class="form-group">
                                         <label id="parallelDownloadsLabel" for="parallelDownloads">Parallele Downloads</label>
                                         <select id="parallelDownloads">
                                             <option value="1" id="parallelDownloads1">1 (Standard)</option>
                                             <option value="2" id="parallelDownloads2">2 (Parallel)</option>
                                         </select>
-                                    </div>
-                                    <div class="form-group">
+                                    </div><div class="form-group">
                                         <label id="streamlinkQualityLabel" for="streamlinkQuality">Stream-Qualität</label>
                                         <output id="streamlinkQuality" class="settings-fixed-value">Source</output>
-                                    </div>
-                                    <div class="form-group">
+                                    </div><div class="form-group">
                                         <label id="performanceModeLabel" for="performanceMode">Performance-Profil</label>
                                         <select id="performanceMode">
                                             <option value="stability" id="performanceModeStability">Max Stabilität</option>
                                             <option value="balanced" id="performanceModeBalanced">Ausgewogen</option>
                                             <option value="speed" id="performanceModeSpeed">Max Geschwindigkeit</option>
                                         </select>
-                                    </div>
-                                </section>
-                                <section class="download-settings-section">
-                                    <div class="download-settings-section-heading">
-                                        <h4 id="filenameTemplatesTitle">Dateinamen</h4>
-                                        <button class="btn-secondary" id="settingsTemplateGuideBtn" type="button" onclick="openTemplateGuide('vod')">Platzhalter</button>
-                                    </div>
-                                    <div class="form-row template-presets">
+                                    </div><label class="toggle-row"><input type="checkbox" id="duplicatePreventionToggle" checked=""><span id="duplicatePreventionLabel">Duplikate verhindern</span></label></div></div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="filenameTemplatesTitle" class="settings-section-title">Dateinamen</span><span id="settingsFilenamesHint" class="settings-section-hint">Vorlagen für VODs, einzelne Teile und Clips.</span></div></summary><div class="settings-section-body"><div class="form-row template-presets">
                                         <button class="btn-secondary" id="templatePresetDefault" type="button" onclick="applyTemplatePreset('default')">Preset: Default</button>
                                         <button class="btn-secondary" id="templatePresetArchive" type="button" onclick="applyTemplatePreset('archive')">Preset: Archive</button>
                                         <button class="btn-secondary" id="templatePresetClipper" type="button" onclick="applyTemplatePreset('clipper')">Preset: Clipper</button>
-                                    </div>
-                                    <div class="filename-template-grid">
+                                    <button class="btn-secondary" id="settingsTemplateGuideBtn" type="button" onclick="openTemplateGuide('vod')">Platzhalter</button></div><div class="filename-template-grid">
                                         <label id="vodTemplateLabel" for="vodFilenameTemplate">VOD</label>
                                         <input type="text" id="vodFilenameTemplate" class="input-monospace" placeholder="{title}.mp4" oninput="validateFilenameTemplates()">
                                         <label id="partsTemplateLabel" for="partsFilenameTemplate">Parts</label>
                                         <input type="text" id="partsFilenameTemplate" class="input-monospace" placeholder="{date}_Part{part_padded}.mp4" oninput="validateFilenameTemplates()">
                                         <label id="defaultClipTemplateLabel" for="defaultClipFilenameTemplate">Clip</label>
                                         <input type="text" id="defaultClipFilenameTemplate" class="input-monospace" placeholder="{date}_{part}.mp4" oninput="validateFilenameTemplates()">
-                                    </div>
-
-                                    <div id="filenameTemplateLint" class="template-lint ok">Template-Check: OK</div>
-                                </section>
-                            </div>
-                            <div class="download-settings-column">
-                                <section class="download-settings-section">
-                                    <h4 id="queueAutomationTitle">Queue und Automatisierung</h4>
-                                    <div class="download-settings-toggles">
-                                        <label class="toggle-row"><input type="checkbox" id="duplicatePreventionToggle" checked><span id="duplicatePreventionLabel">Duplikate verhindern</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="persistQueueToggle" checked><span id="persistQueueLabel">Warteschlange speichern</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="autoResumeQueueToggle"><span id="autoResumeQueueLabel">Beim Start fortsetzen</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="notifyEachCompletionToggle"><span id="notifyEachCompletionLabel">Fertige Downloads melden</span></label>
-                                    </div>
-                                </section>
-                                <details class="settings-advanced download-settings-section download-policy-settings">
-                                    <summary id="downloadPolicyTitle">Drosselung und Zeitfenster</summary>
-                                    <div class="form-group">
+                                    </div><div id="filenameTemplateLint" class="template-lint ok">Template-Check: OK</div></div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="downloadPolicyTitle" class="settings-section-title">Drosselung und Zeitfenster</span><span id="settingsPolicyHint" class="settings-section-hint">Bandbreite begrenzen und erlaubte Downloadzeiten festlegen.</span></div></summary><div class="settings-section-body"><div class="form-group">
                                         <label id="downloadThrottleLabel" for="downloadThrottleMiBps">Downloadrate (MiB/s)</label>
                                         <input type="text" id="downloadThrottleMiBps" inputmode="decimal" autocomplete="off" aria-describedby="downloadThrottleHint downloadPolicyValidation">
                                         <div id="downloadThrottleHint" class="form-note">Leer = unbegrenzt.</div>
-                                    </div>
-                                    <div class="form-group">
+                                    </div><div class="form-group">
                                         <label id="downloadWindowsLabel" for="downloadWindows">Zeitfenster</label>
                                         <textarea id="downloadWindows" rows="3" aria-describedby="downloadWindowsHint downloadPolicyValidation" placeholder="22:00-06:00"></textarea>
                                         <div id="downloadWindowsHint" class="form-note">Ein Zeitfenster pro Zeile.</div>
-                                    </div>
-                                    <div id="downloadPolicyValidation" class="form-note" role="alert"></div>
-                                    <div id="downloadPolicyStatus" class="form-note" role="status" aria-live="polite"></div>
-                                    <button type="button" class="btn-secondary" id="downloadPolicyOverrideBtn" onclick="startDownloadPolicyOverride()">Jetzt starten</button>
-                                </details>
-                                <details class="settings-advanced download-settings-section">
-                                    <summary id="recordingMetadataTitle">Aufnahmen und Metadaten</summary>
-                                    <div class="download-settings-toggles">
-                                        <label class="toggle-row"><input type="checkbox" id="streamlinkDisableAdsToggle" checked><span id="streamlinkDisableAdsLabel">Werbung überspringen</span></label>
+                                    </div><div id="downloadPolicyValidation" class="form-note" role="alert"></div><div id="downloadPolicyStatus" class="form-note" role="status" aria-live="polite"></div><button type="button" class="btn-secondary" id="downloadPolicyOverrideBtn" onclick="startDownloadPolicyOverride()">Jetzt starten</button></div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="recordingMetadataTitle" class="settings-section-title">Aufnahmen und Metadaten</span><span id="settingsRecordingHint" class="settings-section-hint">Werbung, Chat und den Verlauf eines Streams speichern.</span></div></summary><div class="settings-section-body"><div class="download-settings-toggles">
+                                        <label class="toggle-row"><input type="checkbox" id="streamlinkDisableAdsToggle" checked=""><span id="streamlinkDisableAdsLabel">Werbung überspringen</span></label>
                                         <label class="toggle-row"><input type="checkbox" id="downloadChatReplayToggle"><span id="downloadChatReplayLabel">VOD-Chat speichern</span></label>
                                         <label class="toggle-row"><input type="checkbox" id="captureLiveChatToggle"><span id="captureLiveChatLabel">Live-Chat speichern</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="logStreamEventsToggle" checked><span id="logStreamEventsLabel">Titel- und Spielwechsel speichern</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="autoResumeLiveRecordingToggle" checked><span id="autoResumeLiveRecordingLabel">Live-Aufnahmen automatisch fortsetzen</span></label>
-                                        <label class="toggle-row"><input type="checkbox" id="autoMergeResumedPartsToggle"><span id="autoMergeResumedPartsLabel">Fortgesetzte Aufnahmen zusammenfügen</span></label>
-                                        <label class="toggle-row indented"><input type="checkbox" id="deletePartsAfterMergeToggle"><span id="deletePartsAfterMergeLabel">Parts nach dem Zusammenfügen löschen</span></label>
-                                    </div>
-                                    <div class="form-group metadata-cache-setting">
-                                        <label id="metadataCacheMinutesLabel" for="metadataCacheMinutes">Cache (Min.)</label>
-                                        <input type="number" id="metadataCacheMinutes" value="10" min="1" max="120">
-                                    </div>
-                                </details>
+                                        <label class="toggle-row"><input type="checkbox" id="logStreamEventsToggle" checked=""><span id="logStreamEventsLabel">Titel- und Spielwechsel speichern</span></label>
+
+
+
+                                    </div></div></details></div><div class="settings-card settings-organized" data-settings-pane="automation" data-settings-group="automation" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="autoVodCardTitle" class="settings-section-title">Auto-VOD-Download</span><span id="settingsAutomationHint" class="settings-section-hint">Neue VODs und laufende Streams anhand deiner Kanalregeln prüfen.</span></div></summary><div class="settings-section-body"><div class="form-row aligned compact-number-fields">
+                            <div class="form-stack">
+                                <label id="autoVodPollMinutesLabel" class="form-sublabel" for="autoVodPollMinutes">Intervall (Min.)</label>
+                                <input type="number" id="autoVodPollMinutes" min="5" max="360" value="15" class="input-narrow">
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="updates" data-settings-group="general" hidden>
-                        <h3 id="updateTitle">Updates</h3>
-                        <p id="versionInfo" class="card-intro">Version: v1.1.4</p>
-                        <button type="button" class="btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()">Nach Updates suchen</button>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="system" data-settings-group="system" hidden>
-                        <div class="system-check-grid"><section>
-                        <div class="form-row section-header">
-                            <h3 id="preflightTitle">System-Check</h3>
-                            <span class="health-badge unknown" id="healthBadge">System: Unbekannt</span>
-                        </div>
-                        <div class="form-row" style="margin-bottom: 10px;">
-                            <button type="button" class="btn-secondary" id="btnPreflightRun" onclick="runPreflight(false)">Check ausführen</button>
-                            <button type="button" class="btn-secondary" id="btnPreflightFix" onclick="runPreflight(true)">Auto-Fix Tools</button>
-                        </div>
-                        <details class="settings-diagnostics"><summary>Details</summary><pre id="preflightResult" class="log-panel">Noch kein Check ausgeführt.</pre></details>
-                        </section><section><div class="form-row section-header"><h3 id="managedToolsTitle">Verwaltete Tools</h3></div>
-                        <div class="form-row" style="margin-bottom: 10px;">
-                            <button type="button" class="btn-secondary" id="btnRefreshManagedTools" onclick="refreshManagedToolStatus()">Tool-Status aktualisieren</button>
-                            <button type="button" class="btn-secondary" id="btnRepairManagedTools" onclick="repairManagedTools()">Tools reparieren</button>
-                            <button type="button" class="btn-secondary" id="btnResetManagedTools" onclick="resetManagedTools()">Tools zurücksetzen</button>
-                        </div>
-                        <details class="settings-diagnostics"><summary>Details</summary><pre id="managedToolStatus" class="log-panel">Noch kein Tool-Status geladen.</pre></details>
-                        </section></div>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="debug" data-settings-group="system" hidden>
-                        <h3 id="debugLogTitle">Live Debug-Log</h3>
-                        <div class="form-row aligned">
-                            <button type="button" class="btn-secondary" id="btnRefreshLog" onclick="refreshDebugLog()">Aktualisieren</button>
-                            <button type="button" class="btn-secondary" id="btnOpenDebugLogFile" onclick="openDebugLogFile()">Log-Datei öffnen</button>
-                            <label class="inline-toggle">
-                                <input type="checkbox" id="debugAutoRefresh" onchange="toggleDebugAutoRefresh(this.checked)">
-                                <span id="autoRefreshText">Auto-Refresh</span>
+                            <div class="form-stack">
+                                <label id="autoVodMaxAgeHoursLabel" class="form-sublabel" for="autoVodMaxAgeHours">Max. Alter (Std.)</label>
+                                <input type="number" id="autoVodMaxAgeHours" min="1" max="720" value="24" class="input-narrow">
+                            </div>
+                        </div><div class="form-row auto-vod-actions">
+                            <button type="button" class="btn-secondary" id="btnAutoVodScanNow" onclick="triggerManualAutoVodScan()">VODs prüfen</button>
+                            <button type="button" class="btn-secondary" id="btnAutoRecordScanNow" onclick="triggerManualAutoRecordScan()">Live prüfen</button>
+                            <button type="button" class="btn-secondary" id="autoVodRulesBtn" onclick="RendererAutoVodRules.open()">Kanalregeln</button>
+                            <span id="autoVodStatusLine" class="form-sublabel"></span>
+                        </div></div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="settingsRecoveryTitle" class="settings-section-title">Aufnahmen fortsetzen</span><span id="settingsRecoveryHint" class="settings-section-hint">Unterbrochene Live-Aufnahmen fortsetzen und ihre Teile zusammenfügen.</span></div></summary><div class="settings-section-body"><div class="download-settings-toggles"><label class="toggle-row"><input type="checkbox" id="autoResumeLiveRecordingToggle" checked=""><span id="autoResumeLiveRecordingLabel">Live-Aufnahmen automatisch fortsetzen</span></label><label class="toggle-row"><input type="checkbox" id="autoMergeResumedPartsToggle"><span id="autoMergeResumedPartsLabel">Fortgesetzte Aufnahmen zusammenfügen</span></label><label class="toggle-row indented"><input type="checkbox" id="deletePartsAfterMergeToggle"><span id="deletePartsAfterMergeLabel">Parts nach dem Zusammenfügen löschen</span></label></div></div></details></div><div class="settings-card settings-organized" data-settings-pane="notifications" data-settings-group="automation" hidden=""><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="discordCardTitle" class="settings-section-title">Discord-Webhook</span><span id="settingsDiscordHint" class="settings-section-hint">Ausgewählte Ereignisse an einen Discord-Webhook senden.</span></div></summary><div class="settings-section-body"><div class="form-group">
+                            <label id="discordWebhookUrlLabel" for="discordWebhookUrl">Webhook-URL</label>
+                            <input type="text" id="discordWebhookUrl" placeholder="https://discord.com/api/webhooks/...">
+                        </div><div class="form-group">
+                            <label class="toggle-row">
+                                <input type="checkbox" id="discordNotifyLiveStartToggle">
+                                <span id="discordNotifyLiveStartLabel">Aufnahme gestartet</span>
                             </label>
-                        </div>
-                        <details class="settings-diagnostics"><summary>Details</summary><pre id="debugLogOutput" class="log-panel">Lade...</pre></details>
-                    </div>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="discordNotifyLiveEndToggle">
+                                <span id="discordNotifyLiveEndLabel">Aufnahme beendet</span>
+                            </label>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="discordNotifyVodCompleteToggle">
+                                <span id="discordNotifyVodCompleteLabel">VOD heruntergeladen</span>
+                            </label>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="discordNotifyVodAutoQueuedToggle">
+                                <span id="discordNotifyVodAutoQueuedLabel">VOD automatisch eingereiht</span>
+                            </label>
+                        </div></div></details></div><div class="settings-card settings-organized" data-settings-pane="locations" data-settings-group="storage" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="settingsLocationsTitle" class="settings-section-title">Speicherorte</span><span id="settingsLocationsHint" class="settings-section-hint">Ordner für VODs und Clips festlegen.</span></div></summary><div class="settings-section-body"><div class="form-group download-settings-storage">
+                            <label id="storageLabel" for="downloadPath">Speicherort</label>
+                            <div class="form-row">
+                                <input type="text" id="downloadPath" readonly="">
+                                <button type="button" class="btn-secondary" id="selectFolderBtn" onclick="selectFolder()">Ordner</button>
+                                <button type="button" class="btn-secondary" id="openFolderBtn" onclick="openFolder()">Öffnen</button>
+                            </div>
+                        </div><div class="form-group download-settings-storage">
+                            <label id="clipStorageLabel" for="clipDownloadPath">Clip-Speicherort</label>
+                            <div class="form-row">
+                                <input type="text" id="clipDownloadPath" readonly="">
+                                <button type="button" class="btn-secondary" id="selectClipFolderBtn" onclick="selectClipStorageFolder()">Ordner</button>
+                                <button type="button" class="btn-secondary" id="resetClipFolderBtn" onclick="resetClipStorageFolder()">Standard</button>
+                                <button type="button" class="btn-secondary" id="openClipFolderBtn" onclick="openClipLibraryFolder()">Öffnen</button>
+                            </div>
+                        </div></div></details></div><div class="settings-card settings-organized" data-settings-pane="storage" data-settings-group="storage" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="storageCardTitle" class="settings-section-title">Storage</span><span id="settingsStorageHint" class="settings-section-hint">Belegten Speicherplatz und gespeicherte Aufnahmen prüfen.</span></div></summary><div class="settings-section-body">
+                        <div class="form-row section-header"><div id="storageSummary" class="form-sublabel" role="status" aria-live="polite"></div>
 
-                    <div class="settings-card" data-settings-pane="storage" data-settings-group="storage" hidden>
-                        <div class="form-row section-header">
-                            <h3 id="storageCardTitle">Storage</h3>
                             <button type="button" class="btn-secondary" id="btnRefreshStorage" onclick="refreshStorageStats()">Aktualisieren</button>
                         </div>
 
-                        <div id="storageSummary" class="form-sublabel" style="margin-bottom:8px;" role="status" aria-live="polite"></div>
+
                         <div id="storageList"></div>
 
-                        <hr>
-                        <h4 id="cleanupTitle">Automatisch aufräumen</h4>
-                        <p id="cleanupIntro" class="card-intro">Chat-Dateien werden mitverschoben oder gelöscht.</p>
-                        <label class="toggle-row" style="margin-bottom: 8px;">
+                        </div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="cleanupTitle" class="settings-section-title">Automatisch aufräumen</span><p id="cleanupIntro" class="card-intro settings-section-hint">Chat-Dateien werden mitverschoben oder gelöscht.</p></div></summary><div class="settings-section-body">
+
+
+                        <label class="toggle-row">
                             <input type="checkbox" id="autoCleanupEnabledToggle">
                             <span id="autoCleanupEnabledLabel">Aktivieren</span>
                         </label>
-                        <div class="form-row" style="gap:12px; flex-wrap:wrap; margin-bottom: 8px;">
+                        <div class="form-row">
                             <label class="form-stack size-sm">
                                 <span id="autoCleanupDaysLabel" class="form-sublabel">Älter als (Tage)</span>
                                 <input type="number" id="autoCleanupDays" min="1" max="3650" value="30">
@@ -1046,77 +1007,53 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 </select>
                             </label>
                         </div>
-                        <div class="form-row" style="margin-bottom: 8px; gap: 8px;">
+                        <div class="form-row">
                             <button type="button" class="btn-secondary" id="btnCleanupDryRun" onclick="runCleanupDryRun()">Vorschau</button>
                             <button type="button" class="btn-secondary" id="btnCleanupRunNow" onclick="runCleanupNow()">Jetzt ausführen</button>
                         </div>
                         <div id="cleanupReport" class="form-note" role="status" aria-live="polite"></div>
-                    </div>
+                    </div></details></div><div class="settings-card settings-organized" data-settings-pane="maintenance" data-settings-group="storage" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="backupCardTitle" class="settings-section-title">Sicherung &amp; Wartung</span><p id="backupScopeText" class="form-sublabel settings-section-hint">Programmdaten ohne Videos und Anmeldungen.</p></div></summary><div class="settings-section-body">
 
-                    <div class="settings-card" data-settings-pane="notifications" data-settings-group="automation" hidden>
-                        <h3 id="discordCardTitle">Discord-Webhook</h3>
 
-                        <div class="form-group">
-                            <label id="discordWebhookUrlLabel" for="discordWebhookUrl">Webhook-URL</label>
-                            <input type="text" id="discordWebhookUrl" placeholder="https://discord.com/api/webhooks/...">
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-row">
-                                <input type="checkbox" id="discordNotifyLiveStartToggle">
-                                <span id="discordNotifyLiveStartLabel">Aufnahme gestartet</span>
-                            </label>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="discordNotifyLiveEndToggle">
-                                <span id="discordNotifyLiveEndLabel">Aufnahme beendet</span>
-                            </label>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="discordNotifyVodCompleteToggle">
-                                <span id="discordNotifyVodCompleteLabel">VOD heruntergeladen</span>
-                            </label>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="discordNotifyVodAutoQueuedToggle">
-                                <span id="discordNotifyVodAutoQueuedLabel">VOD automatisch eingereiht</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="automation" data-settings-group="automation" hidden>
-                        <h3 id="autoVodCardTitle">Auto-VOD-Download</h3>
-
-                        <div class="form-row aligned compact-number-fields">
-                            <div class="form-stack">
-                                <label id="autoVodPollMinutesLabel" class="form-sublabel" for="autoVodPollMinutes">Intervall (Min.)</label>
-                                <input type="number" id="autoVodPollMinutes" min="5" max="360" value="15" class="input-narrow">
-                            </div>
-                            <div class="form-stack">
-                                <label id="autoVodMaxAgeHoursLabel" class="form-sublabel" for="autoVodMaxAgeHours">Max. Alter (Std.)</label>
-                                <input type="number" id="autoVodMaxAgeHours" min="1" max="720" value="24" class="input-narrow">
-                            </div>
-                        </div>
-                        <div class="form-row auto-vod-actions">
-                            <button type="button" class="btn-secondary" id="btnAutoVodScanNow" onclick="triggerManualAutoVodScan()">VODs prüfen</button>
-                            <button type="button" class="btn-secondary" id="btnAutoRecordScanNow" onclick="triggerManualAutoRecordScan()">Live prüfen</button>
-                            <button type="button" class="btn-secondary" id="autoVodRulesBtn" onclick="RendererAutoVodRules.open()">Kanalregeln</button>
-                            <span id="autoVodStatusLine" class="form-sublabel"></span>
-                        </div>
-                    </div>
-
-                    <div class="settings-card" data-settings-pane="maintenance" data-settings-group="storage" hidden>
-                        <h3 id="backupCardTitle">Sicherung &amp; Wartung</h3>
-                        <p id="backupScopeText" class="form-sublabel">Programmdaten ohne Videos und Anmeldungen.</p>
                         <div class="form-row"><button type="button" class="btn-primary" id="btnCreateBackup" onclick="runApplicationBackup(false)">Sicherung erstellen</button><button type="button" class="btn-secondary" id="btnRestoreBackup" onclick="runApplicationBackup(true)">Wiederherstellen</button></div>
-                        <details class="settings-diagnostics"><summary id="backupSettingsOnly">Nur Einstellungen</summary>
 
-                        <div class="form-row" style="margin-bottom: 10px; flex-wrap: wrap;">
+                    </div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="backupSettingsOnly" class="settings-section-title">Nur Einstellungen</span><span id="settingsConfigHint" class="settings-section-hint">Einstellungen übertragen und Download-Markierungen verwalten.</span></div></summary><div class="settings-section-body">
+
+                        <div class="form-row">
                             <button type="button" class="btn-secondary" id="btnExportConfig" onclick="exportConfigToFile()">Konfiguration exportieren</button>
                             <button type="button" class="btn-secondary" id="btnImportConfig" onclick="importConfigFromFile()">Konfiguration importieren</button>
                             <button type="button" class="btn-secondary" id="btnResetDownloadedIds" onclick="resetDownloadedIds()">Download-Markierungen zurücksetzen</button>
                         </div>
-                        </details>
-                    </div>
+                        </div></details></div><div class="settings-card settings-organized" data-settings-pane="system" data-settings-group="system" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="preflightTitle" class="settings-section-title">System-Check</span><span id="settingsSystemHint" class="settings-section-hint">Verbindung, Werkzeuge und Download-Voraussetzungen testen.</span></div></summary><div class="settings-section-body">
 
-                    <div class="settings-card" data-settings-pane="metrics" data-settings-group="system" hidden>
-                        <h3 id="runtimeMetricsTitle">Runtime Metrics</h3>
+                        <div class="form-row settings-actions">
+                            <button type="button" class="btn-secondary" id="btnPreflightRun" onclick="runPreflight(false)">Check ausführen</button>
+                            <button type="button" class="btn-secondary" id="btnPreflightFix" onclick="runPreflight(true)">Auto-Fix Tools</button>
+                        <span class="health-badge unknown" id="healthBadge">System: Unbekannt</span></div>
+                        <details class="settings-diagnostics"><summary>Details</summary><pre id="preflightResult" class="log-panel">Noch kein Check ausgeführt.</pre></details>
+                        </div></details><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="managedToolsTitle" class="settings-section-title">Verwaltete Tools</span><span id="settingsToolsHint" class="settings-section-hint">Installierte Download-Werkzeuge prüfen und bei Bedarf reparieren.</span></div></summary><div class="settings-section-body"><div class="form-row section-header"></div>
+                        <div class="form-row">
+                            <button type="button" class="btn-secondary" id="btnRefreshManagedTools" onclick="refreshManagedToolStatus()">Tool-Status aktualisieren</button>
+                            <button type="button" class="btn-secondary" id="btnRepairManagedTools" onclick="repairManagedTools()">Tools reparieren</button>
+                            <button type="button" class="btn-secondary" id="btnResetManagedTools" onclick="resetManagedTools()">Tools zurücksetzen</button>
+                        </div>
+                        <details class="settings-diagnostics"><summary>Details</summary><pre id="managedToolStatus" class="log-panel">Noch kein Tool-Status geladen.</pre></details>
+                        </div></details></div><div class="settings-card settings-organized" data-settings-pane="cache" data-settings-group="system" hidden=""><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="settingsCacheTitle" class="settings-section-title">Metadaten-Cache</span><span id="settingsCacheHint" class="settings-section-hint">Festlegen, wie lange abgerufene Streaminformationen wiederverwendet werden.</span></div></summary><div class="settings-section-body"><div class="form-group metadata-cache-setting">
+                                        <label id="metadataCacheMinutesLabel" for="metadataCacheMinutes">Cache (Min.)</label>
+                                        <input type="number" id="metadataCacheMinutes" value="10" min="1" max="120">
+                                    </div></div></details></div><div class="settings-card settings-organized" data-settings-pane="debug" data-settings-group="system" hidden=""><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="debugLogTitle" class="settings-section-title">Live Debug-Log</span><span id="settingsDebugHint" class="settings-section-hint">Aktuelle Protokolle anzeigen und die Log-Datei öffnen.</span></div></summary><div class="settings-section-body">
+
+                        <div class="form-row aligned">
+                            <button type="button" class="btn-secondary" id="btnRefreshLog" onclick="refreshDebugLog()">Aktualisieren</button>
+                            <button type="button" class="btn-secondary" id="btnOpenDebugLogFile" onclick="openDebugLogFile()">Log-Datei öffnen</button>
+                            <label class="inline-toggle">
+                                <input type="checkbox" id="debugAutoRefresh" onchange="toggleDebugAutoRefresh(this.checked)">
+                                <span id="autoRefreshText">Auto-Refresh</span>
+                            </label>
+                        </div>
+                        <pre id="debugLogOutput" class="log-panel">Lade...</pre>
+                    </div></details></div><div class="settings-card settings-organized" data-settings-pane="metrics" data-settings-group="system" hidden=""><details class="settings-section settings-advanced settings-diagnostics"><summary><div class="settings-section-copy"><span id="runtimeMetricsTitle" class="settings-section-title">Runtime Metrics</span><span id="settingsMetricsHint" class="settings-section-hint">Laufzeitwerte, Auslastung und Fehlerzähler prüfen.</span></div></summary><div class="settings-section-body">
+
                         <div class="form-row aligned">
                             <button type="button" class="btn-secondary" id="btnRefreshMetrics" onclick="refreshRuntimeMetrics()">Aktualisieren</button>
                             <button type="button" class="btn-secondary" id="btnExportMetrics" onclick="exportRuntimeMetrics()">Export JSON</button>
@@ -1125,9 +1062,8 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                 <span id="runtimeMetricsAutoRefreshText">Auto-Refresh</span>
                             </label>
                         </div>
-                        <details class="settings-diagnostics"><summary>Details</summary><pre id="runtimeMetricsOutput" class="log-panel">Lade...</pre></details>
-                    </div>
-                </div>
+                        <pre id="runtimeMetricsOutput" class="log-panel">Lade...</pre>
+                    </div></details></div></div>
             </div>
 
             <div class="status-bar">

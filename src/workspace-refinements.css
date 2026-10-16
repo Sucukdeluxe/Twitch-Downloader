@@ -2447,3 +2447,321 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 .player-seek-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .player-seek-options .btn-secondary { min-width: 68px; min-height: 36px; font-size: 13px; user-select: none; background: var(--workspace-control); color: var(--workspace-text); border-color: var(--workspace-border); }
 .player-seek-options .btn-secondary[aria-pressed="true"] { border-color: var(--workspace-text); background: var(--workspace-control-hover); font-weight: 700; }
+
+#settingsTab[data-settings-pane="downloads"].active,
+#settingsTab[data-settings-pane="automation"].active,
+#settingsTab[data-settings-pane="storage"].active,
+#settingsTab[data-settings-pane="system"].active {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+}
+
+#settingsTab .settings-card.settings-organized {
+    display: grid;
+    gap: 14px;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+#settingsTab .settings-card[hidden] {
+    display: none;
+}
+
+#settingsTab .settings-section {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: var(--workspace-panel-raised);
+    border: 1px solid var(--workspace-border);
+    border-radius: 8px;
+}
+
+#settingsTab .settings-section > summary {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 76px;
+    width: 100%;
+    margin: 0;
+    padding: 16px 20px;
+    color: var(--workspace-text);
+    list-style: none;
+    cursor: default;
+    user-select: none;
+    border-radius: 8px;
+}
+
+#settingsTab .settings-section > summary::-webkit-details-marker {
+    display: none;
+}
+
+#settingsTab .settings-section > summary::after {
+    content: '';
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    margin: 0 3px 4px auto;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 160ms ease;
+}
+
+#settingsTab .settings-section[open] > summary::after {
+    transform: translateY(4px) rotate(225deg);
+}
+
+#settingsTab .settings-section > summary:hover {
+    background: var(--workspace-control-hover);
+}
+
+#settingsTab .settings-section > summary:focus-visible {
+    outline: 2px solid var(--workspace-primary);
+    outline-offset: 2px;
+}
+
+#settingsTab .settings-section-copy {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+#settingsTab .settings-section .settings-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+#settingsTab .settings-section .settings-section-hint {
+    margin: 0;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+#settingsTab .settings-section-body {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+    padding: 20px;
+    border-top: 1px solid var(--workspace-border);
+}
+
+#settingsTab .settings-section-body > :is(.form-group, .form-row, .download-settings-toggles, .form-note, .form-sublabel, .card-intro) {
+    margin: 0;
+}
+
+#settingsTab .settings-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 24px;
+}
+
+#settingsTab .settings-fields-grid .form-group {
+    min-width: 0;
+    margin: 0;
+}
+
+#settingsTab .settings-fields-grid :is(input, select, output) {
+    width: 100%;
+    max-width: 100%;
+}
+
+#settingsTab .settings-organized .download-settings-toggles,
+#settingsTab .settings-behavior-card .download-settings-toggles {
+    display: grid;
+    gap: 0;
+}
+
+
+
+#settingsTab .settings-organized .form-row.auto-vod-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+#settingsTab .settings-organized .compact-number-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#settingsTab .settings-organized .compact-number-fields input {
+    width: 100%;
+}
+
+#settingsTab .settings-organized .section-header {
+    justify-content: flex-end;
+}
+
+#settingsTab .settings-organized .section-header:empty,
+#settingsTab .settings-organized :is(.form-note, .form-sublabel, .template-lint):empty {
+    display: none;
+}
+
+#settingsTab .settings-organized .log-panel {
+    margin: 0;
+    height: 260px;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+#settingsTab .settings-behavior-card {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 1000px) {
+    #settingsTab .settings-fields-grid,
+    #settingsTab .settings-organized .compact-number-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    #settingsTab .settings-section > summary,
+    #settingsTab .settings-section-body {
+        padding: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #settingsTab .settings-section > summary::after {
+        transition: none;
+    }
+}
+
+.toolbar-context[data-toolbar-for="settings"] .settings-page-heading {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+    margin-right: auto;
+}
+
+.toolbar-context[data-toolbar-for="settings"] .settings-page-heading h2 {
+    margin: 0;
+    color: var(--workspace-text);
+    font-size: 16px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+#settingsTab[data-settings-pane="general"].active {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+}
+
+#settingsTab[data-settings-pane="general"] .settings-card {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+#settingsTab .general-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 20px 24px;
+}
+
+#settingsTab .general-settings-grid > .form-group {
+    min-width: 0;
+    margin: 0;
+}
+
+#settingsTab .general-settings-grid .sidebar-layout-setting {
+    align-self: end;
+    padding: 0;
+    border: 0;
+}
+
+#settingsTab .settings-card[data-settings-pane="updates"] {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    order: 1;
+}
+
+#settingsTab .settings-card[data-settings-pane="updates"]:not([hidden]) h3,
+#settingsTab .settings-card[data-settings-pane="updates"] .card-intro {
+    margin: 0;
+}
+
+#settingsTab #checkUpdateBtn {
+    margin-left: auto;
+}
+
+#settingsTab .settings-card[hidden] {
+    display: none;
+}
+
+#settingsTab .settings-card label.toggle-row,
+#settingsTab .settings-card label.inline-toggle {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    gap: 12px;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 12px;
+    color: var(--workspace-text);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: default;
+}
+
+#settingsTab .settings-card label.toggle-row {
+    width: 100%;
+}
+
+#settingsTab .settings-card label.toggle-row:hover,
+#settingsTab .settings-card label.inline-toggle:hover {
+    background: var(--workspace-control-hover);
+}
+
+#settingsTab .settings-card label.toggle-row:focus-within,
+#settingsTab .settings-card label.inline-toggle:focus-within {
+    border-color: var(--workspace-primary);
+}
+
+#settingsTab .settings-card label:is(.toggle-row, .inline-toggle) input[type="checkbox"] {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    min-height: 20px;
+    margin: 0;
+    background-size: 15px;
+}
+
+#settingsTab .settings-card label:is(.toggle-row, .inline-toggle) > span {
+    min-width: 0;
+    font-weight: 400;
+}
+
+#settingsTab .settings-card label.toggle-row.indented {
+    width: calc(100% - 32px);
+    margin-left: 32px;
+}
+
+@media (max-width: 1000px) {
+    #settingsTab .general-settings-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .toolbar-context[data-toolbar-for="settings"] .settings-page-heading h2 {
+        font-size: 14px;
+    }
+}
+
+#settingsTab .general-settings-grid .form-note { white-space: normal; overflow-wrap: anywhere; max-width: 100%; font-size: 12px; }
+#settingsTab .settings-actions .health-badge { margin-left: auto; }
+#settingsTab .settings-organized .section-header:has(#storageSummary) { justify-content: space-between; }
+#settingsTab .settings-fields-grid > .toggle-row { align-self: end; }
+#settingsTab .settings-organized .metadata-cache-setting { padding-top: 0; border-top: 0; }

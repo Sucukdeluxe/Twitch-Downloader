@@ -314,7 +314,8 @@ function filterSettings(query: string): void {
         match?.querySelectorAll<HTMLDetailsElement>('details.settings-advanced').forEach(details => {
             if ((details.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery)) details.open = true;
         });
-        match?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const section = Array.from(match?.querySelectorAll<HTMLElement>('.settings-section') || []).find(element => (element.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery));
+        requestAnimationFrame(() => (section || match)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     }
 }
 
@@ -359,6 +360,7 @@ function setSettingsPane(pane: string, source?: HTMLElement): void {
     if (source) byId<HTMLInputElement>('settingsSearchInput').value = '';
     if (changed) tab.scrollTop = 0;
     if (changed) requestAnimationFrame(refreshVisibleSettingsDiagnostics);
+    if (group === 'storage' && !byId('storageSummary').textContent?.trim()) void refreshStorageStats();
     refreshSettingsGroupLabels();
     scheduleSegmentedIndicatorsSync();
 }
