@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.5 - 2026-10-16
+
+This update reorganizes settings and improves their layout and readability.
+
+- Group download, automation, storage, backup and diagnostic options into consistent expandable sections.
+- Move startup behavior and completion notifications to General, storage folders to Storage & backup, and recording recovery to Automation.
+- Show the current settings category in the toolbar and keep General compact without an empty update column.
+- Use consistent checkbox spacing and complete hover areas.
+- Expand download sections by default and animate opening and closing, including rapid direction changes.
+- Remove the misleading fixed Source quality display; choose quality when adding a VOD to the queue.
+- Increase footer text size and contrast.
+
 ## 1.1.4 - 2026-10-16
 
 This update fixes overly long frame-rate values in the video quality selector.
