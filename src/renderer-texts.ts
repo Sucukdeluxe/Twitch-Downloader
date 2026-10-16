@@ -321,7 +321,6 @@ function applyLanguageToStaticUI(): void {
     setText('downloadChatReplayLabel', UI_TEXT.static.downloadChatReplayLabel);
     setText('captureLiveChatLabel', UI_TEXT.static.captureLiveChatLabel);
     setText('logStreamEventsLabel', UI_TEXT.static.logStreamEventsLabel);
-    setText('streamlinkQualityLabel', UI_TEXT.static.streamlinkQualityLabel);
     setText('downloadPolicyTitle', UI_TEXT.static.downloadPolicyTitle);
     setText('downloadThrottleLabel', UI_TEXT.static.downloadThrottleLabel);
     setText('downloadThrottleHint', UI_TEXT.static.downloadThrottleHint);

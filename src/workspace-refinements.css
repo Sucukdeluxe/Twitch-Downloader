@@ -2763,7 +2763,7 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #settingsTab .general-settings-grid .form-note { white-space: normal; overflow-wrap: anywhere; max-width: 100%; font-size: 12px; }
 #settingsTab .settings-actions .health-badge { margin-left: auto; }
 #settingsTab .settings-organized .section-header:has(#storageSummary) { justify-content: space-between; }
-#settingsTab .settings-fields-grid > .toggle-row { align-self: end; }
+#settingsTab .settings-fields-grid > .toggle-row { align-self: end; grid-column: 1 / -1; }
 #settingsTab .settings-organized .metadata-cache-setting { padding-top: 0; border-top: 0; }
 
 #settingsTab details.settings-section > summary[aria-expanded="false"]::after {

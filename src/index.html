@@ -870,7 +870,7 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                             <input type="password" id="clientSecret" placeholder="Twitch Client Secret">
                         </div>
                         <button type="button" class="btn-primary" id="saveSettingsBtn" onclick="saveSettings()">Speichern &amp; Verbinden</button>
-                    </div><div class="settings-card settings-organized" data-settings-pane="downloads" data-settings-group="downloads" hidden=""><h3 id="downloadSettingsTitle" hidden="">Download-Einstellungen</h3><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="downloadBasicsTitle" class="settings-section-title">Download und Qualität</span><span id="settingsDownloadHint" class="settings-section-hint">Qualität, Aufteilung und gleichzeitige Downloads.</span></div></summary><div class="settings-section-body"><div class="settings-fields-grid"><div class="form-group">
+                    </div><div class="settings-card settings-organized" data-settings-pane="downloads" data-settings-group="downloads" hidden=""><h3 id="downloadSettingsTitle" hidden="">Download-Einstellungen</h3><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="downloadBasicsTitle" class="settings-section-title">Download-Verhalten</span><span id="settingsDownloadHint" class="settings-section-hint">Aufteilung, parallele Downloads und Leistung.</span></div></summary><div class="settings-section-body"><div class="settings-fields-grid"><div class="form-group">
                                         <label id="modeLabel" for="downloadMode">Download-Modus</label>
                                         <select id="downloadMode">
                                             <option value="full" id="modeFullText">Ganzes VOD</option>
@@ -885,9 +885,6 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                             <option value="1" id="parallelDownloads1">1 (Standard)</option>
                                             <option value="2" id="parallelDownloads2">2 (Parallel)</option>
                                         </select>
-                                    </div><div class="form-group">
-                                        <label id="streamlinkQualityLabel" for="streamlinkQuality">Stream-Qualität</label>
-                                        <output id="streamlinkQuality" class="settings-fixed-value">Source</output>
                                     </div><div class="form-group">
                                         <label id="performanceModeLabel" for="performanceMode">Performance-Profil</label>
                                         <select id="performanceMode">

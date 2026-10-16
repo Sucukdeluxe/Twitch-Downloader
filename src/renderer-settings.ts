@@ -1149,7 +1149,6 @@ function syncSettingsFormFromConfig(syncSecrets = true): void {
     byId<HTMLInputElement>('autoCleanupDays').value = String((config.auto_cleanup_days as number) || 30);
     byId<HTMLSelectElement>('autoCleanupTarget').value = (config.auto_cleanup_target as string) === 'all' ? 'all' : 'live_only';
     byId<HTMLSelectElement>('autoCleanupAction').value = (config.auto_cleanup_action as string) === 'delete' ? 'delete' : 'archive';
-    byId('streamlinkQuality').textContent = 'Source';
     byId<HTMLInputElement>('metadataCacheMinutes').value = String((config.metadata_cache_minutes as number) || 10);
     byId<HTMLInputElement>('vodFilenameTemplate').value = (config.filename_template_vod as string) || '{title}.mp4';
     byId<HTMLInputElement>('partsFilenameTemplate').value = (config.filename_template_parts as string) || '{date}_Part{part_padded}.mp4';
