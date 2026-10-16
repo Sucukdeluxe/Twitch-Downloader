@@ -491,6 +491,7 @@ function openUpdateModal(info?: UpdateInfo): void {
     RendererAccessibility.openDialog('updateModal', { onEscape: dismissUpdateModal });
     refreshUpdateModalTexts();
     anchorUpdateModal();
+    resetUpdateChangelogScroll();
 }
 
 function dismissUpdateModal(): void {
@@ -520,6 +521,11 @@ function confirmUpdateModal(): void {
     downloadUpdate();
 }
 
+function resetUpdateChangelogScroll(): void {
+    const content = byId<HTMLElement>('updateChangelogPanel').querySelector<HTMLElement>('.update-changelog-panel-inner');
+    if (content) content.scrollTop = 0;
+}
+
 function toggleUpdateChangelog(): void {
     const card = byId<HTMLElement>('updateChangelogCard');
     if (card.classList.contains('is-hidden')) {
@@ -527,6 +533,7 @@ function toggleUpdateChangelog(): void {
     }
 
     updateChangelogExpanded = !updateChangelogExpanded;
+    if (!updateChangelogExpanded) resetUpdateChangelogScroll();
     const panel = byId<HTMLElement>('updateChangelogPanel');
     panel.classList.toggle('is-expanded', updateChangelogExpanded);
     panel.setAttribute('aria-hidden', String(!updateChangelogExpanded));
