@@ -3073,7 +3073,8 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
     display: flex; align-items: center; justify-content: center; min-width: 46px;
     min-height: 32px; font-size: 18px; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere;
 }
-#updateModal .update-version-transition strong { color: #f3e8ff; font-weight: 700; }
+#updateModal .update-version-transition span { color: #ffb15c; }
+#updateModal .update-version-transition strong { color: #86dca3; font-weight: 700; }
 #updateModal .update-version-arrow { width: 40px; height: 32px; flex: 0 0 40px; display: block; color: var(--update-accent); }
 #updateModalTitle { font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -.5px; margin: 0 0 12px; }
 #updateModal .update-modal-message { margin: 10px 0; font-size: 13px; line-height: 1.6; color: var(--update-muted); }
@@ -3098,7 +3099,7 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #updateModal .update-changelog-list { font-size: 13px; line-height: 1.65; margin: 0; padding-left: 18px; }
 #updateModal .update-changelog-list li+li { margin-top: 8px; }
 #updateModal .update-changelog-paragraph { font-size: 13px; line-height: 1.65; margin: 0; }
-#updateModal .update-preserve { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 12px 0 20px; color: var(--update-muted); font-size: 11px; line-height: 1.6; }
+#updateModal .update-preserve { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 12px 0 10px; color: #fff; font-size: 12px; line-height: 1.6; }
 #updateModal .update-preserve svg { display: block; width: 16px; height: 16px; flex-shrink: 0; color: #a6cfb4; }
 #updateModal .update-modal-actions { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; border: 0; }
 #updateModal .update-modal-actions button { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 42px; padding: 10px 16px; border-radius: 7px; font-size: 13px; line-height: 1.25; }
@@ -3107,16 +3108,18 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #updateModalConfirmBtn svg { display: block; width: 18px; height: 18px; }
 #updateModalDismissBtn { border: 1px solid #6b6672; background: #303033; color: var(--update-text); }
 #updateModalDismissBtn:hover { background: #3c3842; border-color: #9a8aa9; }
-#updateModal .update-modal-actions #updateModalSkipBtn { min-height: 0; margin-top: -3px; padding: 3px 0; border: 0; background: transparent; color: #bbbcc7; font-size: 12px; font-weight: 400; }
+#updateModal .update-modal-actions #updateModalSkipBtn { min-height: 0; margin-top: 0; padding: 0; border: 0; background: transparent; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.6; }
 #updateModalSkipBtn:hover { text-decoration: underline; }
 body.theme-light #updateModal .update-modal { --update-bg: #f9f9fc; --update-border: #bfc0ca; --update-text: #22222b; --update-muted: #50505e; --update-accent: #70429c; }
 body.theme-light #updateModal .update-version-transition { background: #eee7f5; color: #51425f; border-color: #9f8db2; }
-body.theme-light #updateModal .update-version-transition strong { color: #4d286c; }
+body.theme-light #updateModal .update-version-transition span { color: #99500b; }
+body.theme-light #updateModal .update-version-transition strong { color: #216b3b; }
 body.theme-light #updateModal .update-release-row { border-color: #d3d0da; }
 body.theme-light #updateModal .update-modal-meta { color: #55515e; }
 body.theme-light #updateModalDismissBtn { background: #eeeef3; border-color: #a5a1ad; }
 body.theme-light #updateModalDismissBtn:hover { background: #e3ddec; }
-body.theme-light #updateModal .update-modal-actions #updateModalSkipBtn { color: #5b5667; }
+body.theme-light #updateModal .update-modal-actions #updateModalSkipBtn { color: #22222b !important; }
+body.theme-light #updateModal .update-preserve { color: #22222b; }
 body.theme-light #updateModal .update-preserve svg { color: #39774f; }
 @media(max-width: 480px) {
     #updateModal .update-modal { padding: 24px 20px; }
