@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.6 - 2026-10-16
+
+This update simplifies download limits and scheduled download windows.
+
+- Replace the free-text schedule with individual start and end time fields.
+- Add and remove time windows, with a next-day indicator for overnight schedules.
+- Use a compact download limit field with a visible MiB/s unit and a clear unlimited state.
+- Keep status and the Start now action together in a compact footer.
+- Preserve saved limits and schedules when restarting the application.
+
 ## 1.1.5 - 2026-10-16
 
 This update reorganizes settings and improves their layout and readability.
