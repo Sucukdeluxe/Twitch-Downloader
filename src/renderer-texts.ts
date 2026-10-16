@@ -441,13 +441,13 @@ function applyLanguageToStaticUI(): void {
     setText('workspaceUpdateDismissText', UI_TEXT.updates.dismissAria);
     setAriaLabel('workspaceUpdateDismiss', UI_TEXT.updates.dismissAria);
     setTitle('workspaceUpdateDismiss', UI_TEXT.updates.dismissAria);
-    setText('updateModalEyebrow', UI_TEXT.static.updateTitle);
     setText('updateModalTitle', UI_TEXT.updates.modalAvailableTitle);
     setText('updateModalDismissBtn', UI_TEXT.updates.modalDismiss);
-    setText('updateModalConfirmBtn', UI_TEXT.updates.modalDownloadConfirm);
+    setText('updateModalConfirmText', UI_TEXT.updates.modalDownloadConfirm);
     setText('updateModalSkipBtn', UI_TEXT.updates.modalSkipVersion);
     setText('updateChangelogLabel', UI_TEXT.updates.changelogLabel);
-    setText('updateChangelogToggle', UI_TEXT.updates.showChangelog);
+    setAriaLabel('updateChangelogToggle', UI_TEXT.updates.showChangelog);
+    setText('updatePreserveText', UI_TEXT.updates.preserveData);
     setText('updateChangelogEmpty', UI_TEXT.updates.noChangelog);
     setPlaceholder('newStreamer', UI_TEXT.streamerSearch.placeholder);
     setAriaLabel('newStreamer', UI_TEXT.streamerSearch.label);

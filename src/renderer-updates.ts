@@ -39,7 +39,7 @@ function rememberUpdateInfo(info?: UpdateInfo | null): UpdateInfo | null {
     if (!version) return null;
     latestUpdateVersion = version;
     latestUpdateInfo = {
-        ...(latestUpdateInfo || { version }),
+        ...(latestUpdateInfo?.version === version ? latestUpdateInfo : { version }),
         ...(info || {}),
         version
     };
@@ -64,24 +64,10 @@ function formatReleaseDate(dateValue?: string): string {
         return '';
     }
 
-    return new Intl.DateTimeFormat(getIntlLocale(), { dateStyle: 'medium' }).format(parsed);
-}
-
-function getUpdateModalMetaText(info: UpdateInfo): string {
-    const parts: string[] = [];
-    const releaseName = (info.releaseName || '').trim();
-    const canonicalNames = new Set([info.version, `v${info.version}`]);
-
-    if (releaseName && !canonicalNames.has(releaseName)) {
-        parts.push(`${UI_TEXT.updates.releasedLabel}: ${releaseName}`);
-    }
-
-    const formattedDate = formatReleaseDate(info.releaseDate);
-    if (formattedDate) {
-        parts.push(formattedDate);
-    }
-
-    return parts.join(' | ');
+    const locale = getIntlLocale();
+    const date = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(parsed);
+    const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsed);
+    return `${date} · ${time}`;
 }
 
 function setCheckButtonCheckingState(enabled: boolean): void {
@@ -118,11 +104,7 @@ function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 
     banner.hidden = state === 'idle';
     button.dataset.updateState = state;
     button.disabled = false;
-    if (state === 'downloading') {
-        button.setAttribute('aria-disabled', 'true');
-    } else {
-        button.removeAttribute('aria-disabled');
-    }
+    button.removeAttribute('aria-disabled');
     label.textContent = state === 'ready' ? UI_TEXT.updates.installNow : 'Update';
     button.removeAttribute('title');
     button.setAttribute('aria-label', state === 'idle' ? UI_TEXT.static.checkUpdates : description);
@@ -186,11 +168,11 @@ for (const eventName of ['mouseenter', 'mouseleave', 'focusin', 'focusout']) {
 }
 
 function handleWorkspaceUpdateAction(): void {
-    if (updateBannerState === 'downloading' || updateCheckInProgress) {
+    if (updateCheckInProgress) {
         return;
     }
 
-    if (updateBannerState === 'available' || updateBannerState === 'ready') {
+    if (updateBannerState === 'available' || updateBannerState === 'ready' || updateBannerState === 'downloading') {
         const info = getActiveUpdateInfo();
         if (info) openUpdateModal(info);
         return;
@@ -251,6 +233,7 @@ function setDownloadPendingUi(reveal = true): void {
             : UI_TEXT.updates.downloading;
     }
     syncWorkspaceUpdateState('downloading');
+    refreshUpdateModalDownloadState();
 }
 
 function setDownloadReadyUi(info?: UpdateInfo): void {
@@ -276,6 +259,7 @@ function setDownloadReadyUi(info?: UpdateInfo): void {
     button.textContent = UI_TEXT.updates.installNow;
     button.disabled = false;
     syncWorkspaceUpdateState('ready');
+    refreshUpdateModalDownloadState();
 }
 
 function appendInlineMarkdown(target: HTMLElement, text: string): void {
@@ -312,6 +296,7 @@ function renderUpdateChangelog(notes?: string): void {
         card.classList.add('is-hidden');
         panel.classList.remove('is-expanded');
         panel.setAttribute('aria-hidden', 'true');
+        panel.inert = true;
         updateChangelogExpanded = false;
         return;
     }
@@ -392,6 +377,7 @@ function renderUpdateChangelog(notes?: string): void {
 
     panel.classList.toggle('is-expanded', updateChangelogExpanded);
     panel.setAttribute('aria-hidden', String(!updateChangelogExpanded));
+    panel.inert = !updateChangelogExpanded;
 }
 
 function refreshUpdateChangelogToggleText(): void {
@@ -401,7 +387,7 @@ function refreshUpdateChangelogToggleText(): void {
         return;
     }
 
-    toggle.textContent = updateChangelogExpanded ? UI_TEXT.updates.hideChangelog : UI_TEXT.updates.showChangelog;
+    toggle.setAttribute('aria-label', updateChangelogExpanded ? UI_TEXT.updates.hideChangelog : UI_TEXT.updates.showChangelog);
     toggle.setAttribute('aria-expanded', String(updateChangelogExpanded));
 }
 
@@ -418,7 +404,7 @@ function refreshUpdateModalTexts(): void {
         info.version
     );
     byId('updateModalDismissBtn').textContent = UI_TEXT.updates.modalDismiss;
-    byId('updateModalConfirmBtn').textContent = isReady
+    byId('updateModalConfirmText').textContent = isReady
         ? UI_TEXT.updates.modalInstallConfirm
         : UI_TEXT.updates.modalDownloadConfirm;
     // Skip-version only makes sense before the download. Once the .exe is
@@ -429,13 +415,39 @@ function refreshUpdateModalTexts(): void {
     byId('updateChangelogLabel').textContent = UI_TEXT.updates.changelogLabel;
     byId('updateChangelogEmpty').textContent = UI_TEXT.updates.noChangelog;
 
-    const metaText = getUpdateModalMetaText(info);
-    const meta = byId('updateModalMeta');
+    byId('updateInstalledVersion').textContent = appVersion;
+    byId('updateAvailableVersion').textContent = info.version;
+    byId('updateReleaseVersion').textContent = `Version ${info.version}`;
+    byId('updatePreserveText').textContent = UI_TEXT.updates.preserveData;
+    const metaText = formatReleaseDate(info.releaseDate);
+    const meta = byId<HTMLTimeElement>('updateModalMeta');
     meta.textContent = metaText;
     meta.classList.toggle('is-hidden', !metaText);
+    if (metaText && info.releaseDate) meta.dateTime = new Date(info.releaseDate).toISOString();
+    else meta.removeAttribute('datetime');
 
     renderUpdateChangelog(info.releaseNotes);
     refreshUpdateChangelogToggleText();
+    refreshUpdateModalDownloadState();
+}
+
+function refreshUpdateModalDownloadState(): void {
+    const downloading = updateBannerState === 'downloading';
+    const confirm = byId<HTMLButtonElement>('updateModalConfirmBtn');
+    confirm.disabled = downloading;
+    byId('updateModalConfirmText').textContent = downloading
+        ? UI_TEXT.updates.downloading
+        : updateReady ? UI_TEXT.updates.modalInstallConfirm : UI_TEXT.updates.modalDownloadConfirm;
+    byId('updateModalSkipBtn').classList.toggle('is-hidden', downloading || updateReady);
+    byId('updateModalProgress').classList.toggle('is-hidden', !downloading);
+    byId('updateModalProgressLabel').textContent = UI_TEXT.updates.downloadLabel;
+    const percent = Math.max(0, Math.min(100, latestDownloadProgress?.percent || 0));
+    byId('updateModalProgressPercent').textContent = latestDownloadProgress ? `${Math.round(percent)} %` : '…';
+    byId('updateModalProgressFill').style.width = `${percent}%`;
+    const gauge = byId('updateModalProgressGauge');
+    gauge.setAttribute('aria-label', UI_TEXT.updates.downloadLabel);
+    if (latestDownloadProgress) gauge.setAttribute('aria-valuenow', String(Math.round(percent)));
+    else gauge.removeAttribute('aria-valuenow');
 }
 
 function openUpdateModal(info?: UpdateInfo): void {
@@ -463,9 +475,8 @@ function skipUpdateVersion(): void {
 }
 
 function confirmUpdateModal(): void {
-    dismissUpdateModal();
-
     if (updateReady) {
+        dismissUpdateModal();
         void window.api.installUpdate();
         return;
     }
@@ -483,6 +494,7 @@ function toggleUpdateChangelog(): void {
     const panel = byId<HTMLElement>('updateChangelogPanel');
     panel.classList.toggle('is-expanded', updateChangelogExpanded);
     panel.setAttribute('aria-hidden', String(!updateChangelogExpanded));
+    panel.inert = !updateChangelogExpanded;
     refreshUpdateChangelogToggleText();
 }
 
@@ -631,6 +643,7 @@ function handleUpdateDownloadFailure(operation: { failureHandled: boolean }): vo
     } else {
         hideUpdateBanner();
     }
+    refreshUpdateModalDownloadState();
     notifyUpdate(UI_TEXT.updates.downloadFailed, 'warn');
 }
 
@@ -650,7 +663,6 @@ function downloadUpdate(): void {
     const operation = { failureHandled: false };
     updateDownloadOperation = operation;
     latestDownloadProgress = null;
-    dismissUpdateModal();
     setDownloadPendingUi();
 
     void window.api.downloadUpdate().then((result) => {
@@ -755,6 +767,7 @@ window.api.onUpdateDownloadProgress((progress: UpdateDownloadProgress) => {
     const totalMb = (progress.total / 1024 / 1024).toFixed(1);
     byId('updateText').textContent = `${UI_TEXT.updates.downloadLabel}: ${mb} / ${totalMb} MB (${progress.percent.toFixed(0)}%)`;
     syncWorkspaceUpdateState('downloading');
+    refreshUpdateModalDownloadState();
 });
 
 window.api.onUpdateDownloaded((info: UpdateInfo) => {

@@ -7003,7 +7003,7 @@ function buildUpdateInfoPayload(version: string, releaseDate?: string): {
 
     return {
         version: normalizedVersion,
-        releaseDate: releaseDate || (hasMatchingReleaseInfo ? latestReleaseUpdateInfo?.releaseDate : undefined),
+        releaseDate: (hasMatchingReleaseInfo ? latestReleaseUpdateInfo?.releaseDate : undefined) || releaseDate,
         releaseName: hasMatchingReleaseInfo ? latestReleaseUpdateInfo?.releaseName : undefined,
         releaseNotes: hasMatchingReleaseInfo ? latestReleaseUpdateInfo?.releaseNotes : undefined
     };

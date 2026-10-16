@@ -3035,3 +3035,101 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
         grid-row: auto;
     }
 }
+
+#updateModal .update-modal {
+    --update-bg: #28282b;
+    --update-border: #515157;
+    --update-text: #f4f4f5;
+    --update-muted: #c9c9d1;
+    --update-accent: #dec3ff;
+    width: 440px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 48px);
+    padding: 30px 25px 24px;
+    overflow: auto;
+    border: 1px solid var(--update-border);
+    border-radius: 12px;
+    background: var(--update-bg);
+    color: var(--update-text);
+    box-shadow: 0 24px 85px #0008;
+    scrollbar-width: thin;
+}
+#updateModal .modal-close {
+    position: absolute; top: 12px; right: 12px;
+    display: grid; place-items: center; width: 34px; height: 34px;
+    padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--update-muted);
+}
+#updateModal .modal-close::before,#updateModal .modal-close::after { content: none; }
+#updateModal .modal-close svg { width: 18px; height: 18px; }
+#updateModal .update-modal-heading { text-align: center; padding: 10px 12px 0; }
+#updateModal .update-version-transition {
+    display: inline-flex; align-items: center; justify-content: center; gap: 18px;
+    height: 64px; padding: 0 20px; margin: 0 0 22px;
+    background: #302b37; border: 1px solid #756582; border-radius: 9px;
+    font-size: 18px; line-height: 1; font-variant-numeric: tabular-nums; color: #ded3ea;
+    max-width: 100%;
+}
+#updateModal .update-version-transition span,#updateModal .update-version-transition strong {
+    display: flex; align-items: center; justify-content: center; min-width: 46px;
+    min-height: 32px; font-size: 18px; line-height: 1.2; font-weight: 600; overflow-wrap: anywhere;
+}
+#updateModal .update-version-transition strong { color: #f3e8ff; font-weight: 700; }
+#updateModal .update-version-arrow { width: 40px; height: 32px; flex: 0 0 40px; display: block; color: var(--update-accent); }
+#updateModalTitle { font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -.5px; margin: 0 0 12px; }
+#updateModal .update-modal-message { margin: 10px 0; font-size: 13px; line-height: 1.6; color: var(--update-muted); }
+#updateModal .update-release-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 15px;
+    padding: 17px 0; margin-top: 20px; border-block: 1px solid #4a4a51; font-size: 12px;
+}
+#updateModal .update-modal-meta { margin: 0; color: #d1cfd7; font-size: 12px; font-variant-numeric: tabular-nums; }
+#updateModal .update-changelog-card { margin-top: 4px; border: 0; border-radius: 0; background: transparent; }
+#updateModal .update-changelog-toggle {
+    width: 100%; padding: 16px 0; display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; border: 0; border-radius: 0; background: transparent; color: var(--update-text);
+}
+#updateModal .update-changelog-label { color: inherit; font-size: 14px; line-height: 1.35; font-weight: 700; text-transform: none; letter-spacing: 0; }
+#updateModal .update-changelog-toggle svg { display: block; width: 20px; height: 20px; margin: 4px; flex-shrink: 0; color: var(--update-accent); transition: transform .28s cubic-bezier(.2,.7,.2,1); }
+#updateModal .update-changelog-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+#updateModal .update-changelog-panel { display: grid; grid-template-rows: 0fr; max-height: none; padding: 0; opacity: 1; transform: none; overflow: hidden; transition: grid-template-rows .3s cubic-bezier(.2,.7,.2,1); }
+#updateModal .update-changelog-panel.is-expanded { grid-template-rows: 1fr; padding: 0; }
+#updateModal .update-changelog-panel-inner { min-height: 0; overflow: hidden; }
+#updateModal .update-changelog-content { display: grid; gap: 12px; color: var(--update-muted); font-size: 13px; line-height: 1.65; padding-bottom: 18px; }
+#updateModal .update-changelog-heading { color: var(--update-text); font-size: 13px; line-height: 1.4; margin: 0; }
+#updateModal .update-changelog-list { font-size: 13px; line-height: 1.65; margin: 0; padding-left: 18px; }
+#updateModal .update-changelog-list li+li { margin-top: 8px; }
+#updateModal .update-changelog-paragraph { font-size: 13px; line-height: 1.65; margin: 0; }
+#updateModal .update-preserve { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 12px 0 20px; color: var(--update-muted); font-size: 11px; line-height: 1.6; }
+#updateModal .update-preserve svg { display: block; width: 16px; height: 16px; flex-shrink: 0; color: #a6cfb4; }
+#updateModal .update-modal-actions { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; border: 0; }
+#updateModal .update-modal-actions button { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 42px; padding: 10px 16px; border-radius: 7px; font-size: 13px; line-height: 1.25; }
+#updateModalConfirmBtn { background: #39774f; border: 1px solid #56906a; color: #fff; font-weight: 700; }
+#updateModalConfirmBtn:hover { background: #44895b; }
+#updateModalConfirmBtn svg { display: block; width: 18px; height: 18px; }
+#updateModalDismissBtn { border: 1px solid #6b6672; background: #303033; color: var(--update-text); }
+#updateModalDismissBtn:hover { background: #3c3842; border-color: #9a8aa9; }
+#updateModal .update-modal-actions #updateModalSkipBtn { min-height: 0; margin-top: -3px; padding: 3px 0; border: 0; background: transparent; color: #bbbcc7; font-size: 12px; font-weight: 400; }
+#updateModalSkipBtn:hover { text-decoration: underline; }
+body.theme-light #updateModal .update-modal { --update-bg: #f9f9fc; --update-border: #bfc0ca; --update-text: #22222b; --update-muted: #50505e; --update-accent: #70429c; }
+body.theme-light #updateModal .update-version-transition { background: #eee7f5; color: #51425f; border-color: #9f8db2; }
+body.theme-light #updateModal .update-version-transition strong { color: #4d286c; }
+body.theme-light #updateModal .update-release-row { border-color: #d3d0da; }
+body.theme-light #updateModal .update-modal-meta { color: #55515e; }
+body.theme-light #updateModalDismissBtn { background: #eeeef3; border-color: #a5a1ad; }
+body.theme-light #updateModalDismissBtn:hover { background: #e3ddec; }
+body.theme-light #updateModal .update-modal-actions #updateModalSkipBtn { color: #5b5667; }
+body.theme-light #updateModal .update-preserve svg { color: #39774f; }
+@media(max-width: 480px) {
+    #updateModal .update-modal { padding: 24px 20px; }
+    #updateModal .update-version-transition { gap: 14px; padding: 0 16px; }
+    #updateModal .update-release-row { gap: 8px; }
+}
+@media(prefers-reduced-motion: reduce) {
+    #updateModal .update-changelog-panel, #updateModal .update-changelog-toggle svg { transition: none; }
+}
+
+#updateModal .update-modal-progress { padding: 15px; margin: 0 0 18px; border: 1px solid var(--update-border); border-radius: 8px; }
+#updateModal .update-modal-progress-heading { display: flex; justify-content: space-between; gap: 15px; font-size: 12px; }
+#updateModal .update-modal-progress-track { height: 7px; overflow: hidden; background: #55515e; border-radius: 5px; margin-top: 14px; }
+#updateModalProgressFill { height: 100%; width: 0; background: var(--update-accent); transition: width .16s linear; }
+#updateModalConfirmBtn:disabled { opacity: .6; cursor: default; }
+@media(prefers-reduced-motion: reduce) { #updateModalProgressFill { transition: none; } }

@@ -17,29 +17,41 @@
 <body class="theme-twitch">
     <div class="modal-overlay" id="updateModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="updateModalTitle" onclick="handleUpdateModalOverlayClick(event)">
         <div class="modal update-modal">
-            <button type="button" class="modal-close modal-close-localizable" aria-label="Close" onclick="dismissUpdateModal()">x</button>
-            <div class="update-modal-eyebrow" id="updateModalEyebrow">Updates</div>
-            <h2 id="updateModalTitle">Update verfügbar</h2>
-            <p class="update-modal-message" id="updateModalMessage">Version 0.0.0 ist verfügbar. Jetzt herunterladen?</p>
-            <div class="update-modal-meta is-hidden" id="updateModalMeta"></div>
-
-            <div class="update-changelog-card is-hidden" id="updateChangelogCard">
-                <div class="update-changelog-header">
-                    <span class="update-changelog-label" id="updateChangelogLabel">Changelog</span>
-                    <button type="button" class="update-changelog-toggle" id="updateChangelogToggle" onclick="toggleUpdateChangelog()" aria-controls="updateChangelogPanel" aria-expanded="false">Changelog anzeigen</button>
+            <button type="button" class="modal-close modal-close-localizable" aria-label="Close" onclick="dismissUpdateModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            <div class="update-modal-heading">
+                <div class="update-version-transition">
+                    <span id="updateInstalledVersion"></span>
+                    <svg class="update-version-arrow" viewBox="0 0 40 32" aria-hidden="true"><path d="M4 12h18V6l14 10-14 10v-6H4z" fill="currentColor"/></svg>
+                    <strong id="updateAvailableVersion"></strong>
                 </div>
-                <div class="update-changelog-panel" id="updateChangelogPanel" aria-hidden="true">
+                <h2 id="updateModalTitle">Update verfügbar</h2>
+                <p class="update-modal-message" id="updateModalMessage"></p>
+            </div>
+            <div class="update-release-row">
+                <strong id="updateReleaseVersion"></strong>
+                <time class="update-modal-meta" id="updateModalMeta"></time>
+            </div>
+            <div class="update-changelog-card" id="updateChangelogCard">
+                <button type="button" class="update-changelog-toggle" id="updateChangelogToggle" onclick="toggleUpdateChangelog()" aria-controls="updateChangelogPanel" aria-expanded="false">
+                    <span class="update-changelog-label" id="updateChangelogLabel">Änderungsübersicht</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="update-changelog-panel" id="updateChangelogPanel" aria-hidden="true" inert>
                     <div class="update-changelog-panel-inner">
                         <div class="update-changelog-content" id="updateChangelogContent"></div>
-                        <p class="update-changelog-empty" id="updateChangelogEmpty" hidden>Kein Changelog verfügbar.</p>
+                        <p class="update-changelog-empty" id="updateChangelogEmpty" hidden></p>
                     </div>
                 </div>
             </div>
-
+            <p class="update-preserve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span id="updatePreserveText"></span></p>
+            <div id="updateModalProgress" class="update-modal-progress is-hidden" aria-live="polite">
+                <div class="update-modal-progress-heading"><strong id="updateModalProgressLabel"></strong><span id="updateModalProgressPercent"></span></div>
+                <div id="updateModalProgressGauge" class="update-modal-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="updateModalProgressFill"></div></div>
+            </div>
             <div class="modal-actions update-modal-actions">
-                <button class="btn-secondary" id="updateModalDismissBtn" type="button" onclick="dismissUpdateModal()">Nein</button>
+                <button class="btn-primary" id="updateModalConfirmBtn" type="button" onclick="confirmUpdateModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></svg><span id="updateModalConfirmText"></span></button>
+                <button class="btn-secondary" id="updateModalDismissBtn" type="button" onclick="dismissUpdateModal()">Später</button>
                 <button class="btn-secondary" id="updateModalSkipBtn" type="button" onclick="skipUpdateVersion()">Diese Version überspringen</button>
-                <button class="btn-primary" id="updateModalConfirmBtn" type="button" onclick="confirmUpdateModal()">Ja, herunterladen</button>
             </div>
         </div>
     </div>
