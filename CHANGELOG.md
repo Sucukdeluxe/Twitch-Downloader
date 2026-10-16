@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.7 - 2026-10-17
+
+This update refreshes the update dialog and VOD actions, and improves scheduled downloads.
+
+- Add a compact update dialog with version colors, publication date and time, and expandable release notes.
+- Keep update actions visible while long release notes scroll, and reset the notes to the top when collapsed.
+- Show available updates through the navigation button without a hover popup.
+- Refresh the Trim and Queue buttons and the external-link icon for opening Twitch.
+- Keep the downloaded checkmark visible during VOD hover previews.
+- Remove tooltips that only repeat visible labels.
+- Prevent automatic queued jobs from starting after a download window ends; continue in the next permitted window.
+
 ## 1.1.6 - 2026-10-16
 
 This update simplifies download limits and scheduled download windows.
