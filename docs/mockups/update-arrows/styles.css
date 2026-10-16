@@ -1,0 +1,11 @@
+@import url('../update-rework/styles.css?revision=2');
+.version-transition{display:inline-flex;align-items:center;justify-content:center;gap:18px;height:64px;padding:0 20px;margin:0 0 22px;background:#302b37;border:1px solid #756582;border-radius:9px;font-size:18px;line-height:1;font-variant-numeric:tabular-nums;color:#ded3ea}
+.version-transition>span,.version-transition>strong{display:flex;align-items:center;justify-content:center;min-width:46px;height:32px;font-size:18px;line-height:1;font-weight:600}
+.version-transition>strong{color:#f3e8ff;font-weight:700}
+.version-transition .version-arrow{width:40px;height:32px;display:block;flex:0 0 40px;color:#dec3ff;overflow:visible}
+.arrow-comparison .minimal-release{align-items:center;gap:15px}
+.arrow-comparison .minimal-release time{font-size:12px;color:#d1cfd7;font-variant-numeric:tabular-nums}
+.v10.arrow-comparison .secondary{border:1px solid #6b6672;background:#303033;border-radius:7px;min-height:42px}
+.v10.arrow-comparison .secondary:hover{background:#3c3842;border-color:#9a8aa9}
+.arrow-comparison .minimal-head{padding-top:10px}
+@media(max-width:480px){.version-transition{gap:14px;padding:0 16px}.arrow-comparison .minimal-release{gap:8px}}
