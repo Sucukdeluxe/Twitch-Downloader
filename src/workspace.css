@@ -2244,10 +2244,10 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
     align-items: center;
     gap: 12px;
     padding: 0 10px;
-    color: var(--workspace-text-muted);
+    color: var(--workspace-text);
     background: var(--workspace-panel);
     border-top: 1px solid var(--workspace-border);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .status-dot {
