@@ -3133,3 +3133,9 @@ body.theme-light #updateModal .update-preserve svg { color: #39774f; }
 #updateModalProgressFill { height: 100%; width: 0; background: var(--update-accent); transition: width .16s linear; }
 #updateModalConfirmBtn:disabled { opacity: .6; cursor: default; }
 @media(prefers-reduced-motion: reduce) { #updateModalProgressFill { transition: none; } }
+
+#updateModal { align-items: flex-start; padding: 0; }
+#updateModal .update-modal { position: absolute; margin: 0; top: 24px; scrollbar-gutter: stable; }
+#updateModal .update-modal::-webkit-scrollbar { width: 10px; }
+#updateModal .update-modal::-webkit-scrollbar-thumb { background: #77717f; border: 2px solid var(--update-bg); border-radius: 8px; }
+#updateModal .update-modal::-webkit-scrollbar-track { background: var(--update-bg); }

@@ -450,11 +450,43 @@ function refreshUpdateModalDownloadState(): void {
     else gauge.removeAttribute('aria-valuenow');
 }
 
+let updateModalAnchorTop = 24;
+let updateModalCollapsedHeight = 0;
+let updateModalResizeObserver: ResizeObserver | null = null;
+
+function positionUpdateModal(): void {
+    const overlay = byId<HTMLElement>('updateModal');
+    const dialog = overlay.querySelector<HTMLElement>('.update-modal');
+    if (!dialog || !overlay.classList.contains('show')) return;
+    const top = Math.max(24, Math.min(updateModalAnchorTop, window.innerHeight - dialog.offsetHeight - 24));
+    dialog.style.top = `${top}px`;
+}
+
+function anchorUpdateModal(): void {
+    const dialog = byId<HTMLElement>('updateModal').querySelector<HTMLElement>('.update-modal');
+    if (!dialog) return;
+    const panel = byId<HTMLElement>('updateChangelogPanel');
+    panel.style.transition = 'none';
+    updateModalCollapsedHeight = dialog.offsetHeight;
+    panel.style.removeProperty('transition');
+    updateModalAnchorTop = Math.max(24, (window.innerHeight - updateModalCollapsedHeight) / 2);
+    if (!updateModalResizeObserver) {
+        updateModalResizeObserver = new ResizeObserver(positionUpdateModal);
+        updateModalResizeObserver.observe(dialog);
+        window.addEventListener('resize', () => {
+            updateModalAnchorTop = Math.max(24, (window.innerHeight - updateModalCollapsedHeight) / 2);
+            positionUpdateModal();
+        });
+    }
+    positionUpdateModal();
+}
+
 function openUpdateModal(info?: UpdateInfo): void {
     if (!rememberUpdateInfo(info)) return;
     updateChangelogExpanded = false;
     RendererAccessibility.openDialog('updateModal', { onEscape: dismissUpdateModal });
     refreshUpdateModalTexts();
+    anchorUpdateModal();
 }
 
 function dismissUpdateModal(): void {
