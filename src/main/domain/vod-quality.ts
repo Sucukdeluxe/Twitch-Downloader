@@ -101,7 +101,7 @@ function variantLabel(id: string, fps?: number, codec?: string): string {
     const [base, alternative] = id.split('_alt');
     const [height, rate] = base.split('p');
     const resolvedFps = fps || Number(rate);
-    const displayedFps = resolvedFps && Math.abs(resolvedFps - Math.round(resolvedFps)) < 0.01 ? Math.round(resolvedFps) : resolvedFps;
+    const displayedFps = resolvedFps && Math.abs(resolvedFps - Math.round(resolvedFps)) < 0.01 ? Math.round(resolvedFps) : Number(resolvedFps.toFixed(2));
     return [height + 'p', displayedFps ? displayedFps + ' fps' : '', codec || '', alternative !== undefined && !codec ? '#' + (Number(alternative || 1) + 1) : ''].filter(Boolean).join(' · ');
 }
 
