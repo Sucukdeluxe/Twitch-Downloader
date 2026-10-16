@@ -2765,3 +2765,11 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #settingsTab .settings-organized .section-header:has(#storageSummary) { justify-content: space-between; }
 #settingsTab .settings-fields-grid > .toggle-row { align-self: end; }
 #settingsTab .settings-organized .metadata-cache-setting { padding-top: 0; border-top: 0; }
+
+#settingsTab details.settings-section > summary[aria-expanded="false"]::after {
+    transform: rotate(45deg);
+}
+
+#settingsTab details.settings-section > summary[aria-expanded="true"]::after {
+    transform: translateY(4px) rotate(225deg);
+}

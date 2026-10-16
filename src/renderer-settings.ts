@@ -312,7 +312,7 @@ function filterSettings(query: string): void {
     if (pane) {
         setSettingsPane(pane);
         match?.querySelectorAll<HTMLDetailsElement>('details.settings-advanced').forEach(details => {
-            if ((details.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery)) details.open = true;
+            if ((details.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery)) setSettingsSectionExpanded(details, true);
         });
         const section = Array.from(match?.querySelectorAll<HTMLElement>('.settings-section') || []).find(element => (element.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery));
         requestAnimationFrame(() => (section || match)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
@@ -1270,12 +1270,85 @@ function scheduleSettingsAutoSave(delayMs = 450): void {
     }, delayMs);
 }
 
+
+const settingsSectionAnimations = new WeakMap<HTMLDetailsElement, { expanded: boolean; animation: Animation | null }>();
+
+function setSettingsSectionExpanded(details: HTMLDetailsElement, expanded: boolean, animate = true): void {
+    const state = settingsSectionAnimations.get(details);
+    const summary = details.querySelector<HTMLElement>(':scope > summary');
+    const body = details.querySelector<HTMLElement>(':scope > .settings-section-body');
+    if (!state || !summary || !body) {
+        details.open = expanded;
+        return;
+    }
+    const from = details.getBoundingClientRect().height;
+    state.animation?.cancel();
+    state.animation = null;
+    state.expanded = expanded;
+    summary.setAttribute('aria-expanded', String(expanded));
+    const finish = (): void => {
+        state.animation?.cancel();
+        state.animation = null;
+        details.open = state.expanded;
+        details.style.removeProperty('overflow');
+        body.inert = false;
+    };
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches || from === 0) {
+        finish();
+        return;
+    }
+    details.open = true;
+    body.inert = !expanded;
+    const style = getComputedStyle(details);
+    const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const to = expanded ? details.getBoundingClientRect().height : summary.getBoundingClientRect().height + border;
+    if (from === to) {
+        finish();
+        return;
+    }
+    details.style.overflow = 'hidden';
+    const animation = details.animate([{ height: from + 'px' }, { height: to + 'px' }], {
+        duration: 240,
+        easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        fill: 'both'
+    });
+    state.animation = animation;
+    animation.onfinish = () => {
+        if (state.animation === animation) finish();
+    };
+}
+
+function initSettingsSectionAnimations(): void {
+    const sections = document.querySelectorAll<HTMLDetailsElement>('#settingsTab [data-settings-pane="downloads"] details.settings-section');
+    sections.forEach(details => {
+        if (settingsSectionAnimations.has(details)) return;
+        const state = { expanded: details.open, animation: null as Animation | null };
+        settingsSectionAnimations.set(details, state);
+        const summary = details.querySelector<HTMLElement>(':scope > summary');
+        summary?.setAttribute('aria-expanded', String(details.open));
+        summary?.addEventListener('click', event => {
+            event.preventDefault();
+            setSettingsSectionExpanded(details, !state.expanded);
+        });
+        details.addEventListener('toggle', () => {
+            if (!state.animation || !details.open) setSettingsSectionExpanded(details, details.open, false);
+        });
+    });
+    window.addEventListener('resize', () => {
+        sections.forEach(details => {
+            const state = settingsSectionAnimations.get(details);
+            if (state?.animation) setSettingsSectionExpanded(details, state.expanded, false);
+        });
+    });
+}
+
 function initSettingsAutoSave(): void {
     if (settingsAutoSaveBound) {
         return;
     }
 
     settingsAutoSaveBound = true;
+    initSettingsSectionAnimations();
     document.querySelectorAll<HTMLDetailsElement>('.settings-diagnostics').forEach(details => details.addEventListener('toggle', refreshVisibleSettingsDiagnostics));
     syncSettingsFormFromConfig();
     window.api.onDownloadPolicyStatus(renderDownloadPolicyStatus);
