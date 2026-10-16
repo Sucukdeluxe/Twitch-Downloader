@@ -6697,6 +6697,7 @@ async function processQueue(manualOverride = false): Promise<void> {
 
     const maxSlots = Math.min(Math.max(1, config.parallel_downloads || 1), 2);
     const activePromises = new Map<string, Promise<void>>();
+    let waitingForTimeWindow = false;
 
     while (isDownloading) {
         // Clean up finished promises
@@ -6711,6 +6712,8 @@ async function processQueue(manualOverride = false): Promise<void> {
         while (activePromises.size < maxSlots && !queuePaused) {
             const item = pickNextPendingQueueItem();
             if (!item) break;
+            waitingForTimeWindow = !canStartDownloadQueue(manualOverride);
+            if (waitingForTimeWindow) break;
 
             const itemPromise = processOneQueueItem(item);
             activePromises.set(item.id, itemPromise);
@@ -6742,6 +6745,10 @@ async function processQueue(manualOverride = false): Promise<void> {
     }
     emitQueueUpdated();
     mainWindow?.webContents.send('download-finished');
+    if (waitingForTimeWindow && downloadQueue.some(item => item.status === 'pending')) {
+        appendDebugLog('queue-waiting-for-time-window', { nextStart: getDownloadPolicyStatus().nextStart });
+        return;
+    }
     try {
         if (Notification.isSupported()) {
             const completed = downloadQueue.filter(i => i.status === 'completed').length;
