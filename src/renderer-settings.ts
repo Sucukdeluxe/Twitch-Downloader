@@ -922,6 +922,118 @@ function syncPartMinutesFieldState(): void {
     label.classList.toggle('input-disabled', !isSplitMode);
 }
 
+let downloadWindowRowSequence = 0;
+
+function refreshDownloadWindowTexts(): void {
+    const container = document.getElementById('downloadWindowRows');
+    if (!container) return;
+    const rows = container.querySelectorAll<HTMLElement>('.download-window-row');
+    rows.forEach(row => {
+        row.querySelector<HTMLElement>('[data-window-start-label]')!.textContent = UI_TEXT.static.downloadWindowStart;
+        row.querySelector<HTMLElement>('[data-window-end-label]')!.textContent = UI_TEXT.static.downloadWindowEnd;
+        const remove = row.querySelector<HTMLButtonElement>('button')!;
+        remove.setAttribute('aria-label', UI_TEXT.static.downloadWindowRemove);
+        remove.title = UI_TEXT.static.downloadWindowRemove;
+        const start = row.querySelector<HTMLInputElement>('[data-window-time="start"]')!;
+        const end = row.querySelector<HTMLInputElement>('[data-window-time="end"]')!;
+        const nextDay = row.querySelector<HTMLElement>('.download-window-next-day')!;
+        nextDay.textContent = UI_TEXT.static.downloadWindowNextDay;
+        nextDay.hidden = !start.value || !end.value || end.value >= start.value;
+        for (const input of [start, end]) input.lang = currentLanguage === 'de' ? 'de-DE' : 'en-GB';
+    });
+    byId<HTMLElement>('downloadWindowsEmpty').hidden = rows.length > 0;
+}
+
+function updateDownloadWindowValue(): void {
+    const container = byId<HTMLElement>('downloadWindowRows');
+    const windows = Array.from(container.querySelectorAll<HTMLElement>('.download-window-row'), row => {
+        const start = row.querySelector<HTMLInputElement>('[data-window-time="start"]')!.value;
+        const end = row.querySelector<HTMLInputElement>('[data-window-time="end"]')!.value;
+        const invalid = !start || !end || start === end;
+        row.querySelectorAll<HTMLInputElement>('input').forEach(input => input.setAttribute('aria-invalid', String(invalid)));
+        return start + '-' + end;
+    });
+    const input = byId<HTMLTextAreaElement>('downloadWindows');
+    input.value = windows.join('\n');
+    refreshDownloadWindowTexts();
+    updateDownloadPolicyValidation(parseDownloadPolicyFormValue(byId<HTMLInputElement>('downloadThrottleMiBps').value, input.value).error);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function createDownloadWindowRow(start = '', end = ''): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'download-window-row';
+    const id = ++downloadWindowRowSequence;
+    for (const [kind, value] of [['start', start], ['end', end]] as const) {
+        const field = document.createElement('div');
+        field.className = 'download-window-field';
+        const label = document.createElement('label');
+        const caption = document.createElement('span');
+        caption.setAttribute('data-window-' + kind + '-label', '');
+        label.append(caption);
+        if (kind === 'end') {
+            const nextDay = document.createElement('span');
+            nextDay.className = 'download-window-next-day';
+            nextDay.hidden = true;
+            label.append(nextDay);
+        }
+        const input = document.createElement('input');
+        input.id = 'download-window-' + id + '-' + kind;
+        input.type = 'time';
+        input.step = '60';
+        input.required = true;
+        input.value = value;
+        input.dataset.windowTime = kind;
+        input.setAttribute('aria-describedby', 'downloadWindowsHint downloadPolicyValidation');
+        label.htmlFor = input.id;
+        input.addEventListener('input', updateDownloadWindowValue);
+        input.addEventListener('blur', () => { void flushSettingsAutoSave(false); });
+        field.append(label, input);
+        row.append(field);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn-secondary download-window-remove';
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '1.8');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.setAttribute('aria-hidden', 'true');
+    const lines = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    lines.setAttribute('d', 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5');
+    icon.append(lines);
+    remove.append(icon);
+    remove.addEventListener('click', () => {
+        const focusTarget = row.nextElementSibling?.querySelector<HTMLInputElement>('input')
+            || row.previousElementSibling?.querySelector<HTMLInputElement>('input')
+            || byId<HTMLButtonElement>('downloadWindowAddBtn');
+        row.remove();
+        updateDownloadWindowValue();
+        focusTarget.focus();
+        void flushSettingsAutoSave(false);
+    });
+    row.append(remove);
+    return row;
+}
+
+function addDownloadWindow(): void {
+    const row = createDownloadWindowRow();
+    byId<HTMLElement>('downloadWindowRows').append(row);
+    updateDownloadWindowValue();
+    row.querySelector<HTMLInputElement>('input')!.focus();
+}
+
+function syncDownloadWindowRows(): void {
+    const container = document.getElementById('downloadWindowRows');
+    if (!container) return;
+    const windows = config.download_policy?.windows ?? [];
+    container.replaceChildren(...windows.map(window => createDownloadWindowRow(window.start, window.end)));
+    refreshDownloadWindowTexts();
+}
+
 function parseDownloadPolicyFormValue(rateValue: string, windowsValue: string): { value: DownloadPolicy | null; error: string | null } {
     const rate = rateValue.trim();
     let throttle: DownloadPolicy['throttle'] = null;
@@ -969,6 +1081,7 @@ function formatDownloadThrottle(maxBytesPerSecond: number | null | undefined): s
 
 function renderDownloadPolicyStatus(status: DownloadPolicyStatus): void {
     const node = byId<HTMLElement>('downloadPolicyStatus');
+    node.closest('.download-policy-state')?.classList.toggle('is-waiting', status.waiting);
     if (status.waiting && status.nextStart) {
         node.textContent = UI_TEXT.static.downloadPolicyWaiting.replace('{time}', formatUiDateTime(status.nextStart));
         return;
@@ -1132,6 +1245,7 @@ function syncSettingsFormFromConfig(syncSecrets = true): void {
     byId<HTMLInputElement>('streamlinkDisableAdsToggle').checked = (config.streamlink_disable_ads as boolean) !== false;
     byId<HTMLInputElement>('downloadThrottleMiBps').value = formatDownloadThrottle(config.download_policy?.throttle?.maxBytesPerSecond);
     byId<HTMLTextAreaElement>('downloadWindows').value = (config.download_policy?.windows ?? []).map((window) => `${window.start}-${window.end}`).join('\n');
+    syncDownloadWindowRows();
     updateDownloadPolicyValidation(null);
     byId<HTMLInputElement>('downloadChatReplayToggle').checked = (config.download_chat_replay as boolean) === true;
     byId<HTMLInputElement>('captureLiveChatToggle').checked = (config.capture_live_chat as boolean) === true;

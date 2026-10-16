@@ -903,15 +903,35 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                                         <input type="text" id="partsFilenameTemplate" class="input-monospace" placeholder="{date}_Part{part_padded}.mp4" oninput="validateFilenameTemplates()">
                                         <label id="defaultClipTemplateLabel" for="defaultClipFilenameTemplate">Clip</label>
                                         <input type="text" id="defaultClipFilenameTemplate" class="input-monospace" placeholder="{date}_{part}.mp4" oninput="validateFilenameTemplates()">
-                                    </div><div id="filenameTemplateLint" class="template-lint ok">Template-Check: OK</div></div></details><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="downloadPolicyTitle" class="settings-section-title">Drosselung und Zeitfenster</span><span id="settingsPolicyHint" class="settings-section-hint">Bandbreite begrenzen und erlaubte Downloadzeiten festlegen.</span></div></summary><div class="settings-section-body"><div class="form-group">
-                                        <label id="downloadThrottleLabel" for="downloadThrottleMiBps">Downloadrate (MiB/s)</label>
-                                        <input type="text" id="downloadThrottleMiBps" inputmode="decimal" autocomplete="off" aria-describedby="downloadThrottleHint downloadPolicyValidation">
-                                        <div id="downloadThrottleHint" class="form-note">Leer = unbegrenzt.</div>
-                                    </div><div class="form-group">
-                                        <label id="downloadWindowsLabel" for="downloadWindows">Zeitfenster</label>
-                                        <textarea id="downloadWindows" rows="3" aria-describedby="downloadWindowsHint downloadPolicyValidation" placeholder="22:00-06:00"></textarea>
-                                        <div id="downloadWindowsHint" class="form-note">Ein Zeitfenster pro Zeile.</div>
-                                    </div><div id="downloadPolicyValidation" class="form-note" role="alert"></div><div id="downloadPolicyStatus" class="form-note" role="status" aria-live="polite"></div><button type="button" class="btn-secondary" id="downloadPolicyOverrideBtn" onclick="startDownloadPolicyOverride()">Jetzt starten</button></div></details><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="recordingMetadataTitle" class="settings-section-title">Aufnahmen und Metadaten</span><span id="settingsRecordingHint" class="settings-section-hint">Werbung, Chat und den Verlauf eines Streams speichern.</span></div></summary><div class="settings-section-body"><div class="download-settings-toggles">
+                                    </div><div id="filenameTemplateLint" class="template-lint ok">Template-Check: OK</div></div></details><details class="settings-section settings-advanced settings-diagnostics download-policy-settings" open=""><summary><div class="settings-section-copy"><span id="downloadPolicyTitle" class="settings-section-title">Downloadlimit und Zeitfenster</span><span id="settingsPolicyHint" class="settings-section-hint">Bandbreite begrenzen und erlaubte Downloadzeiten festlegen.</span></div></summary>
+                                <div class="settings-section-body">
+                                    <div class="download-policy-grid">
+                                        <div class="download-policy-field">
+                                            <label id="downloadThrottleLabel" for="downloadThrottleMiBps">Downloadlimit</label>
+                                            <div class="download-rate-control">
+                                                <input type="text" id="downloadThrottleMiBps" inputmode="decimal" autocomplete="off" placeholder="Unbegrenzt" aria-describedby="downloadThrottleUnit downloadThrottleHint downloadPolicyValidation">
+                                                <span id="downloadThrottleUnit">MiB/s</span>
+                                            </div>
+                                            <p id="downloadThrottleHint" class="form-note">Leer lassen, um die Downloadrate nicht zu begrenzen.</p>
+                                        </div>
+                                        <div class="download-policy-field">
+                                            <div class="download-windows-heading">
+                                                <span id="downloadWindowsLabel" class="download-policy-label">Zeitfenster</span>
+                                                <button type="button" id="downloadWindowAddBtn" class="btn-secondary download-window-add" onclick="addDownloadWindow()"><span aria-hidden="true">+</span><span id="downloadWindowAddText">Hinzufügen</span></button>
+                                            </div>
+                                            <div id="downloadWindowRows" role="group" aria-labelledby="downloadWindowsLabel"></div>
+                                            <p id="downloadWindowsEmpty" class="download-windows-empty">Keine Zeitfenster. Downloads können jederzeit starten.</p>
+                                            <p id="downloadWindowsHint" class="form-note">Ortszeit des Computers. Ein Ende vor dem Start gilt für den Folgetag.</p>
+                                            <textarea id="downloadWindows" hidden="" aria-hidden="true" tabindex="-1"></textarea>
+                                        </div>
+                                    </div>
+                                    <div id="downloadPolicyValidation" class="download-policy-validation" role="alert"></div>
+                                    <div class="download-policy-footer">
+                                        <div class="download-policy-state"><span class="download-policy-dot" aria-hidden="true"></span><span id="downloadPolicyStatus" role="status" aria-live="polite"></span></div>
+                                        <button type="button" class="btn-secondary" id="downloadPolicyOverrideBtn" onclick="startDownloadPolicyOverride()">Jetzt starten</button>
+                                    </div>
+                                </div>
+                            </details><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="recordingMetadataTitle" class="settings-section-title">Aufnahmen und Metadaten</span><span id="settingsRecordingHint" class="settings-section-hint">Werbung, Chat und den Verlauf eines Streams speichern.</span></div></summary><div class="settings-section-body"><div class="download-settings-toggles">
                                         <label class="toggle-row"><input type="checkbox" id="streamlinkDisableAdsToggle" checked=""><span id="streamlinkDisableAdsLabel">Werbung überspringen</span></label>
                                         <label class="toggle-row"><input type="checkbox" id="downloadChatReplayToggle"><span id="downloadChatReplayLabel">VOD-Chat speichern</span></label>
                                         <label class="toggle-row"><input type="checkbox" id="captureLiveChatToggle"><span id="captureLiveChatLabel">Live-Chat speichern</span></label>

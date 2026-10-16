@@ -326,6 +326,10 @@ function applyLanguageToStaticUI(): void {
     setText('downloadThrottleHint', UI_TEXT.static.downloadThrottleHint);
     setText('downloadWindowsLabel', UI_TEXT.static.downloadWindowsLabel);
     setText('downloadWindowsHint', UI_TEXT.static.downloadWindowsHint);
+    setText('downloadWindowAddText', UI_TEXT.static.downloadWindowAdd);
+    setText('downloadWindowsEmpty', UI_TEXT.static.downloadWindowsEmpty);
+    setPlaceholder('downloadThrottleMiBps', UI_TEXT.static.downloadThrottlePlaceholder);
+    refreshDownloadWindowTexts();
     setText('downloadPolicyOverrideBtn', UI_TEXT.static.downloadPolicyOverride);
     setText('streamerSectionTitleText', UI_TEXT.static.streamerSectionTitle);
     setPlaceholder('streamerListFilter', UI_TEXT.static.streamerListFilterPlaceholder);

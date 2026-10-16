@@ -2773,3 +2773,268 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #settingsTab details.settings-section > summary[aria-expanded="true"]::after {
     transform: translateY(4px) rotate(225deg);
 }
+
+#settingsTab .download-policy-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+}
+
+#settingsTab .download-policy-field {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    align-content: start;
+}
+
+#settingsTab .download-policy-field:first-child {
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 2px 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--workspace-border);
+}
+
+#settingsTab .download-policy-field:first-child .download-rate-control {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+}
+
+#settingsTab .download-policy-field:first-child .form-note {
+    grid-column: 1;
+}
+
+#settingsTab .download-policy-field > label,
+#settingsTab .download-policy-label {
+    margin: 0;
+    color: var(--workspace-text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 28px;
+}
+
+#settingsTab .download-rate-control {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    overflow: hidden;
+    background: var(--workspace-control);
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: 6px;
+}
+
+#settingsTab .download-rate-control:focus-within {
+    border-color: var(--workspace-primary);
+    box-shadow: 0 0 0 1px var(--workspace-primary);
+}
+
+#settingsTab .download-rate-control #downloadThrottleMiBps {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    height: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    outline: none;
+    font-size: 14px;
+}
+
+#settingsTab .download-rate-control > span {
+    padding: 0 12px;
+    color: var(--workspace-text-muted);
+    font-size: 13px;
+}
+
+#settingsTab .download-policy-field .form-note {
+    margin: 0;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.download-windows-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 28px;
+    gap: 12px;
+}
+
+#settingsTab .download-window-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-height: 28px;
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 18px;
+}
+
+#downloadWindowRows {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+    gap: 10px;
+}
+
+.download-window-row:only-child {
+    grid-column: 1 / -1;
+}
+
+#downloadWindowRows:empty,
+#settingsTab .download-windows-empty[hidden],
+#settingsTab .download-window-next-day[hidden],
+#settingsTab #downloadWindows[hidden],
+#settingsTab .download-policy-validation:empty {
+    display: none;
+}
+
+#settingsTab .download-window-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+    align-items: end;
+    min-width: 0;
+    gap: 10px;
+    padding: 12px;
+    background: var(--workspace-panel);
+    border: 1px solid var(--workspace-border);
+    border-radius: 6px;
+}
+
+.download-window-field {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+}
+
+#settingsTab .download-window-field label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0;
+    color: var(--workspace-text);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+#settingsTab .download-window-field input[type="time"] {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    margin: 0;
+    padding: 6px 8px;
+    font-size: 14px;
+}
+
+.download-window-next-day {
+    color: var(--workspace-text-muted);
+    font-size: 11px;
+    font-weight: 400;
+}
+
+#settingsTab .download-window-remove {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 8px;
+}
+
+.download-window-remove svg {
+    width: 18px;
+    height: 18px;
+}
+
+#settingsTab .download-windows-empty {
+    margin: 0;
+    padding: 14px;
+    color: var(--workspace-text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+    border: 1px dashed var(--workspace-border-strong);
+    border-radius: 6px;
+}
+
+#settingsTab .download-policy-validation {
+    padding: 10px 12px;
+    color: var(--workspace-text);
+    background: var(--workspace-panel);
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.download-policy-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--workspace-border);
+}
+
+.download-policy-state {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+    color: var(--workspace-text);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.download-policy-dot {
+    flex: 0 0 6px;
+    width: 6px;
+    height: 6px;
+    background: var(--workspace-text-muted);
+    border-radius: 50%;
+}
+
+.download-policy-state.is-waiting .download-policy-dot {
+    background: var(--workspace-primary);
+}
+
+#settingsTab .download-policy-settings #downloadPolicyStatus {
+    margin: 0;
+}
+
+#settingsTab .download-policy-footer > button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+    #downloadWindowRows {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 720px) {
+    #settingsTab .download-policy-field:first-child {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+    #settingsTab .download-policy-field:first-child .download-rate-control {
+        grid-column: 1;
+        grid-row: auto;
+    }
+}
