@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.4 - 2026-10-16
+
+This update fixes overly long frame-rate values in the video quality selector.
+
+- Show frame rates with at most two decimal places for Source and all other video qualities.
+- Keep the selected stream and its original frame rate unchanged.
+
 ## 1.1.3 - 2026-10-15
 
 This update introduces a timeline workspace for combining videos and fixes timeline navigation and audio timing.
