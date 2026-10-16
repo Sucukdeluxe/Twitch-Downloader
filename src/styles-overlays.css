@@ -446,11 +446,6 @@ input[type="number"]::-webkit-outer-spin-button {
     background: rgba(0, 0, 0, 0.88);
 }
 
-.vod-card.preview-active .vod-downloaded-badge {
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
 /* ============================================
    CHAT VIEWER — Twitch-chat-like message rows
    ============================================

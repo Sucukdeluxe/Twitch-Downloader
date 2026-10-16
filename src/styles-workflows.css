@@ -842,7 +842,7 @@ input[type="checkbox"].vod-select-checkbox {
     display: flex;
     align-items: center;
     gap: 6px;
-    z-index: 2;
+    z-index: 3;
     pointer-events: none;
 }
 
