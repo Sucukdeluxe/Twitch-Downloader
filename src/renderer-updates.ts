@@ -102,12 +102,10 @@ function setCheckButtonCheckingState(enabled: boolean): void {
 }
 
 function syncWorkspaceUpdateExpansion(): void {
-    const banner = byId('updateBanner');
-    const expanded = banner.classList.contains('show')
-        && !banner.classList.contains('popover-dismissed')
-        && !workspaceUpdatePopoverPostponed
-        && (banner.matches(':hover') || banner.matches(':focus-within'));
-    byId<HTMLButtonElement>('workspaceUpdateButton').setAttribute('aria-expanded', String(expanded));
+    const button = byId<HTMLButtonElement>('workspaceUpdateButton');
+    button.removeAttribute('aria-expanded');
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-controls', 'updateModal');
 }
 
 function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 'ready'): void {

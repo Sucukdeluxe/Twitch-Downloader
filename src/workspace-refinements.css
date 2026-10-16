@@ -289,11 +289,8 @@
     content: "";
 }
 
-.workspace-update.show:not(.popover-dismissed):hover .workspace-update-popover,
-.workspace-update.show:not(.popover-dismissed):focus-within .workspace-update-popover {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
+.workspace-update .workspace-update-popover {
+    display: none;
 }
 
 .workspace-update:not(.show) .workspace-update-popover #updateButton,
