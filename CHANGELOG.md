@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.9 - 2026-10-17
+
+This update makes large VOD lists load more smoothly while keeping all entries and actions available.
+
+- Reduce layout stalls when initially displaying large VOD lists.
+- Preserve the full list, selection, filters, sorting and card actions.
+- Keep row heights and scrolling stable when resizing the window or changing the interface language.
+
 ## 1.1.8 - 2026-10-17
 
 This update improves playback-history performance and language switching, and corrects several interface labels.
