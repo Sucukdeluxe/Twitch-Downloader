@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.8 - 2026-10-17
+
+This update improves playback-history performance and language switching, and corrects several interface labels.
+
+- Avoid rebuilding unchanged history cards while playback advances.
+- Reduce layout work in hidden clip and archive panels during language changes.
+- Preserve filters, card actions, animations and scroll positions.
+- Rename the initial history label to Title in English and Titel in German.
+- Translate remaining German interface labels for parts, categories and merging.
+
 ## 1.1.7 - 2026-10-17
 
 This update refreshes the update dialog and VOD actions, and improves scheduled downloads.
