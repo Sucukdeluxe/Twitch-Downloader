@@ -2850,9 +2850,9 @@ function renderClipBatchRow(item: ClipBatchItem, index: number): void {
 function renderClipBatch(): void {
     if (clipBatchRenderFrame !== null) { cancelAnimationFrame(clipBatchRenderFrame); clipBatchRenderFrame = null; }
     dirtyClipRows.clear();
-    renderClipBatchSummary();
     const list = byId<HTMLElement>('clipsDownloadList');
-    const scrollTop = list.scrollTop;
+    const scrollTop = document.getElementById('clipsTab')?.classList.contains('active') ? list.scrollTop : null;
+    renderClipBatchSummary();
     const urls = new Set(clipBatchItems.map(item => item.url));
     for (const [url, elements] of clipBatchRows) {
         if (!urls.has(url)) {
@@ -2873,7 +2873,7 @@ function renderClipBatch(): void {
         list.querySelector('.clips-list-empty')?.remove();
     }
     clipBatchItems.forEach(renderClipBatchRow);
-    list.scrollTop = scrollTop;
+    if (scrollTop !== null) list.scrollTop = scrollTop;
     if (clipMetadataDirty) persistClipWorkspace();
 }
 

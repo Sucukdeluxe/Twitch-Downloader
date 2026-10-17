@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LocateFixed, Play, Gamepad2, Scissors } from "lucide-react";
 import { ChannelImage } from "./ChannelImage.jsx";
 import { chapterAt, chapterColor } from "./chapters.js";
@@ -9,7 +9,15 @@ import "./title-history.css";
 
 const historyCategoryColors = ['#66dae7','#e9c66d','#e99ab4','#aedb84','#cbb6ef','#e9a272','#8bcce5','#e8de87','#8bd5ae','#e99191'];
 
-export function TitleHistory({id,loading=false,chapters=[],history=[],parts=[],started,seconds,onSeek,onTitleSeek,onHover,onFocus,onSelectRange,t}) {
+const emptyHistory = [];
+
+export function TitleHistory({seconds,chapters=emptyHistory,history=emptyHistory,parts=emptyHistory,started,...props}) {
+  const currentChapter = chapterAt(chapters,seconds);
+  const currentTitle = titleAt(history,streamTimestamp(parts,started,seconds));
+  return <HistoryView {...props} chapters={chapters} history={history} parts={parts} started={started} currentChapter={currentChapter} currentTitle={currentTitle}/>;
+}
+
+const HistoryView = memo(function HistoryView({id,loading=false,chapters,history,parts,started,currentChapter,currentTitle,onSeek,onTitleSeek,onHover,onFocus,onSelectRange,t}) {
   const [filter,setFilter] = useState('all');
   const [animated,setAnimated] = useState(false);
   const list = useRef(null);
@@ -22,7 +30,6 @@ export function TitleHistory({id,loading=false,chapters=[],history=[],parts=[],s
   const titles = useMemo(()=>projectTitles(history,parts,started),[history,parts,started]);
   const sections = useMemo(()=>historySections(chapters,titles,parts,started),[chapters,titles,parts,started]);
   const counts = useMemo(()=>historyCounts(chapters,titles),[chapters,titles]);
-  const currentChapter = chapterAt(chapters,seconds), currentTitle = titleAt(history,streamTimestamp(parts,started,seconds));
   const activeSectionId = currentHistorySection(sections,filter,currentChapter,currentTitle);
   const hasCurrent = activeSectionId !== null;
   const visible = sections.some(section=>filter === 'all' || (filter === 'games' ? section.chapter : section.titles.length));
@@ -125,4 +132,4 @@ export function TitleHistory({id,loading=false,chapters=[],history=[],parts=[],s
       {!visible&&<p className="history-empty">{t(loading?'historyLoading':'historyEmpty')}</p>}
     </div>
   </div>;
-}
+});

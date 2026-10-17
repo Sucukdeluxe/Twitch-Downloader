@@ -284,7 +284,9 @@ function renderArchiveSearchResults(result: ArchiveSearchResult, preserveScroll 
     const results = document.getElementById('archiveSearchResults');
     if (!results) return;
     resetArchiveThumbnails(results);
-    const scrollTop = preserveScroll ? results.scrollTop : 0;
+    const visible = document.getElementById('archiveTab')?.classList.contains('active');
+    const scrollTop = preserveScroll && !visible ? null
+        : preserveScroll && result.rootExists && result.hits.length > 0 ? results.scrollTop : 0;
     summary?.classList.remove('is-error');
     renderArchivePagination();
     refreshArchiveSelection();
@@ -347,7 +349,7 @@ function renderArchiveSearchResults(result: ArchiveSearchResult, preserveScroll 
         fragment.append(row);
     }
     results.replaceChildren(fragment);
-    results.scrollTop = scrollTop;
+    if (scrollTop !== null) results.scrollTop = scrollTop;
 }
 
 function showArchiveActionError(): void {

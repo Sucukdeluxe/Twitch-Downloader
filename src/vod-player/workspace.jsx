@@ -262,7 +262,7 @@ function Workspace({ options, bind }) {
     selectedPlayback.current = true; setSelectionPlaying(true);
     setSeekRequest({ seconds:range.start, playing:true });
   }
-  function selectChapter(chapter) {
+  const selectChapter = useCallback(chapter => {
     if (editing !== null) setEditing(null);
     if (omitting) {
       modeRanges.current.omission = { ...range };
@@ -274,7 +274,8 @@ function Workspace({ options, bind }) {
     setRange(chosen);
     options.onRange(chosen.start, chosen.end);
     seek(chosen.start);
-  }
+  }, [editing, omitting, range, options, duration, seek]);
+  const seekTitle = useCallback(title => seek(title.seconds), [seek]);
   return <div ref={host} className="vod-player-workspace" onKeyDown={event => {
     if (event.ctrlKey || event.altKey || event.metaKey || event.target.closest('input, textarea, button, [contenteditable="true"]')) return;
     if (event.key.toLowerCase() === 'i' || event.key.toLowerCase() === 'o') { event.preventDefault(); mark(event.key.toLowerCase() === 'i' ? 'start' : 'end'); }
@@ -292,7 +293,7 @@ function Workspace({ options, bind }) {
       {metadataState === 'error' && <div className="vod-history-status" role="status"><span>{t('historyUnavailable')}</span><button type="button" className="btn-secondary" onClick={() => setHistoryAttempt(value => value + 1)}>{text.retry}</button></div>}
       {(metadataState === 'ready' || metadataState === 'partial') && <>
         <TitleHistory loading={metadataState === 'partial'} id={options.url} chapters={chapters} history={metadata.titleHistory} parts={parts} started={started} seconds={position}
-          onSeek={seek} onTitleSeek={title => seek(title.seconds)} onHover={setHoveredChapter} onFocus={setFocusedChapter}
+          onSeek={seek} onTitleSeek={seekTitle} onHover={setHoveredChapter} onFocus={setFocusedChapter}
           onSelectRange={selectChapter} t={t}/>
         {metadata.chaptersStatus === 'unavailable' && <p className="vod-history-status">{t('historyNoChapterSource')}</p>}
       </>}
