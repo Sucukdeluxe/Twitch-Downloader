@@ -1716,12 +1716,20 @@ input[type="range"] {
 .vod-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    grid-auto-rows: var(--vod-card-row-height, auto);
     gap: 12px;
 }
 
 .vod-card {
+    content-visibility: auto;
+    contain-intrinsic-block-size: var(--vod-card-content-height, 320px);
     overflow: hidden;
     transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.vod-card[data-vod-size-reference] {
+    content-visibility: visible;
+    align-self: start;
 }
 
 .vod-card:hover {

@@ -1823,6 +1823,7 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
 
     const grid = byId('vodGrid');
     const renderTaskId = ++vodRenderTaskId;
+    vodGridSizeObservers.get(grid)?.disconnect();
     const total = lastLoadedVods.length;
 
     if (total === 0) {
@@ -1883,6 +1884,7 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
         }
 
         grid.insertAdjacentHTML('beforeend', chunk.map((vod) => buildVodCardHtml(vod, lastLoadedStreamer || '', downloadedIds)).join(''));
+        if (startIndex === 0) observeVodGridCardSize(grid);
 
         if (startIndex + chunk.length < filtered.length) {
             scheduleNextChunk(startIndex + chunk.length);
@@ -1892,6 +1894,59 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
     };
 
     renderChunk(0);
+}
+
+const vodGridSizeObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
+function observeVodGridCardSize(grid: HTMLElement): void {
+    if (typeof ResizeObserver !== 'function') return;
+    const first = grid.querySelector<HTMLElement>('.vod-card');
+    if (!first) return;
+    let references: HTMLElement[] = [];
+    let width = -1;
+    let updateQueued = false;
+    const updateHeight = (): void => {
+        let rowHeight = 0;
+        const height = Math.max(...references.map((card) => {
+            const style = getComputedStyle(card);
+            const edges = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            const contentHeight = parseFloat(style.height) - (style.boxSizing === 'border-box' ? edges : 0);
+            rowHeight = Math.max(rowHeight, contentHeight + edges);
+            return contentHeight;
+        }));
+        if (height > 0 && rowHeight > 0) {
+            grid.style.setProperty('--vod-card-content-height', Math.ceil(height * 64) / 64 + 'px');
+            grid.style.setProperty('--vod-card-row-height', Math.ceil(rowHeight * 64) / 64 + 'px');
+        }
+    };
+    const updateReferences = (): void => {
+        width = grid.getBoundingClientRect().width;
+        const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+        references.forEach((card) => {
+            observer.unobserve(card);
+            card.removeAttribute('data-vod-size-reference');
+        });
+        references = Array.from(grid.querySelectorAll<HTMLElement>('.vod-card')).slice(0, Math.max(1, columns));
+        references.forEach((card) => {
+            card.setAttribute('data-vod-size-reference', '');
+            observer.observe(card);
+        });
+        updateHeight();
+    };
+    const observer = new ResizeObserver((entries) => {
+        if (!first.isConnected || first.parentElement !== grid) return;
+        if (updateQueued || !entries.some((entry) => entry.target !== grid || entry.contentRect.width !== width)) return;
+        updateQueued = true;
+        requestAnimationFrame(() => {
+            updateQueued = false;
+            if (!first.isConnected || first.parentElement !== grid) return;
+            if (grid.getBoundingClientRect().width !== width) updateReferences();
+            else updateHeight();
+        });
+    });
+    vodGridSizeObservers.set(grid, observer);
+    updateReferences();
+    observer.observe(grid);
 }
 
 let vodRefreshInFlight = false;
