@@ -8,6 +8,7 @@ export interface ArchiveStatsDay { date: string; count: number; bytes: number }
 export interface ArchiveStatsBucket { label: string; count: number; bytes: number }
 export interface ArchiveStats {
     lifetime: LifetimeDownloadStats;
+    channels?: ArchiveStatsTopStreamer[];
     totalFiles: number; totalBytes: number; liveCount: number; liveBytes: number; vodCount: number; vodBytes: number;
     clipCount: number; clipBytes: number; chatCount: number; chatBytes: number; eventsCount: number;
     streamerCount: number; avgRecordingSizeBytes: number; topStreamers: ArchiveStatsTopStreamer[];
@@ -199,9 +200,10 @@ export function summarizeArchiveInventory(inventory: ArchiveInventory, lifetime:
             day.count++; day.bytes += file.size; days.set(file.date, day);
         }
     }
-    stats.streamerCount = streamers.size;
+    stats.channels = [...streamers.values()].filter(item => item.bytes > 0 && (item.liveBytes + item.vodBytes + item.clipBytes) > 0).sort((a, b) => b.bytes - a.bytes || a.streamer.localeCompare(b.streamer));
+    stats.streamerCount = stats.channels.length;
     stats.avgRecordingSizeBytes = recordingCount > 0 ? Math.round(recordingBytes / recordingCount) : 0;
-    stats.topStreamers = [...streamers.values()].sort((a, b) => b.bytes - a.bytes || a.streamer.localeCompare(b.streamer)).slice(0, 10);
+    stats.topStreamers = stats.channels.slice(0, 10);
     for (let offset = 29; offset >= 0; offset--) {
         const day = new Date(now); day.setDate(day.getDate() - offset);
         const date = localDate(day);

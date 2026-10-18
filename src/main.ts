@@ -8286,7 +8286,12 @@ ipcMain.handle('open-debug-log-file', (event): boolean => {
 ipcMain.handle('get-archive-stats', async (event, range?: import('./main/domain/download-history-store').DownloadHistoryRange): Promise<ArchiveStats> => {
     if (!isTrustedRendererEvent(event)) throw new Error('File access denied');
     const { inventory } = await readCompleteArchive(true);
-    return summarizeArchiveInventory(inventory, downloadHistoryStore?.summarize(new Date(), range) ?? emptyLifetimeDownloadStats());
+    const allStats = summarizeArchiveInventory(inventory, emptyLifetimeDownloadStats());
+    const channel = typeof range?.channel === 'string' ? range.channel.trim().toLowerCase().slice(0, 100) : '';
+    const selected = channel ? { ...inventory, files: inventory.files.filter(file => file.streamer.toLowerCase() === channel) } : inventory;
+    const stats = summarizeArchiveInventory(selected, downloadHistoryStore?.summarize(new Date(), range) ?? emptyLifetimeDownloadStats());
+    stats.channels = allStats.channels;
+    return stats;
 });
 ipcMain.handle('search-download-history', async (event, filter?: import('./main/domain/download-history-store').DownloadHistoryFilter) => {
     if (!isTrustedRendererEvent(event)) throw new Error('File access denied');

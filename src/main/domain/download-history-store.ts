@@ -137,7 +137,7 @@ export function emptyLifetimeDownloadStats(): LifetimeDownloadStats {
 }
 
 
-export interface DownloadHistoryRange { days?: 7 | 30 | 90; since?: string; until?: string }
+export interface DownloadHistoryRange { days?: 7 | 30 | 90; since?: string; until?: string; channel?: string }
 export interface DownloadHistoryFilter extends DownloadHistoryRange { query?: string; kind?: 'all' | 'vod' | 'clip' | 'live'; offset?: number; limit?: number }
 export interface DownloadHistoryEntry {
     id: string; kind: 'vod' | 'clip' | 'live'; sourceIds: string[]; title: string | null; channel: string | null;
@@ -228,6 +228,9 @@ export function createDownloadHistoryStore(db: DbHandle): DownloadHistoryStore {
             if (filter.kind && ['vod', 'clip', 'live'].includes(filter.kind)) {
                 conditions.push('h.kind = ?'); params.push(filter.kind);
             }
+            if (typeof filter.channel === 'string' && filter.channel.trim()) {
+                conditions.push('LOWER(d.channel) = ?'); params.push(filter.channel.trim().toLowerCase().slice(0, 100));
+            }
             const query = typeof filter.query === 'string' ? filter.query.trim().slice(0, 4096) : '';
             if (query) {
                 conditions.push("(COALESCE(d.title, '') || ' ' || COALESCE(d.channel, '') || ' ' || COALESCE(d.source_url, '') || ' ' || h.source_ids_json) LIKE ? ESCAPE '\\'");
@@ -289,6 +292,8 @@ export function createDownloadHistoryStore(db: DbHandle): DownloadHistoryStore {
         },
         summarize(now = new Date(), range?: DownloadHistoryRange) {
             const bounds = historyRangeBounds(range, now);
+            const channel = typeof range?.channel === 'string' ? range.channel.trim().toLowerCase().slice(0, 100) : '';
+            const channelCondition = channel ? ' AND event_key IN (SELECT event_key FROM download_history_details WHERE LOWER(channel) = ?)' : '';
             const totals = db.get<{
                 totalDownloads: number; completedJobs: number; vodDownloads: number; clipDownloads: number; liveRecordings: number;
                 outputFiles: number; totalBytes: number; recoveredDownloads: number; unknownDateDownloads: number;
@@ -299,13 +304,13 @@ export function createDownloadHistoryStore(db: DbHandle): DownloadHistoryStore {
                 COALESCE(SUM(output_files), 0) AS outputFiles, COALESCE(SUM(total_bytes), 0) AS totalBytes,
                 COALESCE(SUM(CASE WHEN recovered = 1 THEN source_count ELSE 0 END), 0) AS recoveredDownloads,
                 COALESCE(SUM(CASE WHEN completed_at IS NULL THEN source_count ELSE 0 END), 0) AS unknownDateDownloads
-                FROM download_history ${bounds.filtered ? 'WHERE completed_at >= ? AND completed_at < ?' : ''}`, bounds.filtered ? [bounds.start.toISOString(), bounds.end.toISOString()] : [])!;
+                FROM download_history WHERE 1=1 ${bounds.filtered ? 'AND completed_at >= ? AND completed_at < ?' : ''}${channelCondition}`, [...(bounds.filtered ? [bounds.start.toISOString(), bounds.end.toISOString()] : []), ...(channel ? [channel] : [])])!;
             const start = bounds.start;
             const end = bounds.end;
             const activity = new Map<string, { date: string; count: number; bytes: number }>();
             for (const row of db.all<{ completed_at: string; source_count: number; total_bytes: number }>(
-                'SELECT completed_at, source_count, total_bytes FROM download_history WHERE completed_at >= ? AND completed_at < ?',
-                [start.toISOString(), end.toISOString()],
+                'SELECT completed_at, source_count, total_bytes FROM download_history WHERE completed_at >= ? AND completed_at < ?' + channelCondition,
+                [start.toISOString(), end.toISOString(), ...(channel ? [channel] : [])],
             )) {
                 const date = localDateKey(new Date(row.completed_at));
                 const day = activity.get(date) ?? { date, count: 0, bytes: 0 };

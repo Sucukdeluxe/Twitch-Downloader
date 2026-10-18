@@ -4,6 +4,70 @@ let lastArchiveStats: ArchiveStats | null = null;
 let downloadHistoryOffset = 0;
 let downloadHistorySequence = 0;
 let downloadHistoryTimer: number | null = null;
+let statsSelectedChannel = '';
+
+function getDownloadHistoryPageSize(): number {
+    const height = document.getElementById('downloadHistory')?.clientHeight || 396;
+    return Math.max(1, Math.min(50, Math.floor(height / 66)));
+}
+
+function createStatsChannelIdentity(login: string): HTMLElement {
+    const identity = document.createElement('span');
+    identity.className = 'stats-channel-identity';
+    if (!login) { identity.textContent = currentLanguage === 'de' ? 'Unbekannt' : 'Unknown'; return identity; }
+    const avatar = document.createElement('span');
+    avatar.className = 'stats-channel-avatar';
+    avatar.dataset.statsAvatar = login;
+    avatar.textContent = login.slice(0, 1).toUpperCase();
+    const name = document.createElement('span');
+    name.dataset.statsName = login;
+    name.textContent = getStreamerDisplayName(login);
+    identity.append(avatar, name);
+    return identity;
+}
+
+function hydrateStatsChannelProfiles(container: HTMLElement): void {
+    const logins = new Set(Array.from(container.querySelectorAll<HTMLElement>('[data-stats-name]')).map(node => node.dataset.statsName!));
+    for (const login of logins) {
+        void fetchStreamerProfile(login).then(profile => {
+            if (!profile || !container.isConnected) return;
+            rememberStreamerDisplayName(profile.login, profile.displayName);
+            for (const node of Array.from(container.querySelectorAll<HTMLElement>('[data-stats-name]'))) {
+                if (node.dataset.statsName?.toLowerCase() === login.toLowerCase()) node.textContent = profile.displayName;
+            }
+            if (!profile.avatarUrl) return;
+            for (const node of Array.from(container.querySelectorAll<HTMLElement>('[data-stats-avatar]'))) {
+                if (node.dataset.statsAvatar?.toLowerCase() !== login.toLowerCase() || node.querySelector('img')?.getAttribute('src') === profile.avatarUrl) continue;
+                const image = document.createElement('img'); image.alt = ''; image.src = profile.avatarUrl; image.decoding = 'async';
+                image.addEventListener('error', () => { node.textContent = profile.displayName.slice(0, 1).toUpperCase(); }, { once: true });
+                node.replaceChildren(image);
+            }
+        }).catch(() => {});
+    }
+}
+
+function renderStatsChannelNav(channels: ArchiveStatsTopStreamer[]): void {
+    const host = document.getElementById('statsChannelNav');
+    if (!host) return;
+    const available = channels.filter(channel => channel.bytes > 0 && channel.fileCount > 0);
+    if (statsSelectedChannel && !available.some(channel => channel.streamer.toLowerCase() === statsSelectedChannel)) {
+        statsSelectedChannel = ''; archiveStatsRefreshPending = true;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const login of ['', ...available.map(channel => channel.streamer)]) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'stats-channel-button';
+        button.setAttribute('aria-pressed', String(statsSelectedChannel === login.toLowerCase()));
+        if (login) button.append(createStatsChannelIdentity(login));
+        else button.textContent = currentLanguage === 'de' ? 'Alle Streamer' : 'All channels';
+        button.addEventListener('click', () => {
+            if (statsSelectedChannel === login.toLowerCase()) return;
+            statsSelectedChannel = login.toLowerCase(); downloadHistoryOffset = 0;
+            void refreshArchiveStats();
+        });
+        fragment.append(button);
+    }
+    host.replaceChildren(fragment);
+}
 
 async function refreshArchiveStats(): Promise<void> {
     if (archiveStatsRefreshInFlight) { archiveStatsRefreshPending = true; return; }
@@ -58,11 +122,13 @@ function renderArchiveStats(stats: ArchiveStats): void {
         ? UI_TEXT.static.statsTrackedSince.replace('{date}', formatUiDate(new Date(lifetime.trackedSince))) : '');
     setText('statsHistoryNote', lifetime?.available ? '' : UI_TEXT.static.statsHistoryUnavailable);
     setText('statsInventoryStatus', stats.rootExists ? '' : UI_TEXT.static.statsNoRoot);
+    renderStatsChannelNav(stats.channels ?? stats.topStreamers);
     renderStatsSummary(stats);
     renderStatsInventory(stats);
     renderStatsTopStreamers(stats.topStreamers, stats.totalBytes);
     renderStatsActivity(lifetime?.available ? lifetime.dailyActivity : [], lifetime?.unknownDateDownloads || 0);
     renderStatsSizeBuckets(stats.sizeBuckets);
+    hydrateStatsChannelProfiles(document.getElementById('statsTab')!);
 }
 
 function renderStatsSummary(stats: ArchiveStats | null): void {
@@ -108,15 +174,17 @@ function renderStatsInventory(stats: ArchiveStats): void {
 function renderStatsTopStreamers(top: ArchiveStatsTopStreamer[], totalBytes: number): void {
     const container = document.getElementById('statsTopStreamers');
     if (!container) return;
+    top = top.filter(item => Number.isFinite(item.bytes) && item.bytes > 0 && item.fileCount > 0);
     if (top.length === 0) {
         applyHtml(container, '<div class="insights-empty">' + escapeHtml(UI_TEXT.static.statsEmpty) + '</div>');
         return;
     }
     const maxBytes = Math.max(1, ...top.map(item => item.bytes));
+    container.classList.add('stats-top-list');
     applyHtml(container, top.map(item => {
         const percent = Math.min(100, Math.max(0, item.bytes / maxBytes * 100));
         const share = new Intl.NumberFormat(getIntlLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(totalBytes > 0 ? item.bytes / totalBytes : 0);
-        return '<div class="stats-top-row"><div class="stats-top-meta"><strong>' + escapeHtml(item.streamer) + '</strong><span>' + escapeHtml(formatBytes(item.bytes)) + '</span></div><div class="stats-top-bar-track"><div class="stats-top-bar-fill" style="width:' + percent + '%"></div></div><div class="stats-top-caption"><span>' + escapeHtml(formatUiNumber(item.fileCount) + ' ' + UI_TEXT.static.statsFiles) + '</span><span>' + escapeHtml(share) + '</span></div></div>';
+        return '<div class="stats-top-row"><span class="stats-channel-avatar" data-stats-avatar="' + escapeHtml(item.streamer) + '">' + escapeHtml(item.streamer.slice(0, 1).toUpperCase()) + '</span><div class="stats-top-meta"><strong data-stats-name="' + escapeHtml(item.streamer) + '">' + escapeHtml(getStreamerDisplayName(item.streamer)) + '</strong><span>' + escapeHtml(formatBytes(item.bytes)) + '</span></div><div class="stats-top-bar-track"><div class="stats-top-bar-fill" style="width:' + percent + '%"></div></div><div class="stats-top-caption"><span>' + escapeHtml(formatUiNumber(item.fileCount) + ' ' + UI_TEXT.static.statsFiles) + '</span><span>' + escapeHtml(share) + '</span></div></div>';
     }).join(''));
 }
 
@@ -169,14 +237,15 @@ function renderStatsSizeBuckets(buckets: ArchiveStatsBucket[]): void {
 (window as unknown as { refreshArchiveStats: typeof refreshArchiveStats }).refreshArchiveStats = refreshArchiveStats;
 
 
-function getStatsRange(): { days?: 7 | 30 | 90; since?: string; until?: string } | undefined {
+function getStatsRange(): import('./main/domain/download-history-store').DownloadHistoryRange | undefined {
     const range = (document.getElementById('statsRange') as HTMLSelectElement | null)?.value || 'all';
-    if (range === 'all') return undefined;
-    if (range !== 'custom') return { days: Number(range) as 7 | 30 | 90 };
+    const channel = statsSelectedChannel || undefined;
+    if (range === 'all') return channel ? { channel } : undefined;
+    if (range !== 'custom') return { days: Number(range) as 7 | 30 | 90, channel };
     const since = (document.getElementById('statsSince') as HTMLInputElement | null)?.value || '';
     const until = (document.getElementById('statsUntil') as HTMLInputElement | null)?.value || '';
     if (!since || !until || since > until) throw new Error(currentLanguage === 'de' ? 'Zeitraum prüfen.' : 'Check the date range.');
-    return { since, until };
+    return { since, until, channel };
 }
 
 function changeStatsRange(): void {
@@ -196,6 +265,9 @@ function changeStatsRange(): void {
 
 function refreshStatsFilterTexts(): void {
     const de = currentLanguage === 'de';
+    document.getElementById('statsChannelNav')?.setAttribute('aria-label', de ? 'Streamer auswählen' : 'Select channel');
+    const query = document.getElementById('historyQuery') as HTMLInputElement | null;
+    if (query) query.placeholder = de ? 'Titel oder Streamer suchen' : 'Search title or channel';
     for (const [id, text] of Object.entries({ statsRangeLabel: de ? 'Zeitraum' : 'Date range', statsSinceLabel: de ? 'Von' : 'From', statsUntilLabel: de ? 'Bis' : 'Until', statsHistoryTitle: de ? 'Downloadverlauf' : 'Download history', statsExportCsv: de ? 'Statistik als CSV' : 'Export statistics', historyQueryLabel: de ? 'Titel oder Streamer' : 'Title or channel', historyKindLabel: de ? 'Typ' : 'Type', historyPrevious: de ? 'Zurück' : 'Previous', historyNext: de ? 'Weiter' : 'Next' })) setText(id, text);
     const kind = document.getElementById('historyKind') as HTMLSelectElement | null;
     if (kind?.options[0]) kind.options[0].textContent = de ? 'Alle' : 'All';
@@ -204,7 +276,7 @@ function refreshStatsFilterTexts(): void {
 }
 
 function getDownloadHistoryFilter() {
-    return { ...getStatsRange(), query: (document.getElementById('historyQuery') as HTMLInputElement | null)?.value.trim() || '', kind: ((document.getElementById('historyKind') as HTMLSelectElement | null)?.value || 'all') as 'all' | 'vod' | 'clip' | 'live', offset: downloadHistoryOffset, limit: 50 };
+    return { ...getStatsRange(), query: (document.getElementById('historyQuery') as HTMLInputElement | null)?.value.trim() || '', kind: ((document.getElementById('historyKind') as HTMLSelectElement | null)?.value || 'all') as 'all' | 'vod' | 'clip' | 'live', offset: downloadHistoryOffset, limit: getDownloadHistoryPageSize() };
 }
 
 function onDownloadHistoryInput(): void {
@@ -223,16 +295,23 @@ async function refreshDownloadHistory(): Promise<void> {
         if (sequence !== downloadHistorySequence) return;
         downloadHistoryOffset = result.offset;
         const fragment = document.createDocumentFragment();
+        resetArchiveThumbnails(host);
         for (const entry of result.entries) {
             const row = document.createElement('article'); row.className = 'download-history-row';
             const content = document.createElement('div'); content.className = 'download-history-body';
             const title = document.createElement('strong'); title.textContent = entry.title || (entry.kind.toUpperCase() + ' · ' + entry.sourceIds.join(', '));
             const meta = document.createElement('div'); meta.className = 'download-history-meta';
             const presence = { present: currentLanguage === 'de' ? 'Datei vorhanden' : 'File available', partial: currentLanguage === 'de' ? 'Teilweise vorhanden' : 'Some files missing', missing: currentLanguage === 'de' ? 'Datei fehlt' : 'File missing', unknown: currentLanguage === 'de' ? 'Dateipfad unbekannt' : 'File path unknown' };
-            meta.textContent = [entry.channel, entry.completedAt ? formatUiDateTime(new Date(entry.completedAt)) : (currentLanguage === 'de' ? 'Datum unbekannt' : 'Date unknown'), formatBytes(entry.totalBytes), presence[entry.filePresence]].filter(Boolean).join(' · ');
+            meta.textContent = [entry.completedAt ? formatUiDateTime(new Date(entry.completedAt)) : (currentLanguage === 'de' ? 'Datum unbekannt' : 'Date unknown'), entry.kind === 'live' ? 'Live' : entry.kind.toUpperCase(), presence[entry.filePresence]].filter(Boolean).join(' · ');
             content.append(title, meta);
-            if (entry.sourceUrl) { const source = document.createElement('div'); source.className = 'download-history-source'; source.textContent = entry.sourceUrl; content.append(source); }
-            row.append(content);
+            const filename = entry.availablePaths[0];
+            const thumbnail = filename ? createArchiveThumbnail({ fullPath: filename, fileName: title.textContent || '', streamer: entry.channel || '', type: entry.kind, size: entry.totalBytes, mtimeMs: entry.completedAt ? Date.parse(entry.completedAt) : 0, chatPath: null, eventsPath: null }) : document.createElement('div');
+            thumbnail.className = 'archive-result-thumbnail';
+            if (!filename) thumbnail.textContent = entry.kind.toUpperCase();
+            const identity = createStatsChannelIdentity(entry.channel || ''); identity.classList.add('download-history-channel');
+            const bytes = document.createElement('span'); bytes.className = 'download-history-bytes'; bytes.textContent = formatBytes(entry.totalBytes);
+            row.append(thumbnail, content, identity, bytes);
+            if (entry.sourceUrl) { const source = document.createElement('button'); source.type = 'button'; source.className = 'btn-secondary'; source.textContent = currentLanguage === 'de' ? 'Quelle' : 'Source'; source.addEventListener('click', () => { void window.api.openExternal(entry.sourceUrl!); }); row.append(source); }
             if (entry.availablePaths[0]) {
                 const open = document.createElement('button'); open.type = 'button'; open.className = 'btn-secondary'; open.textContent = currentLanguage === 'de' ? 'Ordner' : 'Folder';
                 open.addEventListener('click', () => showFileInFolder(entry.availablePaths[0])); row.append(open);
@@ -241,6 +320,8 @@ async function refreshDownloadHistory(): Promise<void> {
         }
         if (!result.entries.length) { const empty = document.createElement('div'); empty.className = 'insights-empty'; empty.textContent = currentLanguage === 'de' ? 'Keine Downloads gefunden.' : 'No downloads found.'; fragment.append(empty); }
         host.replaceChildren(fragment);
+        hydrateStatsChannelProfiles(host);
+        setText('historyPageLabel', formatUiNumber(result.total ? result.offset + 1 : 0) + '–' + formatUiNumber(result.offset + result.entries.length) + (currentLanguage === 'de' ? ' von ' : ' of ') + formatUiNumber(result.total));
         setText('downloadHistoryStatus', formatUiNumber(result.total) + (currentLanguage === 'de' ? ' Downloads' : ' downloads'));
         const previous = document.getElementById('historyPrevious') as HTMLButtonElement | null;
         const next = document.getElementById('historyNext') as HTMLButtonElement | null;
@@ -253,7 +334,7 @@ async function refreshDownloadHistory(): Promise<void> {
 
 function changeDownloadHistoryPage(direction: number): void {
     if (Math.abs(direction) !== 1) return;
-    downloadHistoryOffset = Math.max(0, downloadHistoryOffset + direction * 50);
+    downloadHistoryOffset = Math.max(0, downloadHistoryOffset + direction * getDownloadHistoryPageSize());
     void refreshDownloadHistory();
 }
 

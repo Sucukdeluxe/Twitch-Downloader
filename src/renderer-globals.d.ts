@@ -442,6 +442,7 @@ interface ArchiveLifetimeStats {
     dailyActivity: ArchiveStatsDay[];
 }
 interface ArchiveStats {
+    channels?: ArchiveStatsTopStreamer[];
     lifetime: ArchiveLifetimeStats;
     clipCount: number;
     clipBytes: number;

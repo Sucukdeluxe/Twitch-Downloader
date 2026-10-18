@@ -700,51 +700,48 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                 </div>
                 <dialog id="mergeJobsDialog"><button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Schließen</button></dialog>
 
-                <!-- Statistics Tab -->
                 <div class="tab-content" id="statsTab">
-                    <div class="insights-workspace">
-                        <header class="insights-header">
-                            <div><h2 id="statsTitle">Statistik</h2></div>
-                            <button type="button" class="btn-secondary insights-refresh" id="btnStatsRefresh" onclick="refreshArchiveStats()">Aktualisieren</button>
-                        </header>
-
-<div class="stats-filter-toolbar">
+                    <div class="insights-workspace stats-channel-workspace">
+                        <header class="insights-header"><h2 id="statsTitle">Statistik</h2><div class="stats-filter-toolbar">
 <label for="statsRange"><span id="statsRangeLabel">Zeitraum</span><select id="statsRange" onchange="changeStatsRange()"><option value="all">Gesamt</option><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="custom">Benutzerdefiniert</option></select></label>
 <div id="statsCustomRange" class="stats-custom-range" hidden><label for="statsSince"><span id="statsSinceLabel">Von</span><input type="date" id="statsSince" onchange="changeStatsRange()"></label><label for="statsUntil"><span id="statsUntilLabel">Bis</span><input type="date" id="statsUntil" onchange="changeStatsRange()"></label></div>
 <button type="button" id="statsExportCsv" class="btn-secondary" onclick="exportStatsCsv()">Statistik als CSV</button>
 </div>
+<button type="button" class="btn-secondary insights-refresh" id="btnStatsRefresh" onclick="refreshArchiveStats()">Aktualisieren</button></header>
                         <div class="insights-status-row"><span id="statsLastScannedLabel"></span><span id="statsStatus" role="status" aria-live="polite"></span></div>
+                        <div id="statsChannelNav" class="stats-channel-nav" role="group" aria-label="Streamer auswählen"></div>
                         <section class="insights-section" aria-labelledby="statsSummaryTitle">
                             <div class="insights-section-heading"><h3 id="statsSummaryTitle">Downloads</h3><span id="statsTrackingSince"></span></div>
                             <div id="statsSummaryGrid" class="stats-summary-grid"></div>
                             <p id="statsHistoryNote" class="insights-note"></p>
                         </section>
-                        <section class="insights-section stats-inventory-section" aria-labelledby="statsInventoryTitle">
-                            <div class="insights-section-heading"><h3 id="statsInventoryTitle">Im Download-Ordner</h3></div>
-                            <div id="statsInventoryGrid" class="stats-inventory-grid"></div>
-                            <p id="statsInventoryStatus" class="insights-note"></p>
-                        </section>
-                        <div class="stats-charts-grid">
+
+                        <div class="stats-channel-grid">
                             <section class="insights-card stats-activity-card" aria-labelledby="statsActivityTitle">
                                 <h3 id="statsActivityTitle">Downloads der letzten 30 Tage</h3>
                                 <div id="statsActivity"></div>
                             </section>
+                        <section class="insights-card stats-inventory-section" aria-labelledby="statsInventoryTitle">
+                            <div class="insights-section-heading"><h3 id="statsInventoryTitle">Im Download-Ordner</h3></div>
+                            <div id="statsInventoryGrid" class="stats-inventory-grid"></div>
+                            <p id="statsInventoryStatus" class="insights-note"></p>
+                        </section>
                             <section class="insights-card stats-streamers-card" aria-labelledby="statsTopStreamersTitle">
                                 <h3 id="statsTopStreamersTitle">Speicher nach Streamer</h3>
                                 <div id="statsTopStreamers"></div>
                             </section>
-                            <section class="insights-card stats-sizes-card" aria-labelledby="statsSizeBucketsTitle">
-                                <h3 id="statsSizeBucketsTitle">Dateigrößen im Archiv</h3>
-                                <div id="statsSizeBuckets"></div>
-                            </section>
-                        </div>
-
 <section class="insights-card download-history-card" aria-labelledby="statsHistoryTitle">
 <div class="insights-section-heading"><h3 id="statsHistoryTitle">Downloadverlauf</h3><span id="downloadHistoryStatus" role="status"></span></div>
 <div class="history-filters"><label for="historyQuery"><span id="historyQueryLabel">Titel oder Streamer</span><input type="search" id="historyQuery" oninput="onDownloadHistoryInput()" autocomplete="off"></label><label for="historyKind"><span id="historyKindLabel">Typ</span><select id="historyKind" onchange="onDownloadHistoryInput()"><option value="all">Alle</option><option value="vod">VOD</option><option value="clip">Clip</option><option value="live">Live</option></select></label></div>
 <div id="downloadHistory" class="download-history-list"></div>
-<nav class="archive-pagination"><button type="button" class="btn-secondary" id="historyPrevious" onclick="changeDownloadHistoryPage(-1)" disabled>Zurück</button><button type="button" class="btn-secondary" id="historyNext" onclick="changeDownloadHistoryPage(1)" disabled>Weiter</button></nav>
+<nav class="archive-pagination"><span id="historyPageLabel" role="status"></span><button type="button" class="btn-secondary" id="historyPrevious" onclick="changeDownloadHistoryPage(-1)" disabled>Zurück</button><button type="button" class="btn-secondary" id="historyNext" onclick="changeDownloadHistoryPage(1)" disabled>Weiter</button></nav>
 </section>
+                            <section class="insights-card stats-sizes-card" aria-labelledby="statsSizeBucketsTitle">
+                                <h3 id="statsSizeBucketsTitle">Dateigrößen im Archiv</h3>
+                                <div id="statsSizeBuckets"></div>
+                            </section>
+
+                        </div>
                     </div>
                 </div>
 
