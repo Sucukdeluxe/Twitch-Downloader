@@ -3076,7 +3076,7 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 #updateModal .update-version-transition span { color: #ffb15c; }
 #updateModal .update-version-transition strong { color: #86dca3; font-weight: 700; }
 #updateModal .update-version-arrow { width: 40px; height: 32px; flex: 0 0 40px; display: block; color: var(--update-accent); }
-#updateModalTitle { font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -.5px; margin: 0 0 12px; }
+#updateModalTitle { color: var(--update-text); font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -.5px; margin: 0 0 12px; }
 #updateModal .update-modal-message { margin: 10px 0; font-size: 13px; line-height: 1.6; color: var(--update-muted); }
 #updateModal .update-release-row {
     display: flex; align-items: center; justify-content: space-between; gap: 15px;
@@ -3121,6 +3121,19 @@ body.theme-light #updateModalDismissBtn:hover { background: #e3ddec; }
 body.theme-light #updateModal .update-modal-actions #updateModalSkipBtn { color: #22222b !important; }
 body.theme-light #updateModal .update-preserve { color: #22222b; }
 body.theme-light #updateModal .update-preserve svg { color: #39774f; }
+@media (prefers-color-scheme: light) {
+    body.theme-system #updateModal .update-modal { --update-bg: #f9f9fc; --update-border: #bfc0ca; --update-text: #22222b; --update-muted: #50505e; --update-accent: #70429c; }
+    body.theme-system #updateModal .update-version-transition { background: #eee7f5; color: #51425f; border-color: #9f8db2; }
+    body.theme-system #updateModal .update-version-transition span { color: #99500b; }
+    body.theme-system #updateModal .update-version-transition strong { color: #216b3b; }
+    body.theme-system #updateModal .update-release-row { border-color: #d3d0da; }
+    body.theme-system #updateModal .update-modal-meta { color: #55515e; }
+    body.theme-system #updateModalDismissBtn { background: #eeeef3; border-color: #a5a1ad; }
+    body.theme-system #updateModalDismissBtn:hover { background: #e3ddec; }
+    body.theme-system #updateModal .update-modal-actions #updateModalSkipBtn { color: #22222b !important; }
+    body.theme-system #updateModal .update-preserve { color: #22222b; }
+    body.theme-system #updateModal .update-preserve svg { color: #39774f; }
+}
 @media(max-width: 480px) {
     #updateModal .update-modal { padding: 24px 20px; }
     #updateModal .update-version-transition { gap: 14px; padding: 0 16px; }
