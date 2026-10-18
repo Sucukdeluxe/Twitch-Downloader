@@ -733,6 +733,12 @@ body.theme-light .clip-discovery-fields input[type="date"] { color-scheme: light
 #statsTab .stats-top-row > .stats-channel-avatar { grid-row: 1 / 4; align-self: center; }
 #statsTab .stats-top-meta, #statsTab .stats-top-caption { font-size: 12px; }
 #statsTab .stats-top-bar-track { height: 5px; }
+#statsTab :is(.stats-top-bar-fill, .stats-bucket-bar-fill) { width: 100%; transform-origin: left center; }
+#statsTab .stats-day-bar-fill { height: 100%; transform-origin: center bottom; }
+#statsTab .stats-channel-button { transition: background-color 140ms ease-out, border-color 140ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  #statsTab .stats-channel-button { transition: none; }
+}
 #statsTab #statsTopStreamers { max-height: none; overflow: auto; }
 #statsTab #statsSizeBuckets { flex: 1; overflow: auto; }
 #statsTab .stats-bucket-row { margin: 0 0 10px; }

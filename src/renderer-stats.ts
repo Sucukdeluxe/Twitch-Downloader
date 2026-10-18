@@ -5,6 +5,43 @@ let downloadHistoryOffset = 0;
 let downloadHistorySequence = 0;
 let downloadHistoryTimer: number | null = null;
 let statsSelectedChannel = '';
+const statsMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+const statsActiveAnimations = new Set<Animation>();
+
+statsMotionPreference.addEventListener('change', () => {
+    if (statsMotionPreference.matches) for (const animation of statsActiveAnimations) animation.cancel();
+});
+
+function animateStatsElement(element: HTMLElement, frames: Keyframe[], duration: number): void {
+    if (statsMotionPreference.matches || !element.isConnected || !element.getClientRects().length || typeof element.animate !== 'function') return;
+    for (const animation of element.getAnimations()) animation.cancel();
+    const animation = element.animate(frames, { duration, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+    statsActiveAnimations.add(animation);
+    void animation.finished.then(() => statsActiveAnimations.delete(animation), () => statsActiveAnimations.delete(animation));
+}
+
+function captureStatsMotion(): Map<string, { text: string; transform: string }> {
+    const state = new Map<string, { text: string; transform: string }>();
+    if (statsMotionPreference.matches) return state;
+    for (const element of Array.from(document.querySelectorAll<HTMLElement>('#statsTab [data-stats-motion]'))) {
+        state.set(element.dataset.statsMotion!, { text: element.textContent || '', transform: getComputedStyle(element).transform });
+    }
+    return state;
+}
+
+function playStatsMotion(previous: Map<string, { text: string; transform: string }>): void {
+    if (!previous.size || statsMotionPreference.matches) return;
+    for (const element of Array.from(document.querySelectorAll<HTMLElement>('#statsTab [data-stats-motion]'))) {
+        const old = previous.get(element.dataset.statsMotion!);
+        if (element.dataset.statsScale) {
+            const from = old?.transform || (element.dataset.statsScale === 'y' ? 'scaleY(0)' : 'scaleX(0)');
+            const to = getComputedStyle(element).transform;
+            if (from !== to) animateStatsElement(element, [{ transform: from }, { transform: to }], 240);
+        } else if (old && old.text !== element.textContent) {
+            animateStatsElement(element, [{ opacity: 0.45 }, { opacity: 1 }], 160);
+        }
+    }
+}
 
 function getDownloadHistoryPageSize(): number {
     const height = document.getElementById('downloadHistory')?.clientHeight || 396;
@@ -129,6 +166,7 @@ function refreshArchiveStatsTexts(): void {
 }
 
 function renderArchiveStats(stats: ArchiveStats): void {
+    const motion = captureStatsMotion();
     refreshStatsFilterTexts();
     setText('statsLastScannedLabel', UI_TEXT.static.statsScannedAt + ': ' + formatUiDateTime(new Date(stats.scannedAt)));
     const lifetime = stats.lifetime;
@@ -143,6 +181,7 @@ function renderArchiveStats(stats: ArchiveStats): void {
     renderStatsActivity(lifetime?.available ? lifetime.dailyActivity : [], lifetime?.unknownDateDownloads || 0);
     renderStatsSizeBuckets(stats.sizeBuckets);
     hydrateStatsChannelProfiles(document.getElementById('statsTab')!);
+    playStatsMotion(motion);
 }
 
 function renderStatsSummary(stats: ArchiveStats | null): void {
@@ -165,6 +204,7 @@ function renderStatsSummary(stats: ArchiveStats | null): void {
         label.textContent = card.label;
         const value = document.createElement('div');
         value.className = 'stats-kpi-value';
+        value.dataset.statsMotion = 'summary-' + card.kind;
         value.textContent = card.value;
         item.append(label, value);
         return item;
@@ -182,7 +222,7 @@ function renderStatsInventory(stats: ArchiveStats): void {
         { label: UI_TEXT.static.statsChatFiles, value: formatUiNumber(stats.chatCount) },
         { label: UI_TEXT.static.statsAvgSize, value: stats.avgRecordingSizeBytes > 0 ? formatBytes(stats.avgRecordingSizeBytes) : '—' }
     ];
-    applyHtml(grid, cards.map(card => '<div class="stats-inventory-item"><strong>' + escapeHtml(stats.rootExists ? card.value : '—') + '</strong><span>' + escapeHtml(card.label) + '</span></div>').join(''));
+    applyHtml(grid, cards.map((card, index) => '<div class="stats-inventory-item"><strong data-stats-motion="inventory-' + index + '">' + escapeHtml(stats.rootExists ? card.value : '—') + '</strong><span>' + escapeHtml(card.label) + '</span></div>').join(''));
 }
 
 function renderStatsTopStreamers(top: ArchiveStatsTopStreamer[], totalBytes: number): void {
@@ -198,7 +238,7 @@ function renderStatsTopStreamers(top: ArchiveStatsTopStreamer[], totalBytes: num
     applyHtml(container, top.map(item => {
         const percent = Math.min(100, Math.max(0, item.bytes / maxBytes * 100));
         const share = new Intl.NumberFormat(getIntlLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(totalBytes > 0 ? item.bytes / totalBytes : 0);
-        return '<div class="stats-top-row"><span class="stats-channel-avatar" data-stats-avatar="' + escapeHtml(item.streamer) + '">' + escapeHtml(item.streamer.slice(0, 1).toUpperCase()) + '</span><div class="stats-top-meta"><strong data-stats-name="' + escapeHtml(item.streamer) + '">' + escapeHtml(getStreamerDisplayName(item.streamer)) + '</strong><span>' + escapeHtml(formatBytes(item.bytes)) + '</span></div><div class="stats-top-bar-track"><div class="stats-top-bar-fill" style="width:' + percent + '%"></div></div><div class="stats-top-caption"><span>' + escapeHtml(formatUiNumber(item.fileCount) + ' ' + UI_TEXT.static.statsFiles) + '</span><span>' + escapeHtml(share) + '</span></div></div>';
+        return '<div class="stats-top-row"><span class="stats-channel-avatar" data-stats-avatar="' + escapeHtml(item.streamer) + '">' + escapeHtml(item.streamer.slice(0, 1).toUpperCase()) + '</span><div class="stats-top-meta"><strong data-stats-name="' + escapeHtml(item.streamer) + '">' + escapeHtml(getStreamerDisplayName(item.streamer)) + '</strong><span data-stats-motion="streamer-value-' + escapeHtml(item.streamer.toLowerCase()) + '">' + escapeHtml(formatBytes(item.bytes)) + '</span></div><div class="stats-top-bar-track"><div class="stats-top-bar-fill" data-stats-motion="streamer-bar-' + escapeHtml(item.streamer.toLowerCase()) + '" data-stats-scale="x" style="transform:scaleX(' + percent / 100 + ')"></div></div><div class="stats-top-caption"><span>' + escapeHtml(formatUiNumber(item.fileCount) + ' ' + UI_TEXT.static.statsFiles) + '</span><span>' + escapeHtml(share) + '</span></div></div>';
     }).join(''));
 }
 
@@ -227,11 +267,11 @@ function renderStatsActivity(days: ArchiveStatsDay[], unknownDates = 0): void {
         const tooltip = dateRange + ': ' + formatUiNumber(day.count) + ' ' + UI_TEXT.static.statsDownloads + ' · ' + formatBytes(day.bytes);
         const showLabel = index === 0 || index === buckets.length - 1 || (index % Math.max(7, Math.ceil(buckets.length / 5)) === 0 && buckets.length - 1 - index >= 4);
         const height = day.count > 0 ? Math.max(3, day.count / maxCount * 100) : 0;
-        return '<div class="stats-day-col" title="' + escapeHtml(tooltip) + '"><div class="stats-day-bar-track"><div class="stats-day-bar-fill" style="height:' + height + '%"></div></div><span class="stats-day-label">' + (showLabel ? escapeHtml(dateLabel) : '') + '</span></div>';
+        return '<div class="stats-day-col" title="' + escapeHtml(tooltip) + '"><div class="stats-day-bar-track"><div class="stats-day-bar-fill" data-stats-motion="day-' + day.date + '" data-stats-scale="y" style="transform:scaleY(' + height / 100 + ')"></div></div><span class="stats-day-label">' + (showLabel ? escapeHtml(dateLabel) : '') + '</span></div>';
     }).join('');
     const summary = UI_TEXT.static.statsActivitySummary.replace('{count}', formatUiNumber(totalCount)).replace('{size}', formatBytes(totalBytes));
     const note = unknownDates > 0 ? '<p class="insights-note">' + escapeHtml(UI_TEXT.static.statsUnknownDates.replace('{count}', formatUiNumber(unknownDates))) + '</p>' : '';
-    applyHtml(container, '<div class="stats-activity-total">' + escapeHtml(summary) + '</div><div class="stats-activity-chart"><div class="stats-activity-row">' + bars + '</div>' + (totalCount === 0 ? '<div class="stats-chart-empty">' + escapeHtml(UI_TEXT.static.statsActivityEmpty) + '</div>' : '') + '</div>' + note);
+    applyHtml(container, '<div class="stats-activity-total" data-stats-motion="activity-total">' + escapeHtml(summary) + '</div><div class="stats-activity-chart"><div class="stats-activity-row">' + bars + '</div>' + (totalCount === 0 ? '<div class="stats-chart-empty">' + escapeHtml(UI_TEXT.static.statsActivityEmpty) + '</div>' : '') + '</div>' + note);
 }
 
 function renderStatsSizeBuckets(buckets: ArchiveStatsBucket[]): void {
@@ -244,7 +284,7 @@ function renderStatsSizeBuckets(buckets: ArchiveStatsBucket[]): void {
     }
     applyHtml(container, buckets.map(bucket => {
         const percent = Math.min(100, bucket.count / maxCount * 100);
-        return '<div class="stats-bucket-row"><div class="stats-bucket-meta"><span>' + escapeHtml(bucket.label) + '</span><strong>' + escapeHtml(formatUiNumber(bucket.count)) + '</strong></div><div class="stats-bucket-bar-track"><div class="stats-bucket-bar-fill" style="width:' + percent + '%"></div></div></div>';
+        return '<div class="stats-bucket-row"><div class="stats-bucket-meta"><span>' + escapeHtml(bucket.label) + '</span><strong data-stats-motion="bucket-value-' + escapeHtml(bucket.label) + '">' + escapeHtml(formatUiNumber(bucket.count)) + '</strong></div><div class="stats-bucket-bar-track"><div class="stats-bucket-bar-fill" data-stats-motion="bucket-bar-' + escapeHtml(bucket.label) + '" data-stats-scale="x" style="transform:scaleX(' + percent / 100 + ')"></div></div></div>';
     }).join(''));
 }
 
@@ -333,7 +373,9 @@ async function refreshDownloadHistory(): Promise<void> {
             fragment.append(row);
         }
         if (!result.entries.length) { const empty = document.createElement('div'); empty.className = 'insights-empty'; empty.textContent = currentLanguage === 'de' ? 'Keine Downloads gefunden.' : 'No downloads found.'; fragment.append(empty); }
+        const previousContent = host.textContent;
         host.replaceChildren(fragment);
+        if (previousContent && previousContent !== host.textContent) animateStatsElement(host, [{ opacity: 0.6 }, { opacity: 1 }], 160);
         hydrateStatsChannelProfiles(host);
         setText('historyPageLabel', formatUiNumber(result.total ? result.offset + 1 : 0) + '–' + formatUiNumber(result.offset + result.entries.length) + (currentLanguage === 'de' ? ' von ' : ' of ') + formatUiNumber(result.total));
         setText('downloadHistoryStatus', formatUiNumber(result.total) + (currentLanguage === 'de' ? ' Downloads' : ' downloads'));
