@@ -19,6 +19,12 @@ function createStatsChannelIdentity(login: string): HTMLElement {
     avatar.className = 'stats-channel-avatar';
     avatar.dataset.statsAvatar = login;
     avatar.textContent = login.slice(0, 1).toUpperCase();
+    const cached = streamerProfileCache.get(login.toLowerCase());
+    if (cached?.avatarUrl) {
+        const image = document.createElement('img'); image.alt = ''; image.src = cached.avatarUrl; image.decoding = 'async';
+        image.addEventListener('error', () => { avatar.textContent = login.slice(0, 1).toUpperCase(); }, { once: true });
+        avatar.replaceChildren(image);
+    }
     const name = document.createElement('span');
     name.dataset.statsName = login;
     name.textContent = getStreamerDisplayName(login);
@@ -53,20 +59,28 @@ function renderStatsChannelNav(channels: ArchiveStatsTopStreamer[]): void {
     if (statsSelectedChannel && !available.some(channel => channel.streamer.toLowerCase() === statsSelectedChannel)) {
         statsSelectedChannel = ''; archiveStatsRefreshPending = true;
     }
-    const fragment = document.createDocumentFragment();
+    const existing = new Map(Array.from(host.querySelectorAll<HTMLButtonElement>('button')).map(button => [button.dataset.channel || '', button]));
+    const retained = new Set<HTMLButtonElement>();
     for (const login of ['', ...available.map(channel => channel.streamer)]) {
-        const button = document.createElement('button'); button.type = 'button'; button.className = 'stats-channel-button';
-        button.setAttribute('aria-pressed', String(statsSelectedChannel === login.toLowerCase()));
-        if (login) button.append(createStatsChannelIdentity(login));
-        else button.textContent = currentLanguage === 'de' ? 'Alle Streamer' : 'All channels';
-        button.addEventListener('click', () => {
-            if (statsSelectedChannel === login.toLowerCase()) return;
-            statsSelectedChannel = login.toLowerCase(); downloadHistoryOffset = 0;
-            void refreshArchiveStats();
-        });
-        fragment.append(button);
+        const key = login.toLowerCase();
+        let button = existing.get(key);
+        if (!button) {
+            button = document.createElement('button'); button.type = 'button'; button.className = 'stats-channel-button'; button.dataset.channel = key;
+            if (login) button.append(createStatsChannelIdentity(login));
+            button.addEventListener('click', () => {
+                if (statsSelectedChannel === key) return;
+                statsSelectedChannel = key; downloadHistoryOffset = 0;
+                for (const item of Array.from(host.querySelectorAll<HTMLButtonElement>('button'))) item.setAttribute('aria-pressed', String(item.dataset.channel === key));
+                void refreshArchiveStats();
+            });
+        }
+        if (!login) button.textContent = currentLanguage === 'de' ? 'Alle Streamer' : 'All channels';
+        button.setAttribute('aria-pressed', String(statsSelectedChannel === key));
+        retained.add(button);
+        const position = host.children[retained.size - 1];
+        if (position !== button) host.insertBefore(button, position || null);
     }
-    host.replaceChildren(fragment);
+    for (const button of existing.values()) if (!retained.has(button)) button.remove();
 }
 
 async function refreshArchiveStats(): Promise<void> {

@@ -698,8 +698,8 @@ body.theme-light .clip-discovery-fields input[type="date"] { color-scheme: light
 #statsTab .stats-filter-toolbar { margin: 0; padding: 0; gap: 10px; }
 #statsTab .stats-filter-toolbar label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 #statsTab .stats-filter-toolbar :is(input, select) { min-height: 34px; height: 34px; font-size: 12px; }
-#statsTab .insights-status-row { margin: 0; min-height: 0; font-size: 11px; }
-#statsTab .insights-status-row:has(#statsStatus:empty) { display: none; }
+#statsTab .insights-status-row { margin: 0; height: 17px; min-height: 17px; flex-shrink: 0; font-size: 11px; line-height: 17px; }
+#statsTab .insights-status-row > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #statsTab .insights-section { margin: 0; }
 #statsTab .insights-section-heading { margin-bottom: 8px; }
 #statsTab .stats-summary-grid { display: flex; gap: 24px; border-block: 1px solid var(--workspace-border); padding: 8px 0; }
