@@ -19,7 +19,7 @@
 #cutterPlayer { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; min-height: 0; overflow: visible; background: transparent; border: 0; border-radius: 0; }
 #cutterTab .cutter-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); overflow: hidden; }
 #cutterTab .cutter-panel-header, #cutterTab .cutter-export-header { display: flex; align-items: center; justify-content: space-between; min-height: 40px; gap: 10px; padding: 8px 12px; flex: 0 0 auto; border-bottom: 1px solid var(--workspace-border, var(--border)); }
-#cutterTab h3 { margin: 0; font-size: 14px; font-weight: 600; }
+#cutterTab h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--workspace-text); }
 #cutterPlayer .video-preview { width: 100%; height: auto; min-height: 180px; flex: 0 0 auto; aspect-ratio: 16 / 9; max-height: 650px; border: 0; border-radius: 0; }
 #cutterPlayer .video-preview video { display: block; width: 100%; height: 100%; object-fit: contain; }
 #cutterPlayer:fullscreen .archive-controls { position: relative; inset: auto; padding: 6px 10px; background: #16181b; opacity: 1; }
@@ -145,7 +145,7 @@
 #cutterTab .cutter-cut-actions .btn-secondary { font-size: 12px; padding: 5px 7px; min-height: 27px; }
 #cutterTab .cutter-cut-actions .cutter-icon-button { font-size: 20px; width: 27px; height: 27px; }
 #cutterTab .cutter-range-error { grid-column: 1 / -1; color: var(--text-secondary); font-size: 12px; }
-#cutterPreviewPlaceholder { font-size: 14px; }
+#cutterPreviewPlaceholder { font-size: 14px; color: #d3d8e0; }
 #cutterTab .fine-seeking .cutter-timeline-timecode { color: #9fd8b6; }
 #cutterTab :is(button, summary, .cutter-modes, .cutter-boundary-field label) { user-select: none; }
 #cutterTab .cutter-cut-fields input { user-select: text; }

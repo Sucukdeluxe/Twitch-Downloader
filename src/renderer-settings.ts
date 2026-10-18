@@ -1635,12 +1635,22 @@ function syncWorkspaceThemePicker(theme: string): void {
     scheduleSegmentedIndicatorSync(byId<HTMLElement>('workspaceThemePicker'));
 }
 
+const rendererSystemTheme = window.matchMedia('(prefers-color-scheme: light)');
+
+function syncRendererSystemTheme(): void {
+    if (!document.body.classList.contains('theme-system')) return;
+    document.body.classList.toggle('theme-light', rendererSystemTheme.matches);
+}
+
+rendererSystemTheme.addEventListener('change', syncRendererSystemTheme);
+
 function applyRendererTheme(theme: string): void {
     byId<HTMLSelectElement>('themeSelect').value = theme;
     for (const name of Array.from(document.body.classList)) {
         if (name.startsWith('theme-')) document.body.classList.remove(name);
     }
     document.body.classList.add(`theme-${theme}`);
+    syncRendererSystemTheme();
     config.theme = theme;
     syncWorkspaceThemePicker(theme);
 }

@@ -12,7 +12,7 @@
     --workspace-primary-text: #172033;
     --workspace-text: #ffffff;
     --workspace-text-muted: #ada9a9;
-    --workspace-text-faint: #777474;
+    --workspace-text-faint: #a5a0a0;
     --workspace-success: #6fcf97;
     --workspace-warning: #f2c66d;
     --workspace-danger: #ef7d7d;
@@ -81,7 +81,7 @@ body.theme-system {
     --workspace-primary-text: #172033;
     --workspace-text: #ffffff;
     --workspace-text-muted: #ada9a9;
-    --workspace-text-faint: #777474;
+    --workspace-text-faint: #a5a0a0;
     --workspace-success: #6fcf97;
     --workspace-warning: #f2c66d;
     --workspace-danger: #ef7d7d;
@@ -120,8 +120,8 @@ body.theme-light {
     --workspace-primary-pressed: #23457d;
     --workspace-primary-text: #ffffff;
     --workspace-text: #1c1f24;
-    --workspace-text-muted: #606773;
-    --workspace-text-faint: #8c939e;
+    --workspace-text-muted: #525b68;
+    --workspace-text-faint: #606a78;
     --workspace-success: #26744b;
     --workspace-warning: #8f5d12;
     --workspace-danger: #a33d3d;
@@ -1872,6 +1872,22 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
     background: rgba(15, 15, 15, 0.76);
 }
 
+body.theme-light .streamer-profile-header::before {
+    background: rgba(244, 245, 247, 0.97);
+}
+
+.streamer-profile-badge.partner {
+    color: #d8c0ff;
+}
+
+body.theme-light .streamer-profile-badge.partner {
+    color: #633091;
+}
+
+.streamer-profile-live-toggle .vod-live-badge {
+    color: var(--workspace-danger);
+}
+
 .streamer-profile-row {
     gap: 14px;
     padding: 14px;
@@ -1889,6 +1905,11 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
 
 .streamer-profile-display-name {
     font-size: 18px;
+}
+
+.streamer-profile-avatar-fallback {
+    background: var(--workspace-primary);
+    color: var(--workspace-primary-text);
 }
 
 .streamer-profile-live-card {
@@ -2783,8 +2804,8 @@ input[type="checkbox"].vod-select-checkbox:focus-visible {
         --workspace-primary-pressed: #23457d;
         --workspace-primary-text: #ffffff;
         --workspace-text: #1c1f24;
-        --workspace-text-muted: #606773;
-        --workspace-text-faint: #8c939e;
+        --workspace-text-muted: #525b68;
+        --workspace-text-faint: #606a78;
         --workspace-success: #26744b;
         --workspace-warning: #8f5d12;
         --workspace-danger: #a33d3d;
