@@ -1,5 +1,42 @@
 import type { DownloadProgress } from '../../types';
 
+export interface DownloadStallSnapshot {
+    bytesAdvanced: boolean;
+    stalled: boolean;
+    justStalled: boolean;
+    stalledForMs: number;
+}
+
+export class DownloadStallTracker {
+    private lastBytes = 0;
+    private lastProgressAt: number | null = null;
+    private stallReported = false;
+
+    constructor(private readonly stallAfterMs: number) {}
+
+    observe(bytes: number, now: number): DownloadStallSnapshot {
+        const currentBytes = Number.isFinite(bytes) ? Math.max(0, bytes) : this.lastBytes;
+        if (this.lastProgressAt === null) {
+            this.lastBytes = currentBytes;
+            this.lastProgressAt = now;
+            return { bytesAdvanced: false, stalled: false, justStalled: false, stalledForMs: 0 };
+        }
+
+        if (currentBytes > this.lastBytes) {
+            this.lastBytes = currentBytes;
+            this.lastProgressAt = now;
+            this.stallReported = false;
+            return { bytesAdvanced: true, stalled: false, justStalled: false, stalledForMs: 0 };
+        }
+
+        const stalledForMs = Math.max(0, now - this.lastProgressAt);
+        const stalled = stalledForMs >= this.stallAfterMs;
+        const justStalled = stalled && !this.stallReported;
+        if (justStalled) this.stallReported = true;
+        return { bytesAdvanced: false, stalled, justStalled, stalledForMs };
+    }
+}
+
 const PACKET_SIZE = 188;
 const CLOCK_RATE = 90000;
 const CLOCK_WRAP = 2 ** 33;

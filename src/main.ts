@@ -5,7 +5,7 @@ import { clipLibraryPage } from './main/domain/clip-library';
 import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/twitch/channel-search';
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
-import { MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
+import { DownloadStallTracker, MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs, isVodSourceReadTimeout } from './main/domain/vod-source-download';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, resolveVodPlaybackSource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
@@ -4192,12 +4192,16 @@ async function downloadVODPart(
         let lastTime = Date.now();
         let lastMediaSeconds = 0;
         let mediaRate = 0;
+        const stallTracker = new DownloadStallTracker(15_000);
+        const stallTimeoutMs = 120_000;
+        let stallError = '';
+        let stallTimeoutTriggered = false;
 
-        // Monitor file size for progress
+        let progressTickRunning = false;
         const progressInterval = setInterval(() => {
-            if (fs.existsSync(partialFilename)) {
-                try {
-                    const stats = fs.statSync(partialFilename);
+            if (progressTickRunning) return;
+            progressTickRunning = true;
+            void fs.promises.stat(partialFilename).then((stats) => {
                     downloadedBytes = stats.size;
                     itemTracking.bytes = stats.size;
 
@@ -4205,6 +4209,17 @@ async function downloadVODPart(
                     const timeDiff = (now - lastTime) / 1000;
                     const bytesDiff = downloadedBytes - lastBytes;
                     const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0;
+                    const stall = stallTracker.observe(downloadedBytes, now);
+
+                    if (stall.justStalled) {
+                        appendDebugLog('download-part-stalled', { itemId, filename, stalledForSeconds: Math.floor(stall.stalledForMs / 1000) });
+                    }
+                    if (stall.stalled && !stallTimeoutTriggered && stall.stalledForMs >= stallTimeoutMs) {
+                        stallTimeoutTriggered = true;
+                        stallError = tBackend('vodReadStall', { seconds: String(Math.floor(stall.stalledForMs / 1000)) });
+                        appendDebugLog('download-part-stall-timeout', { itemId, filename, stalledForSeconds: Math.floor(stall.stalledForMs / 1000) });
+                        proc.kill();
+                    }
 
                     runtimeMetrics.lastSpeedBytesPerSec = speed;
                     if (speed > 0) {
@@ -4226,9 +4241,10 @@ async function downloadVODPart(
                         mediaRate = mediaRate > 0 ? mediaRate * .6 + currentRate * .4 : currentRate;
                     }
                     const remainingSeconds = knownProgress && mediaRate > 0 ? Math.max(0, totalSeconds - seconds) / mediaRate : 0;
-                    const etaStr = speed > 0 && remainingSeconds > 0 && remainingSeconds < 86400 ? formatETA(remainingSeconds) : '';
+                    const etaStr = !stall.stalled && speed > 0 && remainingSeconds > 0 && remainingSeconds < 86400 ? formatETA(remainingSeconds) : '';
                     const progressEstimate = knownProgress ? Math.min(100, seconds / totalSeconds * 100) : -1;
-                    const status = knownProgress && seconds >= totalSeconds ? tBackend('statusCompletingDownload')
+                    const status = stall.stalled ? tBackend('statusWaitingForNetwork', { seconds: String(Math.floor(stall.stalledForMs / 1000)) })
+                        : knownProgress && seconds >= totalSeconds ? tBackend('statusCompletingDownload')
                         : knownProgress ? formatDuration(Math.floor(Math.min(seconds, totalSeconds))) + ' / ' + formatDuration(Math.floor(totalSeconds)) + ' · ' + formatBytes(downloadedBytes)
                         : tBackend('statusBytesDownloaded', { bytes: formatBytes(downloadedBytes) });
 
@@ -4236,7 +4252,7 @@ async function downloadVODPart(
                         id: itemId,
                         progress: progressEstimate,
                         progressPhase: knownProgress && seconds >= totalSeconds ? 'finalizing' : 'downloading',
-                        speed: formatSpeed(speed),
+                        speed: formatSpeed(stall.stalled ? 0 : speed),
                         eta: etaStr,
                         status,
                         currentPart: partNum,
@@ -4244,8 +4260,9 @@ async function downloadVODPart(
                         downloadedBytes: downloadedBytes,
                         speedBytesPerSec: speed
                     });
-                } catch { }
-            }
+            }).catch(() => undefined).finally(() => {
+                progressTickRunning = false;
+            });
         }, 1000);
 
         proc.stderr?.on('data', (data: Buffer) => {
@@ -4281,7 +4298,7 @@ async function downloadVODPart(
 
             if (outputError) {
                 partialDownloadRegistry.discard(partialFilename);
-                resolve({ success: false, error: String(outputError) });
+                resolve({ success: false, error: stallError || String(outputError) });
                 return;
             }
 
@@ -4339,7 +4356,7 @@ async function downloadVODPart(
             // Letzte Error-/Warning-Zeile aus beiden Streams suchen, falls
             // lastErrorLine noch leer ist (z.B. weil streamlink ohne Output
             // mit Code 1 exited — was bei pre-flight-Auth-Fails passiert).
-            let userFacingError = directSource && isVodSourceReadTimeout(fullStderr) ? tBackend('vodReadTimeout') : lastErrorLine;
+            let userFacingError = stallError || (directSource && isVodSourceReadTimeout(fullStderr) ? tBackend('vodReadTimeout') : lastErrorLine);
             if (!userFacingError) {
                 const combined = fullStderr.split('\n').map(l => l.trim()).filter(Boolean);
                 userFacingError = combined.filter(l => l.toLowerCase().includes('error:')).pop()
