@@ -16,6 +16,8 @@
     --workspace-success: #6fcf97;
     --workspace-warning: #f2c66d;
     --workspace-danger: #ef7d7d;
+    --workspace-success-text: #0b2616;
+    --workspace-danger-text: #2e0a0a;
     --workspace-info: #8fb5ff;
     --workspace-empty-icon: #f3f3f3;
     --workspace-popover-bg: #4f4d4d;
@@ -85,6 +87,8 @@ body.theme-system {
     --workspace-success: #6fcf97;
     --workspace-warning: #f2c66d;
     --workspace-danger: #ef7d7d;
+    --workspace-success-text: #0b2616;
+    --workspace-danger-text: #2e0a0a;
     --workspace-info: #8fb5ff;
     --workspace-empty-icon: #f3f3f3;
     --workspace-popover-bg: #4f4d4d;
@@ -125,6 +129,8 @@ body.theme-light {
     --workspace-success: #26744b;
     --workspace-warning: #8f5d12;
     --workspace-danger: #a33d3d;
+    --workspace-success-text: #ffffff;
+    --workspace-danger-text: #ffffff;
     --workspace-info: #315ea8;
     --workspace-empty-icon: #596475;
     --workspace-popover-bg: #4f4d4d;
@@ -2809,6 +2815,8 @@ body.theme-light .streamer-profile-badge.partner {
         --workspace-success: #26744b;
         --workspace-warning: #8f5d12;
         --workspace-danger: #a33d3d;
+        --workspace-success-text: #ffffff;
+        --workspace-danger-text: #ffffff;
         --workspace-info: #315ea8;
         --workspace-empty-icon: #596475;
         --workspace-popover-bg: #4f4d4d;

@@ -496,9 +496,9 @@
     border: 2px solid var(--bg-panel);
     border-radius: 50%;
     background: var(--success);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
+    color: var(--workspace-success-text, #fff);
+    font-size: 11px;
+    font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     user-select: none;
@@ -519,12 +519,12 @@
 }
 
 .btn-merge-group {
-    background: var(--accent);
-    color: var(--bg-primary);
+    background: var(--workspace-primary, var(--accent));
+    color: var(--workspace-primary-text, #fff);
 }
 
-.btn-merge-group:hover {
-    opacity: 0.9;
+.btn-merge-group:hover:not(:disabled) {
+    background: var(--workspace-primary-hover, var(--accent));
 }
 
 .queue-actions {
@@ -613,15 +613,20 @@
 
 .btn-start {
     background: var(--success);
-    color: white;
+    color: var(--workspace-success-text, #fff);
 }
 
-.btn-start:hover {
-    background: #00a844;
+.btn-start:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--success) 88%, var(--workspace-text, #000));
 }
 
 .btn-start.downloading {
     background: var(--error);
+    color: var(--workspace-danger-text, #fff);
+}
+
+.btn-start.downloading:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--error) 88%, var(--workspace-text, #000));
 }
 
 .btn-clear {
