@@ -519,6 +519,11 @@
 }
 
 .btn-merge-group {
+    order: -1;
+    min-height: 34px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     background: var(--workspace-primary, var(--accent));
     color: var(--workspace-primary-text, #fff);
 }
@@ -527,8 +532,13 @@
     background: var(--workspace-primary-hover, var(--accent));
 }
 
+.queue-actions .btn-merge-group {
+    flex: 1 0 100%;
+}
+
 .queue-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 10px;
     flex-shrink: 0;
