@@ -4197,11 +4197,13 @@ async function downloadVODPart(
         let stallError = '';
         let stallTimeoutTriggered = false;
 
+        let progressStopped = false;
         let progressTickRunning = false;
         const progressInterval = setInterval(() => {
-            if (progressTickRunning) return;
+            if (progressStopped || progressTickRunning) return;
             progressTickRunning = true;
             void fs.promises.stat(partialFilename).then((stats) => {
+                    if (progressStopped) return;
                     downloadedBytes = stats.size;
                     itemTracking.bytes = stats.size;
 
@@ -4209,7 +4211,15 @@ async function downloadVODPart(
                     const timeDiff = (now - lastTime) / 1000;
                     const bytesDiff = downloadedBytes - lastBytes;
                     const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0;
-                    const stall = stallTracker.observe(downloadedBytes, now);
+                    const suspended = output.isPaused() || Boolean(proc.stdout?.isPaused() && !proc.stdout.readableEnded);
+                    const stall = stallTracker.observe(downloadedBytes, now, suspended);
+                    if (suspended) {
+                        lastBytes = downloadedBytes;
+                        lastTime = now;
+                        lastMediaSeconds = mediaProgress.seconds ?? 0;
+                        mediaRate = 0;
+                        return;
+                    }
 
                     if (stall.justStalled) {
                         appendDebugLog('download-part-stalled', { itemId, filename, stalledForSeconds: Math.floor(stall.stalledForMs / 1000) });
@@ -4291,6 +4301,7 @@ async function downloadVODPart(
         });
 
         proc.on('close', async (code) => {
+            progressStopped = true;
             clearInterval(progressInterval);
             const outputError = await outputFinished;
             processRegistration.release();
@@ -4310,7 +4321,7 @@ async function downloadVODPart(
                 return;
             }
 
-            if (code === 0 && fs.existsSync(partialFilename)) {
+            if (code === 0 && !stallError && fs.existsSync(partialFilename)) {
                 const stats = fs.statSync(partialFilename);
                 if (stats.size <= MIN_FILE_BYTES) {
                     const tooSmall = tBackend('fileTooSmall', { bytes: String(stats.size) });
@@ -4375,6 +4386,7 @@ async function downloadVODPart(
         });
 
         proc.on('error', async (err) => {
+            progressStopped = true;
             clearInterval(progressInterval);
             await output.cancel();
             processRegistration.release();

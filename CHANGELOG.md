@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.10 - 2026-10-20
+
+This update adds channel-focused statistics, improves theme readability and makes stalled VOD transfers easier to diagnose.
+
+- Show download history with video covers, channel names and profile images, with full-width statistics and channel filters.
+- Keep statistics stable during channel changes and animate updated values while respecting reduced-motion settings.
+- Improve text contrast in light, dark and system themes, including the update dialog, profile header and video timeline.
+- Detect VOD transfers that stop receiving data, show a waiting status and retry timed-out attempts without treating intentional pauses or throttling as failures.
+- Read transfer file sizes asynchronously and ignore late progress callbacks after a transfer ends.
+- Update Electron to 44.9.1 and refresh affected runtime dependencies.
+
 ## 1.1.9 - 2026-10-17
 
 This update makes large VOD lists load more smoothly while keeping all entries and actions available.

@@ -716,6 +716,9 @@ function getQueueProgressDetails(item: QueueItem): QueueProgressDetail[] {
         { key: 'speed', label: de ? 'Tempo:' : 'Speed:', value: formatQueueTransferValue(item.speed || '') },
         { key: 'eta', label: de ? 'Restzeit:' : 'Remaining:', value: formatQueueEta(item.eta || '') }
     );
+    if (!time && item.status === 'downloading' && item.progressStatus && !sizeMatch) {
+        rows.unshift({ key: 'message', label: 'Status:', value: item.progressStatus });
+    }
     return rows;
 }
 

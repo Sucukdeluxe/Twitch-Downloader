@@ -11,12 +11,15 @@ export class DownloadStallTracker {
     private lastBytes = 0;
     private lastProgressAt: number | null = null;
     private stallReported = false;
+    private suspended = false;
 
     constructor(private readonly stallAfterMs: number) {}
 
-    observe(bytes: number, now: number): DownloadStallSnapshot {
+    observe(bytes: number, now: number, suspended = false): DownloadStallSnapshot {
         const currentBytes = Number.isFinite(bytes) ? Math.max(0, bytes) : this.lastBytes;
-        if (this.lastProgressAt === null) {
+        if (suspended || this.suspended || this.lastProgressAt === null) {
+            this.suspended = suspended;
+            this.stallReported = false;
             this.lastBytes = currentBytes;
             this.lastProgressAt = now;
             return { bytesAdvanced: false, stalled: false, justStalled: false, stalledForMs: 0 };
