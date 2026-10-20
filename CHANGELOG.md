@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.11 - 2026-10-20
+
+This update fixes VOD part downloads restarting from the beginning after the app is closed or interrupted.
+
+- Save completed parts with the queue and reuse unchanged files after a full app restart.
+- Download only missing or changed parts when resuming, including split custom VOD ranges.
+- Keep interrupted VOD jobs ready to resume after closing the app instead of marking them as failed.
+
+Resume checkpoints are recorded as parts finish in this version. Parts completed by older versions do not have these checkpoints.
+
 ## 1.1.10 - 2026-10-20
 
 This update adds channel-focused statistics, improves theme readability and makes stalled VOD transfers easier to diagnose.

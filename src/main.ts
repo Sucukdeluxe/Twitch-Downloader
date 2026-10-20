@@ -745,8 +745,6 @@ function sanitizeQueueItem(raw: unknown): QueueItem | null {
     if (typeof raw.url !== 'string' || !raw.url) return null;
     if (!isValidQueueStatus(raw.status)) return null;
 
-    // 'downloading' on cold start is stale — no download is actually running
-    // and the user expects to resume from start, so map it back to 'pending'
     const isStaleDownloading = raw.status === 'downloading';
     const finalStatus: QueueItem['status'] = isStaleDownloading ? 'pending' : raw.status;
 
@@ -791,6 +789,9 @@ function sanitizeQueueItem(raw: unknown): QueueItem | null {
         if (typeof raw.downloadedBytes === 'number' && Number.isFinite(raw.downloadedBytes)) item.downloadedBytes = raw.downloadedBytes;
         if (typeof raw.totalBytes === 'number' && Number.isFinite(raw.totalBytes)) item.totalBytes = raw.totalBytes;
     }
+
+    const completedVodParts = sanitizeCompletedVodParts(raw.completedVodParts);
+    if (completedVodParts.length > 0) item.completedVodParts = completedVodParts;
 
     if (Array.isArray(raw.outputFiles)) {
         const files = raw.outputFiles.filter((f): f is string => typeof f === 'string' && f.length > 0);
@@ -5771,32 +5772,57 @@ function queueOutputPathForPart(item: QueueItem, partNumber: number, multiple: b
 
 interface CompletedVodPart { filename: string; size: number; mtimeMs: number }
 
+function sanitizeCompletedVodParts(raw: unknown): NonNullable<QueueItem['completedVodParts']> {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((part) => {
+        if (!isPlainObject(part) || typeof part.key !== 'string' || part.key.length > 16384
+            || typeof part.filename !== 'string' || !path.isAbsolute(part.filename)
+            || path.extname(part.filename).toLowerCase() !== '.mp4'
+            || !Number.isSafeInteger(part.size) || Number(part.size) <= 0
+            || typeof part.mtimeMs !== 'number' || !Number.isFinite(part.mtimeMs) || part.mtimeMs < 0) return false;
+        try {
+            const key = JSON.parse(part.key);
+            return Array.isArray(key) && key.length === 5 && typeof key[2] === 'string'
+                && path.isAbsolute(key[2]) && path.dirname(part.filename) === path.dirname(key[2]);
+        } catch { return false; }
+    }).map(part => ({ key: part.key, filename: part.filename, size: part.size, mtimeMs: part.mtimeMs }));
+}
+
+function persistCompletedVodParts(item: QueueItem, completedParts: Map<string, CompletedVodPart>): void {
+    item.completedVodParts = Array.from(completedParts, ([key, part]) => ({ key, ...part }));
+    saveQueue(downloadQueue, true);
+}
+
 async function retainCompletedVodPart(
     completedParts: Map<string, CompletedVodPart>,
     key: string,
     createFilename: () => string,
-    download: (filename: string) => Promise<DownloadResult>
+    download: (filename: string) => Promise<DownloadResult>,
+    persist: () => void
 ): Promise<DownloadResult> {
     const previous = completedParts.get(key);
     if (previous) {
         const current = await fs.promises.stat(previous.filename).catch(() => null);
-        if (current?.size === previous.size && current.mtimeMs === previous.mtimeMs) {
+        if (current?.isFile() && current.size === previous.size && current.mtimeMs === previous.mtimeMs) {
             return { success: true, outputFiles: [previous.filename] };
         }
         completedParts.delete(key);
+        persist();
     }
     const filename = createFilename();
     const result = await download(filename);
     if (!result.success) return result;
     const stats = await fs.promises.stat(filename);
+    if (!stats.isFile() || stats.size <= 0) throw new Error(tBackend('integrityFailedGeneric'));
     completedParts.set(key, { filename, size: stats.size, mtimeMs: stats.mtimeMs });
+    persist();
     return { ...result, outputFiles: [filename] };
 }
 
 async function downloadVOD(
     item: QueueItem,
     onProgress: (progress: DownloadProgress) => void,
-    completedParts = new Map<string, CompletedVodPart>()
+    completedParts = new Map<string, CompletedVodPart>((item.completedVodParts ?? []).map(part => [part.key, part]))
 ): Promise<DownloadResult> {
     // Live-recording branch: URL is the channel page, no VOD id, no time
     // window. Streamlink runs until the stream ends, then we treat the
@@ -6008,7 +6034,7 @@ async function downloadVOD(
                     numParts,
                     0,
                     item.quality
-                ));
+                ), () => persistCompletedVodParts(item, completedParts));
 
                 if (!result.success) return result;
                 downloadedFiles.push(...result.outputFiles!);
@@ -6088,7 +6114,7 @@ async function downloadVOD(
                 numParts,
                 duration,
                 item.quality
-            ));
+            ), () => persistCompletedVodParts(item, completedParts));
 
             if (!result.success) {
                 return result;
@@ -6471,7 +6497,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
     try {
         let finalResult: DownloadResult = { success: false, error: tBackend('unknownDownloadError') };
         const maxAttempts = getRetryAttemptLimit();
-        const completedParts = new Map<string, CompletedVodPart>();
+        const completedParts = new Map<string, CompletedVodPart>((item.completedVodParts ?? []).map(part => [part.key, part]));
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             if (!isDownloading || cancelledItemIds.has(item.id) || queueProcessRegistry.isCancelled(item.id)) {
@@ -6551,6 +6577,13 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
 
         if (!hasQueueItemId(item.id)) {
             appendDebugLog('queue-item-finished-removed', { itemId: item.id });
+            return;
+        }
+
+        if (appShutdownStarted && !finalResult.success && !item.isLive && !item.mergeGroup) {
+            applyQueueTransferState(item, 'pending', item.progress);
+            item.last_error = '';
+            saveQueue(downloadQueue, true);
             return;
         }
 

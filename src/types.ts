@@ -67,6 +67,7 @@ export interface QueueItem {
     // for parts/merge-group splits). Persisted with the queue so completed
     // items keep their "Open file" / "Show in folder" actions across restarts.
     outputFiles?: string[];
+    completedVodParts?: Array<{ key: string; filename: string; size: number; mtimeMs: number }>;
     // Live stream recording — when true, item.url is the channel URL
     // (https://twitch.tv/{streamer}) and streamlink runs until the stream
     // ends instead of using --hls-start-offset / --hls-duration. The output
