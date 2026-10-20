@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.12 - 2026-10-21
+
+This update makes the queue buttons easier to read.
+
+- Use dark text on the light green, red and blue buttons in dark themes, so Start, Pause and Merge & Split stay readable.
+- Show the selection numbers on queue items larger and with higher contrast.
+- Show Merge & Split in its own full-width row above the queue buttons, so its label no longer wraps or pushes other buttons out of view.
+
 ## 1.1.11 - 2026-10-20
 
 This update fixes VOD part downloads restarting from the beginning after the app is closed or interrupted.
