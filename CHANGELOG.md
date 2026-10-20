@@ -8,6 +8,7 @@ This update adds channel-focused statistics, improves theme readability and make
 - Keep statistics stable during channel changes and animate updated values while respecting reduced-motion settings.
 - Improve text contrast in light, dark and system themes, including the update dialog, profile header and video timeline.
 - Detect VOD transfers that stop receiving data, show a waiting status and retry timed-out attempts without treating intentional pauses or throttling as failures.
+- Keep already completed VOD parts when an automatic retry is needed, avoiding duplicate downloads.
 - Read transfer file sizes asynchronously and ignore late progress callbacks after a transfer ends.
 - Update Electron to 44.9.1 and refresh affected runtime dependencies.
 

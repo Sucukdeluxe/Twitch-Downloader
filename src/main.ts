@@ -5769,9 +5769,34 @@ function queueOutputPathForPart(item: QueueItem, partNumber: number, multiple: b
     return path.join(path.dirname(item.outputPath), `${stem}_Part${String(partNumber).padStart(2, '0')}${extension}`);
 }
 
+interface CompletedVodPart { filename: string; size: number; mtimeMs: number }
+
+async function retainCompletedVodPart(
+    completedParts: Map<string, CompletedVodPart>,
+    key: string,
+    createFilename: () => string,
+    download: (filename: string) => Promise<DownloadResult>
+): Promise<DownloadResult> {
+    const previous = completedParts.get(key);
+    if (previous) {
+        const current = await fs.promises.stat(previous.filename).catch(() => null);
+        if (current?.size === previous.size && current.mtimeMs === previous.mtimeMs) {
+            return { success: true, outputFiles: [previous.filename] };
+        }
+        completedParts.delete(key);
+    }
+    const filename = createFilename();
+    const result = await download(filename);
+    if (!result.success) return result;
+    const stats = await fs.promises.stat(filename);
+    completedParts.set(key, { filename, size: stats.size, mtimeMs: stats.mtimeMs });
+    return { ...result, outputFiles: [filename] };
+}
+
 async function downloadVOD(
     item: QueueItem,
-    onProgress: (progress: DownloadProgress) => void
+    onProgress: (progress: DownloadProgress) => void,
+    completedParts = new Map<string, CompletedVodPart>()
 ): Promise<DownloadResult> {
     // Live-recording branch: URL is the channel page, no VOD id, no time
     // window. Streamlink runs until the stream ends, then we treat the
@@ -5967,9 +5992,12 @@ async function downloadVOD(
                 const remainingDuration = clip.durationSec - (i * partDuration);
                 const thisDuration = Math.min(partDuration, remainingDuration);
 
-                const partFilename = ensureUniqueFilename(makeClipFilename(partNum, startOffset, thisDuration), item.id);
+                const plannedFilename = makeClipFilename(partNum, startOffset, thisDuration);
 
-                const result = await downloadVODPart(
+                const result = await retainCompletedVodPart(completedParts,
+                    JSON.stringify([item.url, item.quality, plannedFilename, startOffset, thisDuration]),
+                    () => ensureUniqueFilename(plannedFilename, item.id),
+                    partFilename => downloadVODPart(
                     item.url,
                     partFilename,
                     formatDuration(startOffset),
@@ -5980,10 +6008,10 @@ async function downloadVOD(
                     numParts,
                     0,
                     item.quality
-                );
+                ));
 
                 if (!result.success) return result;
-                downloadedFiles.push(partFilename);
+                downloadedFiles.push(...result.outputFiles!);
             }
 
             return {
@@ -6038,15 +6066,18 @@ async function downloadVOD(
             const endSec = Math.min((i + 1) * partDuration, totalDuration);
             const duration = endSec - startSec;
 
-            const partFilename = ensureUniqueFilename(queueOutputPathForPart(item, i + 1, true, makeTemplateFilename(
+            const plannedFilename = queueOutputPathForPart(item, i + 1, true, makeTemplateFilename(
                 config.filename_template_parts,
                 DEFAULT_FILENAME_TEMPLATE_PARTS,
                 i + 1,
                 startSec,
                 duration
-            )), item.id);
+            ));
 
-            const result = await downloadVODPart(
+            const result = await retainCompletedVodPart(completedParts,
+                JSON.stringify([item.url, item.quality, plannedFilename, startSec, duration]),
+                () => ensureUniqueFilename(plannedFilename, item.id),
+                partFilename => downloadVODPart(
                 item.url,
                 partFilename,
                 formatDuration(startSec),
@@ -6057,13 +6088,13 @@ async function downloadVOD(
                 numParts,
                 duration,
                 item.quality
-            );
+            ));
 
             if (!result.success) {
                 return result;
             }
 
-            downloadedFiles.push(partFilename);
+            downloadedFiles.push(...result.outputFiles!);
         }
 
         return {
@@ -6440,6 +6471,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
     try {
         let finalResult: DownloadResult = { success: false, error: tBackend('unknownDownloadError') };
         const maxAttempts = getRetryAttemptLimit();
+        const completedParts = new Map<string, CompletedVodPart>();
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             if (!isDownloading || cancelledItemIds.has(item.id) || queueProcessRegistry.isCancelled(item.id)) {
@@ -6456,7 +6488,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
                 : await downloadVOD(item, (progress) => {
                     recordDownloadProgress(progress);
                     if (!queuePaused) mainWindow?.webContents.send('download-progress', progress);
-                });
+                }, completedParts);
 
             if (result.success) {
                 finalResult = result;
