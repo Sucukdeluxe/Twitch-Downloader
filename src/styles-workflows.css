@@ -31,6 +31,7 @@
 }
 
 .queue-list {
+    overflow-anchor: none;
     flex: 1;
     overflow-y: auto;
     scrollbar-gutter: stable;
@@ -281,6 +282,16 @@
     padding: 6px 8px;
     border: 1px solid color-mix(in srgb, var(--text-secondary) 30%, var(--border-soft));
     border-radius: 7px;
+}
+
+.queue-progress-transition {
+    min-width: 0;
+    overflow: clip;
+}
+
+.queue-progress-transition > .queue-progress-info {
+    height: 100%;
+    align-content: start;
 }
 
 .queue-progress-info {
