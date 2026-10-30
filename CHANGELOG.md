@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.13 - 2026-10-30
+
+This update makes queue status changes smoother and keeps the download list in place.
+
+- Animate the queue card height when switching between downloading, writing MP4, optimizing playback and checking the file.
+- Keep transitions continuous during rapid status changes and background queue updates.
+- Preserve the queue scroll position and keyboard focus, and respect reduced-motion settings.
+- Update Electron to 44.10.0, including Node.js 24.22.1 and current fixes in the Electron 44 series.
+
 ## 1.1.12 - 2026-10-21
 
 This update makes the queue buttons easier to read.
