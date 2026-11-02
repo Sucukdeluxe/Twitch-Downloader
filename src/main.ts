@@ -7,6 +7,7 @@ import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
 import { DownloadStallTracker, MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
 import { buildVodSourceDownloadArgs, isVodSourceReadTimeout } from './main/domain/vod-source-download';
+import { buildVodSnapshotDownloadArgs, buildVodSnapshotPlaylist, fetchHlsMediaPlaylist, parseClockSeconds, waitForLiveVodRange, type HlsMediaPlaylist } from './main/domain/vod-live-snapshot';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, resolveVodPlaybackSource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
 import { normalizeAutoVodRules, normalizeAutoVodRule, evaluateAutoVodRule, type AutoVodRules } from './main/domain/auto-vod-rules';
@@ -4099,6 +4100,152 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
     }
 }
 
+interface LiveVodSnapshotPlan {
+    args: string[];
+    durationSeconds: number;
+    remove: () => void;
+    debug: Record<string, unknown>;
+}
+
+const finishedVodUrls = new Set<string>();
+const failedLiveVodChecks = new Map<string, number>();
+
+function rememberFinishedVod(url: string): void {
+    if (finishedVodUrls.size >= 512) finishedVodUrls.delete(finishedVodUrls.values().next().value!);
+    finishedVodUrls.add(url);
+}
+
+async function loadLiveVodPlaylist(url: string, quality: string, itemId: string, signal: AbortSignal): Promise<{ mediaUrl: string; playlist: HlsMediaPlaylist } | null> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const mediaUrl = await resolveVodPlaybackSource(url, quality, signal);
+            if (mediaUrl) return { mediaUrl, playlist: await fetchHlsMediaPlaylist(mediaUrl, signal) };
+            appendDebugLog('download-part-live-check-failed', { itemId, attempt, error: 'no media playlist for quality', quality });
+        } catch (error) {
+            appendDebugLog('download-part-live-check-failed', { itemId, attempt, error: String(error) });
+        }
+        if (signal.aborted) return null;
+        if (attempt === 1) await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return null;
+}
+
+async function prepareLiveVodSnapshot(
+    url: string,
+    quality: string,
+    startTime: string | null,
+    endTime: string | null,
+    expectedTotalSec: number,
+    itemId: string,
+    partNum: number,
+    totalParts: number,
+    onProgress: (progress: DownloadProgress) => void
+): Promise<LiveVodSnapshotPlan | { error: string } | null> {
+    if (!isLikelyVodUrl(url) || finishedVodUrls.has(url)) return null;
+    const failedUntil = failedLiveVodChecks.get(url);
+    if (failedUntil !== undefined && failedUntil > Date.now()) return null;
+    const controller = new AbortController();
+    const isStopped = (): boolean => appShutdownStarted || cancelledItemIds.has(itemId) || queueProcessRegistry.isCancelled(itemId);
+    const watcher = setInterval(() => { if (isStopped()) controller.abort(); }, 500);
+    try {
+        const loaded = await loadLiveVodPlaylist(url, quality, itemId, controller.signal);
+        if (isStopped()) return { error: tBackend('downloadCancelled') };
+        if (!loaded) {
+            for (const [key, until] of failedLiveVodChecks) if (until <= Date.now()) failedLiveVodChecks.delete(key);
+            failedLiveVodChecks.set(url, Date.now() + 10 * 60_000);
+            return null;
+        }
+        failedLiveVodChecks.delete(url);
+        let playlist = loaded.playlist;
+        if (playlist.ended) {
+            rememberFinishedVod(url);
+            return null;
+        }
+        const source = loaded.mediaUrl;
+        const startSeconds = parseClockSeconds(startTime) ?? 0;
+        const requestedDuration = parseClockSeconds(endTime) ?? (expectedTotalSec > 0 ? expectedTotalSec : null);
+        if (requestedDuration !== null && playlist.totalSeconds + 0.0005 < startSeconds + requestedDuration) {
+            const endSeconds = startSeconds + requestedDuration;
+            const waitStartedAt = Date.now();
+            appendDebugLog('download-part-live-wait-start', { itemId, part: partNum, requestedEndSeconds: endSeconds, availableSeconds: playlist.totalSeconds });
+            const waited = await waitForLiveVodRange(playlist, endSeconds, {
+                load: async () => {
+                    try {
+                        return await fetchHlsMediaPlaylist(source, controller.signal);
+                    } catch (error) {
+                        if (!controller.signal.aborted) appendDebugLog('download-part-live-reload-failed', { itemId, error: String(error) });
+                        return null;
+                    }
+                },
+                sleep: ms => new Promise(resolve => {
+                    const timer = setTimeout(resolve, ms);
+                    controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+                }),
+                now: () => Date.now(),
+                shouldContinue: async () => !isStopped() && await waitForQueuePhaseBoundary(itemId) && !isStopped(),
+                onWait: available => onProgress({
+                    id: itemId,
+                    progress: -1,
+                    speed: '',
+                    eta: '',
+                    status: tBackend('statusWaitingForLiveVod', { available: formatDuration(Math.floor(available)), required: formatDuration(Math.ceil(endSeconds)) }),
+                    currentPart: partNum,
+                    totalParts,
+                }),
+            });
+            playlist = waited.playlist;
+            appendDebugLog('download-part-live-wait-end', { itemId, part: partNum, reason: waited.reason, waitedSeconds: Math.round((Date.now() - waitStartedAt) / 1000), availableSeconds: playlist.totalSeconds, ended: playlist.ended });
+            if (waited.reason === 'cancelled') return { error: tBackend('downloadCancelled') };
+            if (waited.reason === 'stale') {
+                return { error: tBackend('liveVodStalled', { available: formatDuration(Math.floor(playlist.totalSeconds)), required: formatDuration(Math.ceil(endSeconds)) }) };
+            }
+            if (playlist.ended) {
+                rememberFinishedVod(url);
+                return null;
+            }
+        }
+        if (startSeconds >= playlist.totalSeconds) {
+            appendDebugLog('download-part-live-range-unavailable', { itemId, startSeconds, availableSeconds: playlist.totalSeconds });
+            return { error: tBackend('liveVodRangeUnavailable', { start: formatDuration(Math.floor(startSeconds)), available: formatDuration(Math.floor(playlist.totalSeconds)) }) };
+        }
+        let snapshot: ReturnType<typeof buildVodSnapshotPlaylist>;
+        const snapshotPath = path.join(app.getPath('temp'), `twitch-downloader-live-${process.pid}-${itemId}-${partNum}-${Date.now()}.m3u8`);
+        try {
+            snapshot = buildVodSnapshotPlaylist(playlist, startSeconds, requestedDuration);
+        } catch (error) {
+            appendDebugLog('download-part-live-snapshot-failed', { itemId, error: String(error) });
+            return { error: tBackend('liveVodRangeUnavailable', { start: formatDuration(Math.floor(startSeconds)), available: formatDuration(Math.floor(playlist.totalSeconds)) }) };
+        }
+        try {
+            fs.writeFileSync(snapshotPath, snapshot.text, 'utf8');
+        } catch (error) {
+            appendDebugLog('download-part-live-snapshot-failed', { itemId, snapshotPath, error: String(error) });
+            fs.rm(snapshotPath, { force: true }, () => undefined);
+            return { error: tBackend('liveVodSnapshotWriteFailed', { error: String(error) }) };
+        }
+        let removed = false;
+        return {
+            args: buildVodSnapshotDownloadArgs(snapshotPath, snapshot.seekSeconds, snapshot.durationSeconds),
+            durationSeconds: snapshot.durationSeconds,
+            remove: () => {
+                if (removed) return;
+                removed = true;
+                fs.rm(snapshotPath, { force: true }, () => undefined);
+            },
+            debug: {
+                mediaUrl: source,
+                startSeconds,
+                durationSeconds: snapshot.durationSeconds,
+                availableSeconds: playlist.totalSeconds,
+                firstSequence: snapshot.firstSequence,
+                segmentCount: snapshot.segmentCount,
+            },
+        };
+    } finally {
+        clearInterval(watcher);
+    }
+}
+
 async function downloadVODPart(
     url: string,
     filename: string,
@@ -4114,18 +4261,34 @@ async function downloadVODPart(
     if (!(await ensureFfmpegInstalled())) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
     if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) return { success: false, error: tBackend('downloadCancelled') };
     const requestedQuality = quality ?? config.streamlink_quality;
-    const directSource = await resolveVodQualitySource(url, requestedQuality);
-    const streamlinkCmd = directSource ? { command: '', prefixArgs: [] } : await getStreamlinkCommand();
-    const ffmpegPath = directSource ? await getFFmpegPath() : null;
-    if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) return { success: false, error: tBackend('downloadCancelled') };
+    const liveSnapshot = await prepareLiveVodSnapshot(url, requestedQuality, startTime, endTime, expectedTotalSec, itemId, partNum, totalParts, onProgress);
+    if (liveSnapshot && 'error' in liveSnapshot) return { success: false, error: liveSnapshot.error };
+    const directSource = liveSnapshot ? null : await resolveVodQualitySource(url, requestedQuality);
+    const ffmpegInput = Boolean(directSource || liveSnapshot);
+    let streamlinkCmd: { command: string; prefixArgs: string[] };
+    let ffmpegPath: string | null;
+    try {
+        streamlinkCmd = ffmpegInput ? { command: '', prefixArgs: [] } : await getStreamlinkCommand();
+        ffmpegPath = ffmpegInput ? await getFFmpegPath() : null;
+    } catch (error) {
+        liveSnapshot?.remove();
+        throw error;
+    }
+    if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) {
+        liveSnapshot?.remove();
+        return { success: false, error: tBackend('downloadCancelled') };
+    }
     return new Promise((resolve) => {
-        const command = directSource ? ffmpegPath! : streamlinkCmd.command;
+        const command = ffmpegInput ? ffmpegPath! : streamlinkCmd.command;
         const args = [...streamlinkCmd.prefixArgs, ...TWITCH_VIDEO_CODEC_ARGS, url, getStreamlinkStreamArg(quality), '--stdout'];
-        if (directSource) {
+        if (liveSnapshot) {
+            args.length = 0;
+            args.push(...liveSnapshot.args);
+        } else if (directSource) {
             args.length = 0;
             args.push(...buildVodSourceDownloadArgs(directSource, startTime, endTime, expectedTotalSec));
         }
-        if (!directSource && config.streamlink_disable_ads !== false) {
+        if (!ffmpegInput && config.streamlink_disable_ads !== false) {
             // Skips Twitch mid-roll ads which would otherwise be embedded
             // in the VOD output. Off only if the user explicitly disabled it.
             args.push('--twitch-disable-ads');
@@ -4134,38 +4297,46 @@ async function downloadVODPart(
         // statt komplett zu sterben. Twitch hat 2025/26 oefter transiente 403/
         // timeout-Errors auf einzelne HLS-Segments. Default ist 3 — 5 ist ein
         // pragmatischer Kompromiss zwischen Resilience und Failing-Fast.
-        if (!directSource) args.push('--stream-segment-attempts', '5');
-        if (!directSource) args.push('--stream-segment-timeout', '20');
-        if (!directSource) args.push('--stream-timeout', '120');
+        if (!ffmpegInput) args.push('--stream-segment-attempts', '5');
+        if (!ffmpegInput) args.push('--stream-segment-timeout', '20');
+        if (!ffmpegInput) args.push('--stream-timeout', '120');
         // Streamlink-Plugin retry: bei "stream not found on URL"-Erstabfrage
         // einmal nachhaken, bevor wir den ganzen Run failen.
-        if (!directSource) args.push('--retry-streams', '3');
-        if (!directSource) args.push('--retry-max', '2');
+        if (!ffmpegInput) args.push('--retry-streams', '3');
+        if (!ffmpegInput) args.push('--retry-max', '2');
         let lastErrorLine = '';
         const stderrBuffer: string[] = [];
-        const expectedDurationSeconds = parseClockDurationSeconds(endTime)
+        const expectedDurationSeconds = liveSnapshot ? liveSnapshot.durationSeconds : parseClockDurationSeconds(endTime)
             ?? (directSource && expectedTotalSec > 0 ? expectedTotalSec : null);
         const mediaProgress = new MediaDownloadProgress();
 
-        if (!directSource && startTime) {
+        if (!ffmpegInput && startTime) {
             args.push('--hls-start-offset', startTime);
         }
-        if (!directSource && endTime) {
+        if (!ffmpegInput && endTime) {
             args.push('--hls-duration', endTime);
         }
 
         // download-part-start in the debug log captures the same info
         // for support / forensics — no need to flood stdout too.
-        appendDebugLog('download-part-start', { itemId, command, filename, args, directQuality: directSource ? requestedQuality : undefined });
+        appendDebugLog('download-part-start', { itemId, command, filename, args, directQuality: ffmpegInput ? requestedQuality : undefined, liveVod: liveSnapshot?.debug });
 
-        const partialFilename = partialDownloadRegistry.begin(filename);
-        recordManagedToolExecution(directSource ? 'ffmpeg' : 'streamlink', command);
-        const proc = spawn(command, args, { windowsHide: true });
+        let partialFilename: string;
+        let proc: ReturnType<typeof spawn>;
+        try {
+            partialFilename = partialDownloadRegistry.begin(filename);
+            recordManagedToolExecution(ffmpegInput ? 'ffmpeg' : 'streamlink', command);
+            proc = spawn(command, args, { windowsHide: true });
+        } catch (error) {
+            liveSnapshot?.remove();
+            throw error;
+        }
         proc.stdout?.on('data', (data: Buffer) => mediaProgress.push(data));
         const outputStream = fs.createWriteStream(partialFilename, { flags: 'w' });
         if (!proc.stdout) {
             outputStream.destroy();
             partialDownloadRegistry.discard(partialFilename);
+            liveSnapshot?.remove();
             resolve({ success: false, error: tBackend('unknownDownloadError') });
             return;
         }
@@ -4304,6 +4475,7 @@ async function downloadVODPart(
         proc.on('close', async (code) => {
             progressStopped = true;
             clearInterval(progressInterval);
+            liveSnapshot?.remove();
             const outputError = await outputFinished;
             processRegistration.release();
             activeDownloads.delete(itemId);
@@ -4368,7 +4540,7 @@ async function downloadVODPart(
             // Letzte Error-/Warning-Zeile aus beiden Streams suchen, falls
             // lastErrorLine noch leer ist (z.B. weil streamlink ohne Output
             // mit Code 1 exited — was bei pre-flight-Auth-Fails passiert).
-            let userFacingError = stallError || (directSource && isVodSourceReadTimeout(fullStderr) ? tBackend('vodReadTimeout') : lastErrorLine);
+            let userFacingError = stallError || (ffmpegInput && isVodSourceReadTimeout(fullStderr) ? tBackend('vodReadTimeout') : lastErrorLine);
             if (!userFacingError) {
                 const combined = fullStderr.split('\n').map(l => l.trim()).filter(Boolean);
                 userFacingError = combined.filter(l => l.toLowerCase().includes('error:')).pop()
@@ -4389,6 +4561,7 @@ async function downloadVODPart(
         proc.on('error', async (err) => {
             progressStopped = true;
             clearInterval(progressInterval);
+            liveSnapshot?.remove();
             await output.cancel();
             processRegistration.release();
             partialDownloadRegistry.discard(partialFilename);
