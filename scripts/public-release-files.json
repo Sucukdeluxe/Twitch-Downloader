@@ -102,6 +102,7 @@
     "src/main/domain/vod-edit-download.ts",
     "src/main/domain/vod-edit-plan.ts",
     "src/main/domain/vod-library.ts",
+    "src/main/domain/vod-live-snapshot.ts",
     "src/main/domain/vod-playback-service.ts",
     "src/main/domain/vod-preview.ts",
     "src/main/domain/vod-quality.ts",
