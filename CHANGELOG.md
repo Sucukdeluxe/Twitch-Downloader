@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.14 - 2026-11-02
+
+This update fixes slow and incorrect downloads of VODs whose stream is still live.
+
+- Download the requested section of a still-live VOD at full speed instead of following the live stream in real time.
+- Start each part at the selected position. Previously, parts with a start time could contain a later section of the stream.
+- Wait with a visible status when a section extends beyond the material recorded so far, and retry when the stream stops delivering new material.
+- Download finished VODs the same way as before.
+
+Parts of still-live VODs that earlier versions downloaded with a start time can contain the wrong section and should be downloaded again.
+
 ## 1.1.13 - 2026-10-30
 
 This update makes queue status changes smoother and keeps the download list in place.
