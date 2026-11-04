@@ -83,7 +83,7 @@
                     <div class="vod-cut-fields">
             <div class="clip-modal-field">
                 <label class="clip-modal-label" hidden id="clipDialogStartLabel" for="clipStartSlider">Start:</label>
-                <input hidden step="0.1" type="range" id="clipStartSlider" min="0" max="100" value="0" oninput="updateFromSlider('start')">
+                <input hidden step="any" type="range" id="clipStartSlider" min="0" max="100" value="0" oninput="updateFromSlider('start')">
                 <div class="clip-modal-time-row">
                     <div class="vod-time-heading"><label class="clip-modal-meta" id="clipDialogStartTimeLabel" for="clipStartTime">Startzeit (HH:MM:SS):</label><div id="clipMarkStart"></div></div>
                     <div class="vod-time-entry"><button type="button" id="clipStartEarlier" onclick="nudgeClipTime('start', -1)">−</button>
@@ -99,7 +99,7 @@
 
             <div class="clip-modal-field">
                 <label class="clip-modal-label" hidden id="clipDialogEndLabel" for="clipEndSlider">Ende:</label>
-                <input hidden step="0.1" type="range" id="clipEndSlider" min="0" max="100" value="60" oninput="updateFromSlider('end')">
+                <input hidden step="any" type="range" id="clipEndSlider" min="0" max="100" value="60" oninput="updateFromSlider('end')">
                 <div class="clip-modal-time-row">
                     <div class="vod-time-heading"><label class="clip-modal-meta" id="clipDialogEndTimeLabel" for="clipEndTime">Endzeit (HH:MM:SS):</label><div id="clipMarkEnd"></div></div>
                     <div class="vod-time-entry"><button type="button" id="clipEndEarlier" onclick="nudgeClipTime('end', -1)">−</button>

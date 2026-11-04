@@ -153,9 +153,11 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
     canvas.width = Math.round(element.videoWidth*scale); canvas.height = Math.round(element.videoHeight*scale);
     try { canvas.getContext("2d").drawImage(element,0,0,canvas.width,canvas.height); setHoldingFrame(true); } catch {}
   }
-  function presentFrame(which) {
+  function presentFrame(which, playing = false) {
     const element = videos.current[which], target = transition.current;
-    if (which !== active.current || !target || target.generation !== generation.current || !frameAtTarget(element,pending.current[which],target.offset)) return;
+    if (which !== active.current || !target || target.generation !== generation.current) return;
+    const advancing = playing && !element.paused && pending.current[which] === null && !element.seeking && element.readyState >= 2 && element.currentTime >= target.offset;
+    if (!advancing && !frameAtTarget(element,pending.current[which],target.offset)) return;
     transition.current = null; setHoldingFrame(false); setHasFrame(true); mark("firstFrameMs");
   }
   function applyPending(which) {
@@ -404,7 +406,7 @@ export function ArchivePlayer({ id, userId, parts, live = false, seconds, poster
           }}
           onLoadedData={()=>presentFrame(which)}
           onPlay={() => { if (which === active.current && initialized.current && !transition.current) { wanted.current = true; persistCheckpoint(true); } }}
-          onPlaying={() => { if (which === active.current) { playbackStats.current.finish(); didPlay.current = true; presentFrame(which); setPlaying(true); setWaiting(false); mark("playingMs"); persistCheckpoint(true); } }}
+          onPlaying={() => { if (which === active.current) { playbackStats.current.finish(); didPlay.current = true; presentFrame(which, true); setPlaying(true); setWaiting(false); mark("playingMs"); persistCheckpoint(true); } }}
           onPause={() => { if (which === active.current) { playbackStats.current.finish(); setPlaying(false); if (initialized.current && !transition.current && pending.current[which] === null && !navigation.current.pending && !videos.current[which].ended) { wanted.current = false; persistCheckpoint(true, true); } } }}
           onWaiting={() => { if (which === active.current) { if (didPlay.current && wanted.current && !transition.current && !videos.current[which].seeking) playbackStats.current.wait(); setWaiting(true); } }}
           onCanPlay={() => { if (which === active.current) { presentFrame(which); setWaiting(false); mark("canPlayMs"); settleSeek(which); } }}
