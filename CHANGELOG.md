@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.15 - 2026-11-04
+
+This update fixes time displays and range selection when trimming VODs.
+
+- The playback timer now advances correctly when a video starts with a time offset.
+- The end time matches the displayed video length, and the full available range can be added to the queue.
+- Selected ranges retain their precise start and end times.
+
 ## 1.1.14 - 2026-11-02
 
 This update fixes slow and incorrect downloads of VODs whose stream is still live.
