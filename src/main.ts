@@ -38,6 +38,7 @@ import { autoUpdater } from 'electron-updater';
 import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan';
 import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
+import { runMediaProcess } from './main/domain/media-process';
 import { remuxMp4 } from './main/domain/mp4-remux';
 import { VodPlaybackService } from './main/domain/vod-playback-service';
 import { VodTimelineService } from './main/domain/vod-timeline';
@@ -681,6 +682,19 @@ function isValidQueueStatus(status: unknown): status is QueueItem['status'] {
 }
 
 function getMergeItemDurationSec(item: Pick<MergeGroupItem, 'duration_str' | 'customClip'>): number {
+    if (item.customClip?.omissions) {
+        try {
+            return planEditedVod(
+                item.customClip.durationSec,
+                item.customClip.omissions.partDurationSec,
+                item.customClip.omissions.ranges,
+                item.customClip.startPart,
+                item.customClip.omissions.selection
+            ).duration;
+        } catch {
+            return 0;
+        }
+    }
     return item.customClip && Number.isFinite(item.customClip.durationSec) && item.customClip.durationSec > 0
         ? item.customClip.durationSec
         : parseDuration(item.duration_str);
@@ -697,7 +711,7 @@ function sanitizeMergeGroup(raw: unknown): MergeGroup | undefined {
             || typeof mi.date !== 'string' || typeof mi.streamer !== 'string'
             || typeof mi.duration_str !== 'string') continue;
         const customClip = mi.customClip === undefined ? undefined : sanitizeCustomClip(mi.customClip);
-        if (mi.customClip !== undefined && (!customClip || customClip.omissions)) continue;
+        if (mi.customClip !== undefined && !customClip) continue;
         items.push({ url: mi.url, title: mi.title, date: mi.date, streamer: mi.streamer, duration_str: mi.duration_str, quality: normalizeVodQuality(mi.quality) || undefined, qualityLabel: typeof mi.qualityLabel === 'string' && mi.qualityLabel.length <= 200 ? mi.qualityLabel : undefined, ...(customClip ? { customClip } : {}) });
     }
     if (items.length < 2) return undefined;
@@ -6400,12 +6414,73 @@ async function processDownloadMergeGroup(
             const priorWeight = mg.items.slice(0, i).reduce((s, v) => s + getMergeItemDurationSec(v), 0) / totalDurationSec;
 
             let lastVodProgress = 0;
-            const result = await downloadVODPart(
-                vodItem.url,
-                tmpFilename,
-                vodItem.customClip ? formatDuration(vodItem.customClip.startSec) : null,
-                vodItem.customClip ? formatDuration(vodItem.customClip.durationSec) : null,
-                (progress) => {
+            let result: DownloadResult;
+            if (vodItem.customClip?.omissions) {
+                const clip = vodItem.customClip;
+                const editFolder = path.join(folder, `.merge-edit-${item.id}-${i}`);
+                const editRegistration = queueProcessRegistry.register(item.id, 'post-processing', {});
+                if (!editRegistration.accepted) return { success: false, error: tBackend('downloadCancelled') };
+                const wait = async (): Promise<boolean> => !appShutdownStarted && isDownloading
+                    && downloadQueue.some(candidate => candidate.id === item.id)
+                    && !cancelledItemIds.has(item.id) && await waitForQueuePhaseBoundary(item.id);
+                try {
+                    const baseOmissions = clip.omissions!;
+                    const omissions = config.download_mode === 'full'
+                        ? { ...baseOmissions, partDurationSec: Math.max(60, Math.ceil(clip.durationSec)) }
+                        : baseOmissions;
+                    const editedFiles = await downloadEditedVod({
+                        id: item.id, url: vodItem.url, folder: editFolder, duration: clip.durationSec,
+                        startPart: clip.startPart, omissions,
+                        namingIdentity: JSON.stringify([vodItem.title, vodItem.date, vodItem.streamer, clip]),
+                        ffmpegPath: await getFFmpegPath(), ffprobePath: await getFFprobePath(), wait,
+                        onProcess(process) {
+                            const command = process.spawnfile;
+                            recordManagedToolExecution(managedToolKindFromCommand(command) || 'ffmpeg', command);
+                            const registration = queueProcessRegistry.register(item.id, 'post-processing', createPhaseBoundaryProcessResource(process, () => waitForChildProcessExit(process)));
+                            if (appShutdownStarted || cancelledItemIds.has(item.id) || !downloadQueue.some(candidate => candidate.id === item.id)) process.kill();
+                            return () => registration.release();
+                        },
+                        async download(range, filename, progress) {
+                            const clock = (seconds: number): string => {
+                                const milliseconds = Math.round(seconds * 1000);
+                                return formatDuration(Math.floor(milliseconds / 1000)) + '.' + String(milliseconds % 1000).padStart(3, '0');
+                            };
+                            const partResult = await downloadVODPart(vodItem.url, filename, clock(range.start), clock(range.end - range.start), value => progress(value.progress), item.id, i + 1, mg.items.length, 0, vodItem.quality);
+                            if (!partResult.success) throw new Error(partResult.error || tBackend('editedVodFailed'));
+                        },
+                        filename: part => path.join(editFolder, `part-${String(part.number).padStart(4, '0')}.mp4`),
+                        checkSpace: bytes => { const check = ensureDiskSpace(editFolder, bytes, 'Merge-Edit'); if (!check.success) throw new Error(check.error); },
+                        progress: (percent, phase, partIndex, count) => onProgress({
+                            id: item.id,
+                            progress: (priorWeight + vodWeight * Math.max(0, Math.min(100, percent)) / 100) * 70,
+                            speed: '', eta: '', progressPhase: phase === 'download' ? 'downloading' : 'finalizing',
+                            status: `${getMergeGroupPhaseText(phase === 'download' ? 'downloading' : 'merging')} ${i + 1}/${mg.items.length}`,
+                            currentPart: partIndex, totalParts: count,
+                        }),
+                    });
+                    if (!editedFiles.length) return { success: false, error: tBackend('editedVodFailed') };
+                    if (editedFiles.length === 1) {
+                        fs.copyFileSync(editedFiles[0], tmpFilename);
+                    } else {
+                        const listPath = path.join(editFolder, 'merge.ffconcat');
+                        fs.writeFileSync(listPath, 'ffconcat version 1.0\n' + editedFiles.map(file => `file '${path.basename(file).replace(/'/g, "'\\''")}'`).join('\n') + '\n', 'utf8');
+                        const concatResult = await runMediaProcess(await getFFmpegPath(), ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', tmpFilename], { timeoutMs: 3 * 60 * 60 * 1000 });
+                        void concatResult;
+                    }
+                    result = { success: true, outputFiles: [tmpFilename] };
+                } catch (error) {
+                    result = { success: false, error: String(error) };
+                } finally {
+                    editRegistration.release();
+                    fs.rmSync(editFolder, { recursive: true, force: true });
+                }
+            } else {
+                result = await downloadVODPart(
+                    vodItem.url,
+                    tmpFilename,
+                    vodItem.customClip ? formatDuration(vodItem.customClip.startSec) : null,
+                    vodItem.customClip ? formatDuration(vodItem.customClip.durationSec) : null,
+                    (progress) => {
                     if (progress.progress > 0 && progress.progress <= 100) {
                         lastVodProgress = progress.progress;
                     }
@@ -6424,8 +6499,9 @@ async function processDownloadMergeGroup(
                 i + 1,
                 mg.items.length,
                 vodDuration,
-                vodItem.quality
-            );
+                    vodItem.quality
+                );
+            }
 
             if (!result.success) {
                 return result;
@@ -7925,7 +8001,7 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
     }
 
     // Validate all are pending
-    if (selectedItems.some(item => item.status !== 'pending' || item.customClip?.omissions || item.mergeGroup || item.isLive)) {
+    if (selectedItems.some(item => item.status !== 'pending' || item.mergeGroup || item.isLive)) {
         return downloadQueue;
     }
 

@@ -1772,13 +1772,16 @@ function previewEditedFilename(part: import('./main/domain/vod-edit-plan').Edite
 }
 
 let clipPlayer: ReturnType<Window['VodPlayer']['mount']> | null = null;
+let clipDialogGeneration = 0;
 
 function openClipDialog(url: string, title: string, date: string, streamer: string, duration: string): void {
+    const generation = ++clipDialogGeneration;
     clipQueueError = '';
     clipPlayer?.destroy();
     clipPlayer = null;
     clipOmissionState = null; clipSavedNaming = null;
     clipDialogData = { url, title, date, streamer, duration };
+    const currentDialog = clipDialogData;
     clipTotalSeconds = parseDurationToSeconds(duration);
 
     byId('clipDialogTitle').textContent = UI_TEXT.clips.dialogTitle;
@@ -1804,6 +1807,7 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
         outputSettings: () => ({ startPart: getClipStartPart() }),
         filename: previewEditedFilename,
         onOmissions(state) {
+            if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
             const changed = Boolean(state) !== Boolean(clipOmissionState);
             clipOmissionState = state;
             if (!changed) { updateClipOmissionState(); return; }
@@ -1819,19 +1823,26 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
             updateFilenameExamples();
         },
         onRange(start, end) {
+            if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
             setClipBoundary('start', start);
             setClipBoundary('end', end);
             updateClipDuration(false);
         },
         onDuration(total) {
+            if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
+            const previousTotal = clipTotalSeconds;
+            const previousEnd = getClipBoundary('end');
             clipTotalSeconds = total;
             byId<HTMLInputElement>('clipStartSlider').max = String(total);
             byId<HTMLInputElement>('clipEndSlider').max = String(total);
+            if (Math.abs(previousEnd - previousTotal) < .0005 || previousEnd > total) setClipBoundary('end', total);
+            updateClipDuration(false);
         },
     });
 }
 
 function closeClipDialog(): void {
+    clipDialogGeneration++;
     clipPlayer?.destroy();
     clipPlayer = null;
     RendererAccessibility.closeDialog('clipModal');

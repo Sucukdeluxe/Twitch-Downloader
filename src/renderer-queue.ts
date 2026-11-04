@@ -495,7 +495,7 @@ function showQueueContextMenu(x: number, y: number, item: QueueItem, invoker: HT
     const isPending = item.status === 'pending' || item.status === 'paused';
     const isFailed = item.status === 'error' && !item.mergeRecoveryBlocked;
     const isCompleted = item.status === 'completed';
-    const canSelectForMerge = item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip?.omissions;
+    const canSelectForMerge = item.status === 'pending' && !item.mergeGroup && !item.isLive;
 
     if (canSelectForMerge) {
         const isSelectedForMerge = selectedQueueIds.includes(item.id);
