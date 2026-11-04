@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.16 - 2026-11-04
+
+This update allows trimmed VODs to be combined in the download queue.
+
+- Select trimmed VODs via the queue context menu and combine them with Merge & Split.
+- Download only the trimmed time ranges for each item and use their combined length for progress and splitting.
+- Preserve trimmed range settings for merged queue items across application restarts.
+
 ## 1.1.15 - 2026-11-04
 
 This update fixes time displays and range selection when trimming VODs.
