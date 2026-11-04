@@ -494,20 +494,62 @@
 }
 
 
-.queue-selection-order {
-    position: absolute;
-    z-index: 2;
-    top: -5px;
-    left: -5px;
+.queue-merge-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 32px;
+    margin: 0 0 8px;
+    padding: 5px 7px;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+}
+
+.queue-merge-select:hover {
+    color: var(--text);
+    background: var(--workspace-control-hover);
+}
+
+.queue-merge-select:focus-visible {
+    outline: 2px solid var(--workspace-primary, var(--accent));
+    outline-offset: 2px;
+}
+
+.queue-merge-select:active {
+    transform: scale(0.97);
+}
+
+.queue-merge-select[aria-pressed="true"] {
+    color: var(--text);
+    border-color: var(--success);
+}
+
+.queue-merge-mark {
     display: inline-flex;
-    width: 18px;
+    flex: 0 0 auto;
+    min-width: 18px;
     height: 18px;
+    padding: 0 2px;
     align-items: center;
     justify-content: center;
-    border: 2px solid var(--bg-panel);
-    border-radius: 50%;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    box-sizing: border-box;
+}
+
+.queue-selection-order {
     background: var(--success);
     color: var(--workspace-success-text, #fff);
+    border-color: var(--success);
     font-size: 11px;
     font-weight: 800;
     line-height: 1;
@@ -3919,4 +3961,8 @@ body.theme-light .modal {
 .queue-progress-info .queue-progress-metrics {
     margin-left: 0;
     text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .queue-merge-select:active { transform: none; }
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.18 - 2026-11-04
+
+This update makes merge selection directly accessible in the download queue.
+
+- Select videos for merging using the visible control on each waiting queue entry.
+- See the merge order directly in the selected entries and change your selection without opening a context menu.
+
 ## 1.1.17 - 2026-11-04
 
 This update fixes adding trimmed VODs to the queue and combining edited videos.

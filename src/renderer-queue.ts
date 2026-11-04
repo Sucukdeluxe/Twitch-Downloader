@@ -84,6 +84,8 @@ async function invokeQueueItemAction(action: string, id: string): Promise<void> 
     } else if (action === 'copy-url') {
         const item = queue.find((candidate) => candidate.id === id);
         if (item) await copyQueueUrl(item.url);
+    } else if (action === 'merge-select') {
+        toggleQueueSelection(id);
     } else if (action === 'output') {
         await chooseQueueOutput(id);
     }
@@ -782,6 +784,8 @@ function syncQueueProgressDetails(element: HTMLElement, item: QueueItem): void {
 }
 
 function toggleQueueSelection(id: string): void {
+    const item = queue.find(candidate => candidate.id === id);
+    if (!item || item.status !== 'pending' || item.mergeGroup || item.isLive) return;
     const index = selectedQueueIds.indexOf(id);
     if (index >= 0) {
         selectedQueueIds.splice(index, 1);
@@ -857,7 +861,9 @@ function updateQueueItemProgress(progress: DownloadProgress): void {
     const item = queue.find(i => String(i.id) === progressId);
     if (!item) return;
 
-    if (item.status !== 'pending' && selectedQueueIds.includes(item.id)) {
+    const canSelectForMerge = item.status === 'pending' && !item.mergeGroup && !item.isLive;
+    if ((!canSelectForMerge && selectedQueueIds.includes(item.id))
+        || Boolean(el.querySelector('.queue-merge-select')) !== canSelectForMerge) {
         renderQueue();
         return;
     }
@@ -1077,13 +1083,13 @@ function renderQueueItem(item: QueueItem): string {
 
     return `
         <div class="queue-item${isMergeGroup ? ' merge-group' : ''}${isSelected ? ' merge-selected' : ''}" draggable="${item.status === 'pending' ? 'true' : 'false'}" data-id="${escapeHtml(item.id)}">
-            ${isSelected ? `<span class="queue-selection-order" title="${selectionTitle}" aria-label="${selectionTitle}">${selectionPosition}</span>` : ''}
             <div class="queue-main">
                 <div class="queue-title-row">
                     <div class="title" title="${safeTitle}">${liveBadge}${healthBadge}${mergeIcon}${safeTitle}</div>
                     ${item.status === 'error' && !item.mergeRecoveryBlocked ? `<button class="queue-retry-btn" type="button" title="${escapeHtml(UI_TEXT.queue.retryItem)}" aria-label="${escapeHtml(UI_TEXT.queue.retryItem)}" data-queue-action="retry">&#x21bb;</button>` : ''}
                     <button class="remove" type="button" title="${escapeHtml(UI_TEXT.queue.removeItem)}" aria-label="${escapeHtml(UI_TEXT.queue.removeItem)}" data-queue-action="remove"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
                 </div>
+                ${item.status === 'pending' && !item.mergeGroup && !item.isLive ? `<button type="button" class="queue-merge-select" data-queue-action="merge-select" aria-pressed="${isSelected}" aria-label="${escapeHtml(isSelected ? UI_TEXT.queue.ctxRemoveFromMerge : UI_TEXT.queue.ctxSelectForMerge)}: ${safeTitle}"><span class="queue-merge-mark${isSelected ? ' queue-selection-order' : ''}" aria-hidden="true">${isSelected ? formatUiNumber(selectionPosition) : ''}</span><span>${isSelected ? selectionTitle : escapeHtml(UI_TEXT.queue.ctxSelectForMerge)}</span></button>` : ''}
                 ${mergeMetaExtra ? `<div class="queue-meta">${mergeMetaExtra}</div>` : ''}
                 <div class="queue-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${displayedProgress === null ? '' : `aria-valuenow="${Math.round(progressValue)}"`} aria-valuetext="${safeProgressStatus}" aria-description="${safeProgressMetrics}" aria-label="${escapeHtml(safeStatusLabel)}">
                     <div class="queue-progress-bar${isFinalizing ? ' is-finalizing' : ''}" style="width: ${progressValue}%;"></div>
