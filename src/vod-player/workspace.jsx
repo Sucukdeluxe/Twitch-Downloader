@@ -37,8 +37,8 @@ class WorkspaceBoundary extends React.Component {
 }
 
 
-function wholeRange(start, end, total, previous) {
-  const snap = value => value >= total - .0005 ? total : Math.max(0, Math.min(total, Math.round(value)));
+function wholeRange(start, end, total, previous, precise = false) {
+  const snap = value => value >= total - .0005 ? total : Math.max(0, Math.min(total, precise ? Math.round(value * 1000) / 1000 : Math.round(value)));
   let from = snap(start), to = snap(end);
   if (to - from < 1) {
     if (from !== previous?.start) from = Math.max(0, to - 1);
@@ -152,8 +152,8 @@ function Workspace({ options, bind }) {
     if (!omitting) options.onRange(start, end);
     if (interaction?.source === 'pointer' && interaction.boundary === 'start') setSeekRequest({ seconds: start });
   }, [options, omitting, draftBounds?.start, draftBounds?.end, gaps, duration, range]);
-  function setExcerpt(start, end) {
-    const next = wholeRange(start, end, duration, modeRanges.current.excerpt);
+  function setExcerpt(start, end, precise = false) {
+    const next = wholeRange(start, end, duration, modeRanges.current.excerpt, precise);
     const bounds = omissionGap(range, omissionGaps(next, omissions, editing)) || next;
     const bounded = boundOmission(range, bounds);
     const draft = boundOmission(wholeRange(bounded.start, bounded.end, duration, range), bounds);
@@ -182,7 +182,7 @@ function Workspace({ options, bind }) {
       selectedPlayback.current = false; setSelectionPlaying(false);
       options.onRange(selected.start, selected.end); seek(selected.start);
     },
-    updateRange(start, end) { stopPreview(); if (omitting) setExcerpt(start, end); else setRange(wholeRange(start, end, duration, range)); selectedPlayback.current = false; setSelectionPlaying(false); }, seek, refreshOutput() { setOutputRevision(value => value + 1); }, setInputValid };
+    updateRange(start, end) { stopPreview(); if (omitting) setExcerpt(start, end, true); else setRange(wholeRange(start, end, duration, range, true)); selectedPlayback.current = false; setSelectionPlaying(false); }, seek, refreshOutput() { setOutputRevision(value => value + 1); }, setInputValid };
   useEffect(() => {
     const id = requestId;
     let closed = false;

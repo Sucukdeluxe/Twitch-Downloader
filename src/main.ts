@@ -38,7 +38,6 @@ import { autoUpdater } from 'electron-updater';
 import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan';
 import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
-import { runMediaProcess } from './main/domain/media-process';
 import { remuxMp4 } from './main/domain/mp4-remux';
 import { VodPlaybackService } from './main/domain/vod-playback-service';
 import { VodTimelineService } from './main/domain/vod-timeline';
@@ -679,6 +678,11 @@ const VALID_MERGE_PHASES: ReadonlyArray<MergeGroup['mergePhase']> = ['downloadin
 
 function isValidQueueStatus(status: unknown): status is QueueItem['status'] {
     return typeof status === 'string' && (VALID_QUEUE_STATUSES as readonly string[]).includes(status);
+}
+
+function formatDownloadTime(seconds: number): string {
+    const milliseconds = Math.round(seconds * 1000);
+    return formatDuration(Math.floor(milliseconds / 1000)) + '.' + String(milliseconds % 1000).padStart(3, '0');
 }
 
 function getMergeItemDurationSec(item: Pick<MergeGroupItem, 'duration_str' | 'customClip'>): number {
@@ -4006,7 +4010,7 @@ async function splitMergedFile(
         const args = [
             '-ss', formatDuration(startSec),
             '-i', inputFile,
-            '-t', formatDuration(thisDuration),
+            '-t', formatDownloadTime(thisDuration),
             '-c', 'copy',
             '-y', temporaryFile
         ];
@@ -6221,8 +6225,8 @@ async function downloadVOD(
                     partFilename => downloadVODPart(
                     item.url,
                     partFilename,
-                    formatDuration(startOffset),
-                    formatDuration(thisDuration),
+                    formatDownloadTime(startOffset),
+                    formatDownloadTime(thisDuration),
                     value => onProgress(aggregateDownloadProgress(value, i * partDuration, thisDuration, clip.durationSec)),
                     item.id,
                     i + 1,
@@ -6246,8 +6250,8 @@ async function downloadVOD(
             const result = await downloadVODPart(
                 item.url,
                 filename,
-                formatDuration(clip.startSec),
-                formatDuration(clip.durationSec),
+                formatDownloadTime(clip.startSec),
+                formatDownloadTime(clip.durationSec),
                 onProgress,
                 item.id,
                 1,
@@ -6417,20 +6421,17 @@ async function processDownloadMergeGroup(
             let result: DownloadResult;
             if (vodItem.customClip?.omissions) {
                 const clip = vodItem.customClip;
-                const editFolder = path.join(folder, `.merge-edit-${item.id}-${i}`);
                 const editRegistration = queueProcessRegistry.register(item.id, 'post-processing', {});
                 if (!editRegistration.accepted) return { success: false, error: tBackend('downloadCancelled') };
                 const wait = async (): Promise<boolean> => !appShutdownStarted && isDownloading
                     && downloadQueue.some(candidate => candidate.id === item.id)
                     && !cancelledItemIds.has(item.id) && await waitForQueuePhaseBoundary(item.id);
                 try {
-                    const baseOmissions = clip.omissions!;
-                    const omissions = config.download_mode === 'full'
-                        ? { ...baseOmissions, partDurationSec: Math.max(60, Math.ceil(clip.durationSec)) }
-                        : baseOmissions;
+                    await cleanupEditedVod(folder, item.id);
+                    const omissions = { ...clip.omissions!, partDurationSec: Math.max(60, Math.ceil(clip.durationSec)) };
                     const editedFiles = await downloadEditedVod({
-                        id: item.id, url: vodItem.url, folder: editFolder, duration: clip.durationSec,
-                        startPart: clip.startPart, omissions,
+                        id: item.id, url: vodItem.url, folder, duration: clip.durationSec,
+                        startPart: 1, omissions,
                         namingIdentity: JSON.stringify([vodItem.title, vodItem.date, vodItem.streamer, clip]),
                         ffmpegPath: await getFFmpegPath(), ffprobePath: await getFFprobePath(), wait,
                         onProcess(process) {
@@ -6441,15 +6442,11 @@ async function processDownloadMergeGroup(
                             return () => registration.release();
                         },
                         async download(range, filename, progress) {
-                            const clock = (seconds: number): string => {
-                                const milliseconds = Math.round(seconds * 1000);
-                                return formatDuration(Math.floor(milliseconds / 1000)) + '.' + String(milliseconds % 1000).padStart(3, '0');
-                            };
-                            const partResult = await downloadVODPart(vodItem.url, filename, clock(range.start), clock(range.end - range.start), value => progress(value.progress), item.id, i + 1, mg.items.length, 0, vodItem.quality);
+                            const partResult = await downloadVODPart(vodItem.url, filename, formatDownloadTime(range.start), formatDownloadTime(range.end - range.start), value => progress(value.progress), item.id, i + 1, mg.items.length, range.end - range.start, vodItem.quality);
                             if (!partResult.success) throw new Error(partResult.error || tBackend('editedVodFailed'));
                         },
-                        filename: part => path.join(editFolder, `part-${String(part.number).padStart(4, '0')}.mp4`),
-                        checkSpace: bytes => { const check = ensureDiskSpace(editFolder, bytes, 'Merge-Edit'); if (!check.success) throw new Error(check.error); },
+                        filename: () => tmpFilename,
+                        checkSpace: bytes => { const check = ensureDiskSpace(folder, bytes, 'Merge-Edit'); if (!check.success) throw new Error(check.error); },
                         progress: (percent, phase, partIndex, count) => onProgress({
                             id: item.id,
                             progress: (priorWeight + vodWeight * Math.max(0, Math.min(100, percent)) / 100) * 70,
@@ -6458,47 +6455,40 @@ async function processDownloadMergeGroup(
                             currentPart: partIndex, totalParts: count,
                         }),
                     });
-                    if (!editedFiles.length) return { success: false, error: tBackend('editedVodFailed') };
-                    if (editedFiles.length === 1) {
-                        fs.copyFileSync(editedFiles[0], tmpFilename);
-                    } else {
-                        const listPath = path.join(editFolder, 'merge.ffconcat');
-                        fs.writeFileSync(listPath, 'ffconcat version 1.0\n' + editedFiles.map(file => `file '${path.basename(file).replace(/'/g, "'\\''")}'`).join('\n') + '\n', 'utf8');
-                        const concatResult = await runMediaProcess(await getFFmpegPath(), ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', tmpFilename], { timeoutMs: 3 * 60 * 60 * 1000 });
-                        void concatResult;
-                    }
-                    result = { success: true, outputFiles: [tmpFilename] };
+                    if (editedFiles.length !== 1) throw new Error(tBackend('editedVodFailed'));
+                    result = { success: true, outputFiles: editedFiles };
                 } catch (error) {
-                    result = { success: false, error: String(error) };
+                    appendDebugLog('merge-edited-vod-failed', { itemId: item.id, index: i, error: String(error) });
+                    result = { success: false, error: tBackend('editedVodFailed') };
                 } finally {
                     editRegistration.release();
-                    fs.rmSync(editFolder, { recursive: true, force: true });
+                    await cleanupEditedVod(folder, item.id).catch(error => appendDebugLog('edited-vod-cleanup-failed', String(error)));
                 }
             } else {
                 result = await downloadVODPart(
                     vodItem.url,
                     tmpFilename,
-                    vodItem.customClip ? formatDuration(vodItem.customClip.startSec) : null,
-                    vodItem.customClip ? formatDuration(vodItem.customClip.durationSec) : null,
+                    vodItem.customClip ? formatDownloadTime(vodItem.customClip.startSec) : null,
+                    vodItem.customClip ? formatDownloadTime(vodItem.customClip.durationSec) : null,
                     (progress) => {
-                    if (progress.progress > 0 && progress.progress <= 100) {
-                        lastVodProgress = progress.progress;
-                    }
-                    // Weighted progress: download phase = 0-70%
-                    const overallProgress = (priorWeight + vodWeight * (lastVodProgress / 100)) * 70;
-                    onProgress({
-                        ...progress,
-                        id: item.id,
-                        progress: overallProgress,
-                        status: `${getMergeGroupPhaseText('downloading')} ${i + 1}/${mg.items.length} — ${progress.status}`,
-                        currentPart: i + 1,
-                        totalParts: mg.items.length
-                    });
-                },
-                item.id,
-                i + 1,
-                mg.items.length,
-                vodDuration,
+                        if (progress.progress > 0 && progress.progress <= 100) {
+                            lastVodProgress = progress.progress;
+                        }
+                        // Weighted progress: download phase = 0-70%
+                        const overallProgress = (priorWeight + vodWeight * (lastVodProgress / 100)) * 70;
+                        onProgress({
+                            ...progress,
+                            id: item.id,
+                            progress: overallProgress,
+                            status: `${getMergeGroupPhaseText('downloading')} ${i + 1}/${mg.items.length} — ${progress.status}`,
+                            currentPart: i + 1,
+                            totalParts: mg.items.length
+                        });
+                    },
+                    item.id,
+                    i + 1,
+                    mg.items.length,
+                    vodDuration,
                     vodItem.quality
                 );
             }

@@ -1355,11 +1355,11 @@ function parseDurationToSeconds(durStr: string): number {
     let seconds = 0;
     const hours = durStr.match(/(\d+)h/);
     const minutes = durStr.match(/(\d+)m/);
-    const secs = durStr.match(/(\d+)s/);
+    const secs = durStr.match(/(\d+[.]\d+|\d+)s/);
 
     if (hours) seconds += parseInt(hours[1], 10) * 3600;
     if (minutes) seconds += parseInt(minutes[1], 10) * 60;
-    if (secs) seconds += parseInt(secs[1], 10);
+    if (secs) seconds += Number(secs[1]);
 
     return seconds;
 }
@@ -1717,7 +1717,7 @@ function setClipBoundary(which: 'start' | 'end', seconds: number): void {
 
 function roundClipBoundary(seconds: number): number {
     if (seconds > clipTotalSeconds + .0005) return seconds;
-    return seconds >= clipTotalSeconds - .0005 ? clipTotalSeconds : Math.max(0, Math.round(seconds));
+    return seconds >= clipTotalSeconds - .0005 ? clipTotalSeconds : Math.max(0, Math.round(seconds * 1000) / 1000);
 }
 
 let clipOmissionState: { editing?: boolean; config: import('./main/domain/vod-edit-plan').OmissionConfig | null; plan: import('./main/domain/vod-edit-plan').EditedVodPlan | null } | null = null;
@@ -1898,7 +1898,6 @@ function updateClipDuration(syncPlayer: boolean = true): void {
     const durationDisplay = byId('clipDurationDisplay');
 
     const isValid = Number.isFinite(duration) && startSec >= 0 && duration > 0 && endSec <= clipTotalSeconds;
-    byId<HTMLButtonElement>('clipDialogConfirmBtn').disabled = !isValid;
     byId('clipStartTime').setAttribute('aria-invalid', String(!Number.isFinite(startSec) || startSec < 0 || startSec >= endSec || startSec >= clipTotalSeconds));
     byId('clipEndTime').setAttribute('aria-invalid', String(!Number.isFinite(endSec) || endSec <= startSec || endSec > clipTotalSeconds));
     byId<HTMLButtonElement>('clipStartEarlier').disabled = !isValid || startSec <= 0;
@@ -1967,7 +1966,14 @@ async function confirmClipDialog(): Promise<void> {
         return;
     }
 
-    if (clipOmissionState && (clipOmissionState.editing || !clipOmissionState.config || !clipOmissionState.plan?.parts.length)) return;
+    const showValidation = (message: string): void => {
+        clipQueueError = message;
+        updateClipOmissionState();
+    };
+    if (clipOmissionState && (clipOmissionState.editing || !clipOmissionState.config || !clipOmissionState.plan?.parts.length)) {
+        showValidation(currentLanguage === 'de' ? 'Bereich bestätigen oder korrigieren.' : 'Confirm or correct the range.');
+        return;
+    }
     const startSec = clipOmissionState ? 0 : roundClipBoundary(getClipBoundary('start'));
     const endSec = clipOmissionState ? clipTotalSeconds : roundClipBoundary(getClipBoundary('end'));
     const durationSec = endSec - startSec;
@@ -1977,34 +1983,34 @@ async function confirmClipDialog(): Promise<void> {
     const filenameTemplate = byId<HTMLInputElement>('clipFilenameTemplate').value.trim();
 
     if (isNaN(startSec) || isNaN(endSec) || isNaN(durationSec)) {
-        alert(UI_TEXT.clips.invalidTime);
+        showValidation(UI_TEXT.clips.invalidTime);
         return;
     }
 
     if (startSec < 0) {
-        alert(UI_TEXT.clips.outOfRange);
+        showValidation(UI_TEXT.clips.outOfRange);
         return;
     }
 
     if (durationSec <= 0) {
-        alert(UI_TEXT.clips.endBeforeStart);
+        showValidation(UI_TEXT.clips.endBeforeStart);
         return;
     }
 
     if (endSec > clipTotalSeconds) {
-        alert(UI_TEXT.clips.outOfRange);
+        showValidation(UI_TEXT.clips.outOfRange);
         return;
     }
 
     if (filenameFormat === 'template' && !filenameTemplate) {
-        alert(UI_TEXT.clips.templateEmpty);
+        showValidation(UI_TEXT.clips.templateEmpty);
         return;
     }
 
     if (filenameFormat === 'template') {
         const unknownTokens = collectUnknownTemplatePlaceholders(filenameTemplate);
         if (unknownTokens.length > 0) {
-            alert(`${UI_TEXT.static.templateLintWarn}: ${unknownTokens.join(' ')}`);
+            showValidation(`${UI_TEXT.static.templateLintWarn}: ${unknownTokens.join(' ')}`);
             return;
         }
     }

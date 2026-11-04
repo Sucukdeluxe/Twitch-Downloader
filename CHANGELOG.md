@@ -2,11 +2,11 @@
 
 ## 1.1.17 - 2026-11-04
 
-This update makes trimming and queue merging reliable for repeated use.
+This update fixes adding trimmed VODs to the queue and combining edited videos.
 
-- Add trimmed VODs, including cuts with omitted ranges, to the same Merge & Split queue workflow.
-- Keep the effective remaining duration when calculating merge progress and output splits.
-- Keep the trim dialog responsive when playback metadata arrives after the dialog was opened or closed.
+- Add a valid trim to the queue without reopening the dialog, including ranges close to the video end.
+- Select and combine multiple trims, including trims with excluded sections and different cuts from the same VOD.
+- Keep precise time boundaries and show the combined duration of the retained sections.
 
 ## 1.1.16 - 2026-11-04
 

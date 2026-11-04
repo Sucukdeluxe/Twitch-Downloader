@@ -798,7 +798,7 @@ function updateMergeGroupButton(): void {
 
     // Clean up selections: only keep IDs that are still pending in queue
     const validIds = new Set(
-        queue.filter(item => item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip?.omissions).map(item => item.id)
+        queue.filter(item => item.status === 'pending' && !item.mergeGroup && !item.isLive).map(item => item.id)
     );
     selectedQueueIds = selectedQueueIds.filter(id => validIds.has(id));
 
@@ -1144,7 +1144,14 @@ function formatQueueDuration(item: QueueItem): string {
     }
     if (duration === undefined) {
         const sources = item.mergeGroup?.items || [item];
-        duration = sources.reduce((total, source) => total + (source.customClip?.durationSec ?? parseDurationToSeconds(source.duration_str || '')), 0);
+        try {
+            duration = sources.reduce((total, source) => {
+                const trimmed = source.customClip;
+                return total + (trimmed?.omissions
+                    ? window.VodPlayer.planEditedVod(trimmed.durationSec, trimmed.omissions.partDurationSec, trimmed.omissions.ranges, trimmed.startPart, trimmed.omissions.selection).duration
+                    : trimmed?.durationSec ?? parseDurationToSeconds(source.duration_str || ''));
+            }, 0);
+        } catch { return '–'; }
     }
     return Number.isFinite(duration) && duration > 0 ? formatSecondsToTime(Math.round(duration)) : item.duration_str || '–';
 }
