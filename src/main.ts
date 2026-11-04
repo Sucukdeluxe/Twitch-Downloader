@@ -680,6 +680,12 @@ function isValidQueueStatus(status: unknown): status is QueueItem['status'] {
     return typeof status === 'string' && (VALID_QUEUE_STATUSES as readonly string[]).includes(status);
 }
 
+function getMergeItemDurationSec(item: Pick<MergeGroupItem, 'duration_str' | 'customClip'>): number {
+    return item.customClip && Number.isFinite(item.customClip.durationSec) && item.customClip.durationSec > 0
+        ? item.customClip.durationSec
+        : parseDuration(item.duration_str);
+}
+
 function sanitizeMergeGroup(raw: unknown): MergeGroup | undefined {
     if (!isPlainObject(raw)) return undefined;
     if (!Array.isArray(raw.items) || raw.items.length < 2) return undefined;
@@ -690,7 +696,9 @@ function sanitizeMergeGroup(raw: unknown): MergeGroup | undefined {
         if (typeof mi.url !== 'string' || typeof mi.title !== 'string'
             || typeof mi.date !== 'string' || typeof mi.streamer !== 'string'
             || typeof mi.duration_str !== 'string') continue;
-        items.push({ url: mi.url, title: mi.title, date: mi.date, streamer: mi.streamer, duration_str: mi.duration_str, quality: normalizeVodQuality(mi.quality) || undefined, qualityLabel: typeof mi.qualityLabel === 'string' && mi.qualityLabel.length <= 200 ? mi.qualityLabel : undefined });
+        const customClip = mi.customClip === undefined ? undefined : sanitizeCustomClip(mi.customClip);
+        if (mi.customClip !== undefined && (!customClip || customClip.omissions)) continue;
+        items.push({ url: mi.url, title: mi.title, date: mi.date, streamer: mi.streamer, duration_str: mi.duration_str, quality: normalizeVodQuality(mi.quality) || undefined, qualityLabel: typeof mi.qualityLabel === 'string' && mi.qualityLabel.length <= 200 ? mi.qualityLabel : undefined, ...(customClip ? { customClip } : {}) });
     }
     if (items.length < 2) return undefined;
 
@@ -6324,7 +6332,7 @@ async function processDownloadMergeGroup(
         item.artifactRoot = artifactRoot;
         saveQueue(downloadQueue);
     }
-    const totalDurationSec = mg.totalDurationSec || mg.items.reduce((sum, i) => sum + parseDuration(i.duration_str), 0);
+    const totalDurationSec = mg.totalDurationSec || mg.items.reduce((sum, i) => sum + getMergeItemDurationSec(i), 0);
     mg.totalDurationSec = totalDurationSec;
 
     // ---- PHASE 1: DOWNLOADING ----
@@ -6357,7 +6365,7 @@ async function processDownloadMergeGroup(
 
         // Disk space pre-check: 3x total estimated size
         const estimatedBytes = mg.items.reduce((sum, i) => {
-            const dur = parseDuration(i.duration_str);
+            const dur = getMergeItemDurationSec(i);
             return sum + Math.ceil(dur * 500_000); // ~500KB/s estimate
         }, 0);
         const requiredBytes = Math.max(256 * 1024 * 1024, estimatedBytes * 3);
@@ -6387,16 +6395,16 @@ async function processDownloadMergeGroup(
             const tmpFilename = ensureUniqueFilename(path.join(folder, `merge_tmp_${i}_${Date.now()}.mp4`), item.id);
 
             // Calculate progress weighting per VOD
-            const vodDuration = parseDuration(vodItem.duration_str);
+            const vodDuration = getMergeItemDurationSec(vodItem);
             const vodWeight = vodDuration / totalDurationSec;
-            const priorWeight = mg.items.slice(0, i).reduce((s, v) => s + parseDuration(v.duration_str), 0) / totalDurationSec;
+            const priorWeight = mg.items.slice(0, i).reduce((s, v) => s + getMergeItemDurationSec(v), 0) / totalDurationSec;
 
             let lastVodProgress = 0;
             const result = await downloadVODPart(
                 vodItem.url,
                 tmpFilename,
-                null,   // startTime: null = full VOD
-                null,   // endTime: null = full VOD
+                vodItem.customClip ? formatDuration(vodItem.customClip.startSec) : null,
+                vodItem.customClip ? formatDuration(vodItem.customClip.durationSec) : null,
                 (progress) => {
                     if (progress.progress > 0 && progress.progress <= 100) {
                         lastVodProgress = progress.progress;
@@ -7917,7 +7925,7 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
     }
 
     // Validate all are pending
-    if (selectedItems.some(item => item.status !== 'pending' || item.customClip || item.mergeGroup || item.isLive)) {
+    if (selectedItems.some(item => item.status !== 'pending' || item.customClip?.omissions || item.mergeGroup || item.isLive)) {
         return downloadQueue;
     }
 
@@ -7927,7 +7935,7 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
         .filter((item): item is QueueItem => item !== undefined);
 
     // Calculate total duration
-    const totalDurationSec = sorted.reduce((sum, item) => sum + parseDuration(item.duration_str), 0);
+    const totalDurationSec = sorted.reduce((sum, item) => sum + getMergeItemDurationSec(item), 0);
     const totalDurationStr = (() => {
         const h = Math.floor(totalDurationSec / 3600);
         const m = Math.floor((totalDurationSec % 3600) / 60);
@@ -7955,7 +7963,8 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
             streamer: item.streamer,
             duration_str: item.duration_str,
             quality: item.quality,
-            qualityLabel: item.qualityLabel
+            qualityLabel: item.qualityLabel,
+            ...(item.customClip ? { customClip: item.customClip } : {})
         })),
         mergePhase: 'downloading',
         currentItemIndex: 0,

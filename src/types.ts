@@ -20,6 +20,7 @@ export interface MergeGroupItem {
     duration_str: string;
     quality?: string;
     qualityLabel?: string;
+    customClip?: CustomClip;
 }
 
 export interface MergeGroup {

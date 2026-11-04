@@ -495,7 +495,7 @@ function showQueueContextMenu(x: number, y: number, item: QueueItem, invoker: HT
     const isPending = item.status === 'pending' || item.status === 'paused';
     const isFailed = item.status === 'error' && !item.mergeRecoveryBlocked;
     const isCompleted = item.status === 'completed';
-    const canSelectForMerge = item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip;
+    const canSelectForMerge = item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip?.omissions;
 
     if (canSelectForMerge) {
         const isSelectedForMerge = selectedQueueIds.includes(item.id);
@@ -798,7 +798,7 @@ function updateMergeGroupButton(): void {
 
     // Clean up selections: only keep IDs that are still pending in queue
     const validIds = new Set(
-        queue.filter(item => item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip).map(item => item.id)
+        queue.filter(item => item.status === 'pending' && !item.mergeGroup && !item.isLive && !item.customClip?.omissions).map(item => item.id)
     );
     selectedQueueIds = selectedQueueIds.filter(id => validIds.has(id));
 
@@ -1144,7 +1144,7 @@ function formatQueueDuration(item: QueueItem): string {
     }
     if (duration === undefined) {
         const sources = item.mergeGroup?.items || [item];
-        duration = sources.reduce((total, source) => total + parseDurationToSeconds(source.duration_str || ''), 0);
+        duration = sources.reduce((total, source) => total + (source.customClip?.durationSec ?? parseDurationToSeconds(source.duration_str || '')), 0);
     }
     return Number.isFinite(duration) && duration > 0 ? formatSecondsToTime(Math.round(duration)) : item.duration_str || '–';
 }
