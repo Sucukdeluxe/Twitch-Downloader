@@ -31,6 +31,7 @@ const checks = [
     ['roadmap-cleanup-ui', ['scripts/smoke-test-roadmap-cleanup-ui.js']],
     ['roadmap-native', ['scripts/smoke-test-roadmap-native.js']],
     ...['archive', 'clips'].flatMap(name => ['chromium', 'webkit'].map(browser => ['roadmap-' + name + '-' + browser, ['scripts/smoke-test-roadmap-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : [])]])),
+    ['sidebar-layout', ['scripts/smoke-test-sidebar-layout.cjs']],
     ['queue-merge-controls', ['scripts/smoke-test-queue-merge-controls.cjs']],
     ['trim-merge-workflow', ['scripts/smoke-test-trim-merge-repair.cjs']],
     ['trim-merge-omissions', ['scripts/smoke-test-trim-merge-repair.cjs', '--two-omissions', '--de', '--light', '--parts']],

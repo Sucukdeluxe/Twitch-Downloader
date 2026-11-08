@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.20 - 2026-11-08
+
+This update keeps the sidebar layout consistent when switching between Settings and Twitch VODs.
+
+- Keep the sidebar at the same width when switching views.
+- Align queue entries with equal spacing on both sides, including when the list scrolls.
+
 ## 1.1.19 - 2026-11-08
 
 This update fixes category updates when trimming live VODs.
