@@ -29,7 +29,7 @@
     --workspace-radius-small: 4px;
     --workspace-topbar-height: 40px;
     --workspace-toolbar-height: 60px;
-    --workspace-sidebar-width: 270px;
+    --workspace-sidebar-width: 310px;
     --workspace-content-gap: 8px;
     --bg-main: var(--workspace-client);
     --bg-sidebar: var(--workspace-panel);
@@ -508,10 +508,6 @@ textarea:disabled,
     border-radius: 50%;
 }
 
-:root:has(.workspace-shell[data-active-workspace="vods"]) {
-    --workspace-sidebar-width: 310px;
-}
-
 .workspace-shell.app {
     display: grid;
     grid-template-columns: var(--workspace-sidebar-width) minmax(0, 1fr);
@@ -936,7 +932,8 @@ textarea:disabled,
 
 .context-sidebar .queue-list {
     max-height: 190px;
-    padding-right: 2px;
+    padding-inline: 0;
+    scrollbar-gutter: stable both-edges;
     overflow-y: auto;
 }
 

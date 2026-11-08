@@ -2178,7 +2178,7 @@ body :is(select, .select-compact) {
 
 .workspace-toolbar .workspace-toolbar-actions { flex: 0 0 auto; margin-left: auto; }
 .workspace-toolbar .workspace-search { margin-left: 0; }
-.context-sidebar .queue-list:has(> .queue-empty:only-child) { scrollbar-gutter: auto; }
+
 
 #settingsTab .toggle-row { gap: 10px; }
 
