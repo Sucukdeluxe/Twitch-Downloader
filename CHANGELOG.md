@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.19 - 2026-11-08
+
+This update fixes category updates when trimming live VODs.
+
+- Load categories that become available after the trim dialog is opened.
+- Keep the category timeline up to date while a VOD is live.
+- Keep previously loaded categories visible during temporary loading failures, without changing the selected trim range.
+
 ## 1.1.18 - 2026-11-04
 
 This update makes merge selection directly accessible in the download queue.

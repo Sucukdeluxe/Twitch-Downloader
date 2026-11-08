@@ -38,6 +38,7 @@ export interface VodTimeline {
     duration: number;
     login: string;
     chapters: VodChapter[];
+    refreshAfterMs?: number;
     titleHistory: VodTitleEvent[];
     viewerHistory: VodViewerSample[][];
     viewerGaps: [VodViewerSample, VodViewerSample][];
@@ -45,7 +46,7 @@ export interface VodTimeline {
     titlesStatus: 'local' | 'streamrecorder' | 'unavailable';
 }
 
-export const VOD_TIMELINE_QUERY = `query($id:ID!,$after:Cursor){video(id:$id){id title createdAt lengthSeconds owner{login} moments(momentRequestType:VIDEO_CHAPTER_MARKERS,first:100,after:$after){edges{cursor node{id type description positionMilliseconds durationMilliseconds details{... on GameChangeMomentDetails{game{id displayName boxArtURL(width:144,height:192)}}}}} pageInfo{hasNextPage}}}}`;
+export const VOD_TIMELINE_QUERY = `query($id:ID!,$after:Cursor){video(id:$id){id status title createdAt lengthSeconds owner{login} moments(momentRequestType:VIDEO_CHAPTER_MARKERS,first:100,after:$after){edges{cursor node{id type description positionMilliseconds durationMilliseconds details{... on GameChangeMomentDetails{game{id displayName boxArtURL(width:144,height:192)}}}}} pageInfo{hasNextPage}}}}`;
 
 function record(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -279,7 +280,9 @@ export class VodTimelineService {
                     if (bytes > 2 * 1024 * 1024) { await reader.cancel(); throw new Error('VOD metadata too large'); }
                     chunks.push(chunk.value);
                 }
-                const data = record(record(JSON.parse(Buffer.concat(chunks).toString('utf8')))?.data);
+                const envelope = record(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                if (Array.isArray(envelope?.errors) && envelope.errors.length) throw new Error('VOD metadata incomplete');
+                const data = record(envelope?.data);
                 const video = record(data?.video);
                 if (!video || video.id !== vodId) return null;
                 const duration = video.lengthSeconds, started = Date.parse(text(video.createdAt));
@@ -287,7 +290,7 @@ export class VodTimelineService {
                 if (result && (result.started !== started || result.login !== text(record(video.owner)?.login).toLowerCase())) return null;
                 const moments = record(video.moments), batch = moments?.edges;
                 result = { vodId, title: text(video.title), started, duration,
-                    login: text(record(video.owner)?.login).toLowerCase(), chapters: [], titleHistory: [], viewerHistory: [], viewerGaps: [],
+                    login: text(record(video.owner)?.login).toLowerCase(), refreshAfterMs: video.status === 'RECORDED' ? 0 : 30000, chapters: [], titleHistory: [], viewerHistory: [], viewerGaps: [],
                     chaptersStatus: Array.isArray(batch) ? 'empty' : 'unavailable', titlesStatus: 'unavailable' };
                 if (!Array.isArray(batch)) break;
                 edges.push(...batch);
@@ -301,6 +304,7 @@ export class VodTimelineService {
             if (!result) return null;
             result.chapters = normalizeVodChapters(edges, result.duration);
             if (result.chapters.length) result.chaptersStatus = 'available';
+            else result.refreshAfterMs = 15000;
             signal.throwIfAborted();
             onChapters?.(structuredClone(result));
             clearTimeout(timeout);
@@ -315,7 +319,7 @@ export class VodTimelineService {
             signal.throwIfAborted();
             this.cache.delete(key);
             if (this.cache.size >= 20) this.cache.delete(this.cache.keys().next().value!);
-            this.cache.set(key, { expires: Date.now() + 30000, timeline: structuredClone(result) });
+            if (result.chaptersStatus === 'available') this.cache.set(key, { expires: Date.now() + 30000, timeline: structuredClone(result) });
             return result;
         } finally {
             clearTimeout(timeout);

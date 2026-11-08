@@ -1,3 +1,4 @@
+import { watchVodTimeline } from './timeline-loader.js';
 import { MergeWorkspace } from './MergeWorkspace.jsx';
 import { ClipControls, ClipFolderMenu } from './ClipControls.jsx';
 import './LocalCutterPlayer.jsx';
@@ -194,20 +195,9 @@ function Workspace({ options, bind }) {
     }).catch(() => { if (!closed) setError(true); });
     return () => { closed = true; void window.api.closeVodPlayback(id).catch(() => undefined); };
   }, [options.url, requestId]);
-  useEffect(() => {
-    let closed = false, complete = false;
-    setMetadataState('loading');
-    const unsubscribe = window.api.onVodTimelineProgress?.(update => {
-      if (closed || complete || update.id !== requestId) return;
-      setMetadata(update.timeline); setMetadataState('partial');
-    });
-    window.api.getVodTimeline({ id: requestId, url: options.url, refresh: historyAttempt > 0 }).then(result => {
-      if (closed) return;
-      complete = true;
-      setMetadata(result); setMetadataState(result ? 'ready' : 'error');
-    }).catch(() => { if (!closed) { complete = true; setMetadataState('error'); } });
-    return () => { closed = true; if (typeof unsubscribe === 'function') unsubscribe(); };
-  }, [options.url, requestId, historyAttempt]);
+  useEffect(() => watchVodTimeline(window.api, { id: requestId, url: options.url, refresh: historyAttempt > 0 }, (value, state) => {
+    setMetadata(value); setMetadataState(state);
+  }), [options.url, requestId, historyAttempt]);
   const onTimeline = useCallback(timeline => {
     const total = Math.round(timeline.reduce((sum, part) => sum + part.duration, 0) * 1000) / 1000;
     if (total > 0 && total !== duration) {
@@ -291,7 +281,7 @@ function Workspace({ options, bind }) {
       <h3 className="vod-history-title" id="clipHistoryTitle"><ListVideo size={17}/>{t('streamHistory')}</h3>
        {metadataState === 'loading' && <p className="vod-history-status" role="status">{t('historyLoading')}</p>}
       {metadataState === 'error' && <div className="vod-history-status" role="status"><span>{t('historyUnavailable')}</span><button type="button" className="btn-secondary" onClick={() => setHistoryAttempt(value => value + 1)}>{text.retry}</button></div>}
-      {(metadataState === 'ready' || metadataState === 'partial') && <>
+      {metadata && <>
         <TitleHistory loading={metadataState === 'partial'} id={options.url} chapters={chapters} history={metadata.titleHistory} parts={parts} started={started} seconds={position}
           onSeek={seek} onTitleSeek={seekTitle} onHover={setHoveredChapter} onFocus={setFocusedChapter}
           onSelectRange={selectChapter} t={t}/>

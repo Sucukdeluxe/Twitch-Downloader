@@ -215,6 +215,7 @@
     "src/vod-player/viewer-history.js",
     "src/vod-player/workspace.css",
     "src/vod-player/workspace.jsx",
+  "src/vod-player/timeline-loader.js",
     "src/workspace-insights.css",
     "src/workspace-refinements.css",
     "src/workspace.css",

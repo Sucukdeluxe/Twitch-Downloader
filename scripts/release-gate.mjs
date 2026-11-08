@@ -37,6 +37,7 @@ const checks = [
     ['trim-merge-cancel', ['scripts/smoke-test-trim-merge-repair.cjs', '--two-omissions', '--cancel']],
     ['vod-playback', ['scripts/smoke-test-full-vod-audit.js']],
     ['player-seek-preference', ['scripts/smoke-test-player-seek-preference.cjs']],
+    ['vod-live-categories', ['scripts/smoke-test-live-categories.cjs']],
     ['vod-loading-lifecycle', ['scripts/smoke-test-vod-loading-lifecycle.cjs']],
     ['vod-opening-source', ['scripts/smoke-test-vod-opening-source.cjs']],
     ['vod-read-timeout', ['scripts/smoke-test-vod-stall-production-timeout.js', 'ffmpeg']],
