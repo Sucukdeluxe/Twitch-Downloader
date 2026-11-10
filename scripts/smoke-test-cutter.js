@@ -199,8 +199,11 @@ async function run() {
     app = await electron.launch(launchOptions);
     const win = await app.firstWindow();
     // Hosted Mac runners have fewer CPU cores than the interactive reference
-    // machine. Keep strict local budgets and report actual CI times below.
-    const mediaTimingScale = process.platform === 'darwin' && process.env.CI === 'true' ? 3 : 1;
+    // machine; Intel also runs without native video acceleration. Keep strict
+    // local budgets and report actual CI times below.
+    const mediaTimingScale = process.platform === 'darwin' && process.env.CI === 'true'
+      ? (process.arch === 'x64' ? 6 : 3) : 1;
+    const frameTimingScale = process.platform === 'darwin' && process.env.CI === 'true' ? 2 : 1;
     await win.evaluate(() => {
       document.addEventListener('pointermove', (event) => {
         window.__cutterLatestPointerX = event.clientX;
@@ -1421,9 +1424,9 @@ async function run() {
     await cutStartHandle.focus();
     const cutStartBeforeKeyboard = await win.evaluate(() => cutterEditorState.cuts[0].start);
     await cutStartHandle.press('ArrowRight');
-    await win.waitForTimeout(30);
+    await win.waitForFunction(() => document.activeElement?.matches('.cutter-cut-handle.start'), null, { timeout: 1000 });
     await cutStartHandle.press('ArrowRight');
-    await win.waitForTimeout(30);
+    await win.waitForFunction(() => document.activeElement?.matches('.cutter-cut-handle.start'), null, { timeout: 1000 });
     const repeatedCutKeyboard = await win.evaluate(() => ({ start: cutterEditorState.cuts[0].start, focused: document.activeElement?.classList.contains('start') }));
     check(repeatedCutKeyboard.start > cutStartBeforeKeyboard + 1 / 25 && repeatedCutKeyboard.focused, `Cut handle lost focus after keyboard rerender: ${JSON.stringify(repeatedCutKeyboard)}`);
     await cutStartHandle.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
@@ -1506,7 +1509,7 @@ async function run() {
       video.playbackRate = 1;
       return results;
     });
-    check(playbackPerformance.every((entry) => entry.timecodes >= 6 && entry.p95FrameMs < 40 && entry.maxFrameMs < 180), `Playback frame pacing is unstable: ${JSON.stringify(playbackPerformance)}`);
+    check(playbackPerformance.every((entry) => entry.timecodes >= 6 && entry.p95FrameMs < 40 * frameTimingScale && entry.maxFrameMs < 180 * frameTimingScale), `Playback frame pacing is unstable: ${JSON.stringify(playbackPerformance)}`);
     await win.evaluate(async () => {
       const video = document.getElementById('cutterVideo');
       video.currentTime = 7.1;
@@ -1518,7 +1521,10 @@ async function run() {
     await win.waitForTimeout(250);
     await win.mouse.up();
     const dragReleaseTime = await win.evaluate(() => document.getElementById('cutterVideo').currentTime);
-    await win.waitForTimeout(350);
+    await win.waitForFunction((releasedAt) => {
+      const video = document.getElementById('cutterVideo');
+      return !video.paused && video.currentTime > releasedAt + 0.15;
+    }, dragReleaseTime, { timeout: 1000 }).catch(() => {});
     const playbackAfterDrag = await win.evaluate(() => ({
       currentTime: document.getElementById('cutterVideo').currentTime,
       timecode: document.getElementById('cutterCurrentTime').textContent,
@@ -2026,7 +2032,7 @@ async function run() {
     const shutdownArtifacts = fs.readdirSync(environment.mediaDir)
       .filter((name) => name.includes('.tvm-edit.mp4') || name.includes('.tvm-backup') || name === path.basename(shutdownOutputFile));
     check(cutterTempDirectoriesAfterShutdown.length === 0 && shutdownArtifacts.length === 0, `Shutdown left cutter artifacts: ${JSON.stringify({ cutterTempDirectoriesAfterShutdown, shutdownArtifacts })}`);
-    console.log(JSON.stringify({ failures, runtimeIssues, mediaTimingScale, additionalContainerSupport, emptyLayout, emptyFullscreenLayout, emptyVolumeBefore, emptyVolumeAfter, revealAnimation, firstAssetQuality, firstAssetsReadyMs, initialAssetStability, verticalProfileQuality, loaded, edgeGeometry, timestampTypography, playerControlGeometry, cutterInfoAlignment, replacementPromptState, replacementPlaybackState, scrubMediaInfo, scrubFirstAssetsReadyMs, scrubFirstAssetQuality, realMaximumZoomState, scrubSyncProbe, trimScrubProbe, mediumWaveformReadyMs, mediumFirstAssetsReadyMs, mediumZoomReuseBefore, mediumZoomReuseAfter, longPlayerReadyMs, longAssetsReadyMs, longAssetTopology, longPreservedAfterAssetInterruptions, longScrubPresentation, rapidSwitch, memoryBeforeStressMb, memoryAfterStressMb, stressMemoryDeltaMb, preservedAfterUnsupported, edited, cutHandleVisualGeometry, cutterAria, germanCutLabels, draggedCutStart, collisionBoundedCut, reversibleTrimStart, reversibleTrimEnd, crossedCutTime, skippedTime, smoothTimecodeFrames, playbackPerformance, playbackAfterDrag, stoppedTime, settingsMenuLayout, escapedSettings, playbackRateState, tabLeaveState, layoutAudit, responsiveLayouts, expandedVolumeLayout, wheelZoom, zoomGeometryDelta, maximumZoomGeometryDelta, assetDensity, zoomWaveformReuse, zoom, sourceProtection, invalidRequest, cancelledExport, exportResult, manyCutsExport, changedSourceExport, silentState, silentExportResult, cutterTempDirectoriesAfterShutdown, shutdownArtifacts }, null, 2));
+    console.log(JSON.stringify({ failures, runtimeIssues, mediaTimingScale, frameTimingScale, additionalContainerSupport, emptyLayout, emptyFullscreenLayout, emptyVolumeBefore, emptyVolumeAfter, revealAnimation, firstAssetQuality, firstAssetsReadyMs, initialAssetStability, verticalProfileQuality, loaded, edgeGeometry, timestampTypography, playerControlGeometry, cutterInfoAlignment, replacementPromptState, replacementPlaybackState, scrubMediaInfo, scrubFirstAssetsReadyMs, scrubFirstAssetQuality, realMaximumZoomState, scrubSyncProbe, trimScrubProbe, mediumWaveformReadyMs, mediumFirstAssetsReadyMs, mediumZoomReuseBefore, mediumZoomReuseAfter, longPlayerReadyMs, longAssetsReadyMs, longAssetTopology, longPreservedAfterAssetInterruptions, longScrubPresentation, rapidSwitch, memoryBeforeStressMb, memoryAfterStressMb, stressMemoryDeltaMb, preservedAfterUnsupported, edited, cutHandleVisualGeometry, cutterAria, germanCutLabels, draggedCutStart, collisionBoundedCut, reversibleTrimStart, reversibleTrimEnd, crossedCutTime, skippedTime, smoothTimecodeFrames, playbackPerformance, playbackAfterDrag, stoppedTime, settingsMenuLayout, escapedSettings, playbackRateState, tabLeaveState, layoutAudit, responsiveLayouts, expandedVolumeLayout, wheelZoom, zoomGeometryDelta, maximumZoomGeometryDelta, assetDensity, zoomWaveformReuse, zoom, sourceProtection, invalidRequest, cancelledExport, exportResult, manyCutsExport, changedSourceExport, silentState, silentExportResult, cutterTempDirectoriesAfterShutdown, shutdownArtifacts }, null, 2));
     if (failures.length > 0) process.exitCode = 1;
   } finally {
     if (app) await app.close();

@@ -67,8 +67,10 @@ It also builds a fragmented MP4 with a two-minute timestamp offset and verifies 
 three-second editor timeline, playback start and a real cut export.
 The existing Windows CI remains enabled for regression coverage.
 CPU-bound thumbnail/waveform checks keep the original local time budgets; hosted Mac
-runners get a threefold budget and still report measured times. Pointer accuracy and
-frame synchronization assertions remain unchanged, with input delivery awaited explicitly.
+runners get a threefold budget on Apple Silicon and sixfold on virtualized Intel,
+and frame-pacing checks get a twofold budget. Both still report measured times.
+Pointer accuracy and frame synchronization assertions remain unchanged, with input
+delivery, playback resumption and asynchronous focus restoration awaited explicitly.
 
 A preview is not a declaration that every Twitch account-specific scenario is accepted.
 Subscriber-only Twitch access and long-running live recording require an eligible
