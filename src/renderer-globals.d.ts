@@ -227,7 +227,7 @@ interface VideoEditExportRequest {
     trimEnd: number;
     cuts: Array<{ id: string; start: number; end: number }>;
     profile?: 'quality' | 'balanced' | 'fast' | 'archive';
-    encoder?: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf';
+    encoder?: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox';
     audioStreamIndex?: number;
 }
 
@@ -239,13 +239,13 @@ interface CutterProject {
     trimEnd: number;
     cuts: Array<{ id: string; start: number; end: number }>;
     profile: 'quality' | 'balanced' | 'fast' | 'archive';
-    encoder: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf';
+    encoder: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox';
     audioStreamIndex: number;
 }
 
 interface CutterExportOptions {
     profiles: Array<{ id: 'quality' | 'balanced' | 'fast' | 'archive'; label: string; container: 'mp4' | 'mkv' }>;
-    hardwareEncoders: Array<'h264_nvenc' | 'h264_qsv' | 'h264_amf'>;
+    hardwareEncoders: Array<'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox'>;
 }
 
 interface FileCapabilityReference {

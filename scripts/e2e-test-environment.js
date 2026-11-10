@@ -120,6 +120,7 @@ function getElectronLaunchOptions(environment, extraArgs = []) {
     env: {
       ...process.env,
       PROGRAMDATA: environment.programDataDir,
+      TWITCH_VOD_MANAGER_DATA_DIR: environment.appDataDir,
       HTTP_PROXY: OFFLINE_PROXY,
       HTTPS_PROXY: OFFLINE_PROXY,
       ALL_PROXY: OFFLINE_PROXY,
@@ -133,7 +134,11 @@ function getElectronLaunchOptions(environment, extraArgs = []) {
 }
 
 function isSamePath(left, right) {
-  return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
+  const canonical = (value) => {
+    const resolved = fs.realpathSync(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return canonical(left) === canonical(right);
 }
 
 async function verifyE2eIsolation(app, win, environment) {

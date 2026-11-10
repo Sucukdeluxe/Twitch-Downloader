@@ -1,9 +1,9 @@
 <div align="center">
   <img src="build/icon.png" alt="Twitch VOD Manager icon" width="128" height="128">
 
-  # Twitch VOD Manager
+  # Twitch VOD Manager — macOS
 
-  A focused Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
+  A macOS port of the Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
 
   [![Latest release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-VOD-Manager?display_name=tag&sort=semver)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
   [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
@@ -13,6 +13,15 @@
 </div>
 
 ![Twitch VOD Manager workspace](docs/images/twitch-vod-manager-overview.png)
+
+## macOS development
+
+This public repository preserves the original Windows interface and shared source history.
+Native Apple Silicon and Intel builds, bundled offline tools and automated Mac tests are
+available in this port. See [macOS build and validation details](docs/MACOS.md).
+
+The port is undergoing validation; a preview is not final 1:1 acceptance. The Windows
+installation instructions below describe the upstream release.
 
 ## Overview
 

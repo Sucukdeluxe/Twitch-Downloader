@@ -39,6 +39,7 @@ function startElectron() {
         env: {
             ...process.env,
             PROGRAMDATA: developmentProgramData,
+            TWITCH_VOD_MANAGER_DATA_DIR: resolve(developmentProgramData, 'Twitch_VOD_Manager'),
             TWITCH_VOD_MANAGER_DEV: '1',
             TWITCH_VOD_MANAGER_RELAUNCH_COMMAND: developmentRelaunchCommand,
         },

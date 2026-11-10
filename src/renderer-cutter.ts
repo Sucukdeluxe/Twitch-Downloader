@@ -62,7 +62,7 @@ let cutterScrubResumePlayback = false;
 let cutterScrubGeneration = 0;
 let cutterDiscardResolver: ((discard: boolean) => void) | null = null;
 let cutterExportProfile: 'quality' | 'balanced' | 'fast' | 'archive' = 'balanced';
-let cutterExportEncoder: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' = 'software';
+let cutterExportEncoder: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox' = 'software';
 let cutterAudioStreamIndex = 0;
 let cutterPendingProject: CutterProject | null = null;
 let cutterAutosaveTimer: number | null = null;
@@ -233,7 +233,7 @@ function updateCutterExportControls(options: CutterExportOptions | null): void {
         (options?.hardwareEncoders ?? []).forEach((value) => {
             const option = document.createElement('option');
             option.value = value;
-            option.textContent = value === 'h264_nvenc' ? 'NVIDIA NVENC' : value === 'h264_qsv' ? 'Intel Quick Sync' : 'AMD AMF';
+            option.textContent = value === 'h264_nvenc' ? 'NVIDIA NVENC' : value === 'h264_qsv' ? 'Intel Quick Sync' : value === 'h264_videotoolbox' ? 'Apple VideoToolbox' : 'AMD AMF';
             encoder.append(option);
         });
     }
@@ -319,7 +319,7 @@ function setCutterExportProfile(value: string): void {
 }
 
 function setCutterExportEncoder(value: string): void {
-    if (value !== 'software' && value !== 'h264_nvenc' && value !== 'h264_qsv' && value !== 'h264_amf') return;
+    if (value !== 'software' && value !== 'h264_nvenc' && value !== 'h264_qsv' && value !== 'h264_amf' && value !== 'h264_videotoolbox') return;
     cutterExportEncoder = value;
     scheduleCutterAutosave();
 }

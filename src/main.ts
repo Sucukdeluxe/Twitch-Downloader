@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Notification, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Notification, Menu, type IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess, execSync, spawnSync } from 'child_process';
+import { spawn, ChildProcess, spawnSync } from 'child_process';
 import { connect as tlsConnect, TLSSocket } from 'node:tls';
 import { pathToFileURL } from 'node:url';
 import type { Transform } from 'node:stream';
@@ -18,6 +18,7 @@ import {
     getMergeGroupPhaseText as getMergeGroupPhaseTextCore,
 } from './main/infra/format-helpers';
 import { tBackend as tBackendCore, type BackendMessageKey } from './main/domain/i18n-backend';
+import { resolveApplicationDataDirectory } from './main/domain/platform-paths';
 import { watchRendererChanges } from './main/dev-reload';
 import { createPausableOutput, type PausableOutput } from './main/domain/pausable-output';
 import { createTokenBucketBudget, createTokenBucketTransform } from './main/domain/token-bucket-transform';
@@ -91,7 +92,7 @@ const APP_VERSION = app.getVersion();
 const IS_HOT_DEVELOPMENT = process.env.TWITCH_VOD_MANAGER_DEV === '1';
 const WINDOWS_APP_IDENTITY = getWindowsAppIdentity(IS_HOT_DEVELOPMENT);
 app.setName(WINDOWS_APP_IDENTITY.name);
-app.setAppUserModelId(WINDOWS_APP_IDENTITY.appUserModelId);
+if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_IDENTITY.appUserModelId);
 const WINDOWS_APP_ICON_PATH = process.platform === 'win32'
     ? resolveWindowsAppIconPath({
         isPackaged: app.isPackaged,
@@ -101,12 +102,16 @@ const WINDOWS_APP_ICON_PATH = process.platform === 'win32'
     })
     : null;
 const GITHUB_REPO_OWNER = 'Sucukdeluxe';
-const GITHUB_REPO_NAME = 'Twitch-VOD-Manager';
-const GITHUB_RELEASES_API_LATEST_URL = 'https://api.github.com/repos/Sucukdeluxe/Twitch-VOD-Manager/releases/latest';
-const GITHUB_RELEASES_DOWNLOAD_BASE_URL = 'https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/download';
+const GITHUB_REPO_NAME = process.platform === 'darwin' ? 'Twitch-Downloader-macos' : 'Twitch-VOD-Manager';
+const GITHUB_RELEASES_API_LATEST_URL = process.platform === 'darwin'
+    ? `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest`
+    : 'https://api.github.com/repos/Sucukdeluxe/Twitch-VOD-Manager/releases/latest';
+const GITHUB_RELEASES_DOWNLOAD_BASE_URL = process.platform === 'darwin'
+    ? `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/download`
+    : 'https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/download';
 
 // Paths
-const APPDATA_DIR = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Twitch_VOD_Manager');
+const APPDATA_DIR = resolveApplicationDataDirectory(process.platform, app.getPath('userData'));
 const DEBUG_LOG_FILE = path.join(APPDATA_DIR, 'debug.log');
 const PARTIAL_DOWNLOADS_FILE = path.join(APPDATA_DIR, 'partial-downloads.json');
 const CUTTER_PROJECT_AUTOSAVE_FILE = path.join(APPDATA_DIR, 'cutter-projects.json');
@@ -1113,7 +1118,8 @@ function appendDebugLog(message: string, details?: unknown): void {
 
 // Wire up tools module with debug logging and directory paths
 setDebugLogFn(appendDebugLog);
-initToolDirs(TOOLS_STREAMLINK_DIR, TOOLS_FFMPEG_DIR, () => app.getPath('temp'));
+initToolDirs(TOOLS_STREAMLINK_DIR, TOOLS_FFMPEG_DIR, () => app.getPath('temp'),
+    app.isPackaged ? path.join(process.resourcesPath, 'macos-tools') : path.join(app.getAppPath(), '.cache', 'macos-tools', process.arch));
 
 const claimedFilenames = new Set<string>();
 const itemClaimedFilenames = new Map<string, Set<string>>();
@@ -3274,7 +3280,7 @@ function isCutterExportProfile(value: unknown): value is CutterExportProfile {
 }
 
 function isCutterExportEncoder(value: unknown): value is CutterExportEncoder {
-    return value === 'software' || value === 'h264_nvenc' || value === 'h264_qsv' || value === 'h264_amf';
+    return value === 'software' || value === 'h264_nvenc' || value === 'h264_qsv' || value === 'h264_amf' || value === 'h264_videotoolbox';
 }
 
 function createCutterProject(filePath: string, info: VideoInfo, value: unknown): CutterProject | null {
@@ -3806,10 +3812,10 @@ async function mergeVideos(
         const ffprobe = getFFprobePath();
         for (const filePath of inputFiles) {
             try {
-                const result = execSync(
-                    `"${ffprobe}" -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`,
-                    { timeout: 10000, windowsHide: true }
-                ).toString().trim();
+                const probe = spawnSync(ffprobe, ['-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath],
+                    { timeout: 10000, windowsHide: true, encoding: 'utf8' });
+                if (probe.status !== 0) continue;
+                const result = probe.stdout.trim();
                 const dur = parseFloat(result);
                 if (!isNaN(dur)) {
                     mergeTotalDurationUs += dur * 1_000_000;
@@ -8062,7 +8068,8 @@ ipcMain.handle('open-folder', async (event, capability: string) => {
 const OPEN_FILE_BLOCKED_EXTENSIONS = new Set([
     '.exe', '.bat', '.cmd', '.com', '.ps1', '.vbs', '.vbe',
     '.js', '.jse', '.wsf', '.wsh', '.scr', '.msi', '.msp',
-    '.lnk', '.cpl', '.reg', '.hta', '.jar', '.application'
+    '.lnk', '.cpl', '.reg', '.hta', '.jar', '.application',
+    '.app', '.command', '.sh', '.workflow', '.scpt', '.applescript', '.pkg'
 ]);
 
 ipcMain.handle('open-file', async (event, capability: string): Promise<boolean> => {
@@ -8774,6 +8781,14 @@ function cleanupStaleCutterMediaDirectories(): number {
 }
 
 app.whenReady().then(() => {
+    if (process.platform === 'darwin') {
+        Menu.setApplicationMenu(Menu.buildFromTemplate([
+            { role: 'appMenu' },
+            { role: 'editMenu' },
+            { role: 'viewMenu' },
+            { role: 'windowMenu' },
+        ]));
+    }
     const removedPartialDownloads = partialDownloadRegistry.cleanup();
     if (removedPartialDownloads.length > 0) {
         appendDebugLog('partial-downloads-cleaned-on-startup', { count: removedPartialDownloads.length });

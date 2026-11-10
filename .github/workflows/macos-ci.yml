@@ -1,0 +1,61 @@
+name: macOS CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            folder: mac-arm64
+          - runner: macos-15-intel
+            arch: x64
+            folder: mac
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run lint
+      - run: npm run security:check
+      - run: npm run test:security && npm run test:lint-config && npm run test:ci-contract
+      - run: npm run tools:mac -- ${{ matrix.arch }}
+      - run: npm run test:mac
+      - run: npm run test:e2e:release
+      - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
+      - name: Test the actual application bundle
+        run: npm run test:mac
+        env:
+          PACKAGED_APP_PATH: release/${{ matrix.folder }}/Twitch VOD Manager.app/Contents/MacOS/Twitch VOD Manager
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*mac*.yml
+            release/*.blockmap
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: macos-${{ matrix.arch }}-diagnostics
+          path: artifacts/

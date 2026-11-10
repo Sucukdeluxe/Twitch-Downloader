@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import type { EditorSegment } from './video-editor';
 
 export type CutterExportProfile = 'quality' | 'balanced' | 'fast' | 'archive';
-export type CutterHardwareEncoder = 'h264_nvenc' | 'h264_qsv' | 'h264_amf';
+export type CutterHardwareEncoder = 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox';
 export type CutterExportEncoder = 'software' | CutterHardwareEncoder;
 
 export interface CutterExportProfileDefinition {
@@ -41,7 +41,7 @@ export interface CutterExportPlan {
 }
 
 const precision = 9;
-const hardwareEncoders: CutterHardwareEncoder[] = ['h264_nvenc', 'h264_qsv', 'h264_amf'];
+const hardwareEncoders: CutterHardwareEncoder[] = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'];
 
 function round(value: number): number {
     return Number(value.toFixed(precision));
@@ -148,6 +148,9 @@ function softwareVideoArgs(profile: CutterExportProfile): string[] {
 }
 
 function hardwareVideoArgs(profile: Exclude<CutterExportProfile, 'archive'>, encoder: CutterHardwareEncoder): string[] {
+    if (encoder === 'h264_videotoolbox') {
+        return ['-c:v', encoder, '-b:v', profile === 'quality' ? '12M' : profile === 'balanced' ? '8M' : '5M', '-allow_sw', '0'];
+    }
     const quality = profile === 'quality' ? '18' : profile === 'balanced' ? '20' : '23';
     if (encoder === 'h264_nvenc') {
         return ['-c:v', encoder, '-preset', profile === 'quality' ? 'p6' : profile === 'balanced' ? 'p4' : 'p1', '-cq', quality, '-b:v', '0'];

@@ -11,3 +11,6 @@ tmp_*/
 .dev-program-data/
 .dev-user-data/
 .DS_Store
+
+.cache/
+artifacts/

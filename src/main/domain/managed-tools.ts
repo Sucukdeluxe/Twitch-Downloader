@@ -74,6 +74,8 @@ const JOURNAL_SUFFIX = '.transaction.json';
 const INVALID_JOURNAL = Symbol('invalid-journal');
 
 function findFileRecursive(rootDir: string, fileName: string): string | null {
+    const direct = path.join(rootDir, fileName);
+    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;
     try {
         const entries = fs.readdirSync(rootDir, { withFileTypes: true });
         for (const entry of entries) {

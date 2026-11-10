@@ -25,11 +25,19 @@ export function setDebugLogFn(fn: (message: string, details?: unknown) => void):
 let TOOLS_STREAMLINK_DIR = '';
 let TOOLS_FFMPEG_DIR = '';
 let _getTempPath: () => string = () => '';
+let macosToolResources = '';
+let applicationToolManifest = APPLICATION_TOOL_MANIFEST;
 
-export function initToolDirs(streamlinkDir: string, ffmpegDir: string, getTempPath: () => string): void {
+export function initToolDirs(streamlinkDir: string, ffmpegDir: string, getTempPath: () => string, resourceDirectory = ''): void {
     TOOLS_STREAMLINK_DIR = streamlinkDir;
     TOOLS_FFMPEG_DIR = ffmpegDir;
     _getTempPath = getTempPath;
+    macosToolResources = resourceDirectory;
+    if (process.platform === 'darwin') {
+        const manifestPath = path.join(resourceDirectory, 'manifest.json');
+        // Development may run before tools are prepared; never download Windows tools on a Mac.
+        if (fs.existsSync(manifestPath)) applicationToolManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    }
     managedToolInstallers.clear();
 }
 
@@ -53,6 +61,8 @@ const managedToolInstallers = new Map<'streamlink' | 'ffmpeg', ManagedToolInstal
 // INTERNAL HELPERS
 // ==========================================
 function findFileRecursive(rootDir: string, fileName: string): string | null {
+    const direct = path.join(rootDir, fileName);
+    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;
     if (!fs.existsSync(rootDir)) return null;
 
     const entries = fs.readdirSync(rootDir, { withFileTypes: true });
@@ -350,7 +360,9 @@ async function extractZip(zipPath: string, destinationDir: string): Promise<bool
         const command = `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destinationDir.replace(/'/g, "''")}' -Force`;
 
         await new Promise<void>((resolve, reject) => {
-            const proc = spawn('powershell', [
+            const proc = process.platform === 'darwin'
+                ? spawn('/usr/bin/ditto', ['-x', '-k', zipPath, destinationDir])
+                : spawn('powershell', [
                 '-NoProfile',
                 '-ExecutionPolicy', 'Bypass',
                 '-Command',
@@ -389,6 +401,13 @@ function getManagedToolInstaller(toolId: 'streamlink' | 'ffmpeg'): ManagedToolIn
         installationDirectory,
         temporaryDirectory: _getTempPath(),
         download: async (sourceUrl, archivePath) => {
+            if (process.platform === 'darwin') {
+                const manifest = applicationToolManifest[toolId];
+                const bundled = path.join(macosToolResources, path.basename(manifest.archiveName));
+                if (!fs.existsSync(bundled)) throw new Error('Bundled macOS tools are missing. Run npm run tools:mac before building.');
+                await fs.promises.copyFile(bundled, archivePath);
+                return;
+            }
             if (!await downloadFile(sourceUrl, archivePath)) {
                 throw new Error('tool archive download failed');
             }
@@ -411,15 +430,15 @@ export interface ManagedToolStatuses {
 
 export async function getManagedToolStatuses(): Promise<ManagedToolStatuses> {
     return {
-        streamlink: await getManagedToolInstaller('streamlink').status(APPLICATION_TOOL_MANIFEST.streamlink),
-        ffmpeg: await getManagedToolInstaller('ffmpeg').status(APPLICATION_TOOL_MANIFEST.ffmpeg)
+        streamlink: await getManagedToolInstaller('streamlink').status(applicationToolManifest.streamlink),
+        ffmpeg: await getManagedToolInstaller('ffmpeg').status(applicationToolManifest.ffmpeg)
     };
 }
 
 export async function repairManagedTools(): Promise<{ success: boolean; statuses: ManagedToolStatuses }> {
     const [streamlink, ffmpeg] = await Promise.all([
-        getManagedToolInstaller('streamlink').repair(APPLICATION_TOOL_MANIFEST.streamlink),
-        getManagedToolInstaller('ffmpeg').repair(APPLICATION_TOOL_MANIFEST.ffmpeg)
+        getManagedToolInstaller('streamlink').repair(applicationToolManifest.streamlink),
+        getManagedToolInstaller('ffmpeg').repair(applicationToolManifest.ffmpeg)
     ]);
     refreshBundledToolPaths(true);
     return {
@@ -430,8 +449,8 @@ export async function repairManagedTools(): Promise<{ success: boolean; statuses
 
 export async function resetManagedTools(): Promise<{ success: boolean; statuses: ManagedToolStatuses }> {
     const [streamlink, ffmpeg] = await Promise.all([
-        getManagedToolInstaller('streamlink').reset(APPLICATION_TOOL_MANIFEST.streamlink),
-        getManagedToolInstaller('ffmpeg').reset(APPLICATION_TOOL_MANIFEST.ffmpeg)
+        getManagedToolInstaller('streamlink').reset(applicationToolManifest.streamlink),
+        getManagedToolInstaller('ffmpeg').reset(applicationToolManifest.ffmpeg)
     ]);
     refreshBundledToolPaths(true);
     return {
@@ -446,9 +465,9 @@ export async function resetManagedTools(): Promise<{ success: boolean; statuses:
 export async function ensureStreamlinkInstalled(): Promise<boolean> {
     refreshBundledToolPaths();
 
-    const manifest = APPLICATION_TOOL_MANIFEST.streamlink;
+    const manifest = applicationToolManifest.streamlink;
     const managedStatus = await getManagedToolInstaller('streamlink').status(manifest);
-    const requiresManagedRepair = Boolean(bundledStreamlinkPath) && !managedStatus.verified;
+    const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledStreamlinkPath)) && !managedStatus.verified;
     const current = getStreamlinkCommand();
     const versionArgs = [...current.prefixArgs, '--version'];
     if (!requiresManagedRepair && isVerifiedStreamlinkCommand(current.command, versionArgs)) {
@@ -460,7 +479,7 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
         return true;
     }
 
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
         return false;
     }
 
@@ -492,9 +511,9 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
 export async function ensureFfmpegInstalled(): Promise<boolean> {
     refreshBundledToolPaths();
 
-    const manifest = APPLICATION_TOOL_MANIFEST.ffmpeg;
+    const manifest = applicationToolManifest.ffmpeg;
     const managedStatus = await getManagedToolInstaller('ffmpeg').status(manifest);
-    const requiresManagedRepair = Boolean(bundledFFmpegPath || bundledFFprobePath) && !managedStatus.verified;
+    const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledFFmpegPath || bundledFFprobePath)) && !managedStatus.verified;
     const ffmpegPath = getFFmpegPath();
     const ffprobePath = getFFprobePath();
     if (!requiresManagedRepair && isVerifiedFfmpegCommands(ffmpegPath, ffprobePath)) {
@@ -506,7 +525,7 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
         return true;
     }
 
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
         return false;
     }
 

@@ -175,6 +175,22 @@ describe('cutter export segments', () => {
         expect(parseCutterHardwareEncoders(' V..... h264_nvenc NVIDIA NVENC H.264 encoder\n V..... h264_qsv H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (Intel Quick Sync Video acceleration)\n V..... hevc_amf AMD AMF HEVC encoder')).toEqual(['h264_nvenc', 'h264_qsv']);
     });
 
+    test('uses Apple VideoToolbox only when its capability probe succeeded', () => {
+        const options = {
+            inputFile: 'input.mp4', outputFile: 'output.mp4',
+            segments: [{ start: 0, end: 2 }], hasAudio: true,
+            encoder: 'h264_videotoolbox' as const,
+        };
+        expect(parseCutterHardwareEncoders(' V..... h264_videotoolbox')).toEqual(['h264_videotoolbox']);
+        const hardware = createCutterExportPlan({ ...options, availableHardwareEncoders: ['h264_videotoolbox'] });
+        expect(hardware.selectedEncoder).toBe('h264_videotoolbox');
+        expect(hardware.ffmpegArgs).toEqual(expect.arrayContaining(['-b:v', '8M', '-allow_sw', '0']));
+        expect(hardware.ffmpegArgs).not.toContain('-qp_i');
+        const fallback = createCutterExportPlan(options);
+        expect(fallback.selectedEncoder).toBe('libx264');
+        expect(fallback.hardwareFallback).toBe(true);
+    });
+
     test('offers only hardware encoders that pass a one-frame encode capability test', async () => {
         const probes: Array<{ encoder: string; args: readonly string[] }> = [];
 

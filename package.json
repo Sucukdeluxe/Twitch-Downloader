@@ -38,7 +38,11 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run test:e2e:release && electron-builder --win",
     "dist:ci": "electron-builder --win nsis",
-    "test:merge-split": "node scripts/smoke-test-merge-split-logic.js"
+    "test:merge-split": "node scripts/smoke-test-merge-split-logic.js",
+    "tools:mac": "python3 scripts/prepare-macos-tools.py",
+    "pack:mac": "npm run build && electron-builder --mac --dir",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "test:mac": "npm run build && node scripts/smoke-test-macos.js"
   },
   "dependencies": {
     "axios": "^1.16.1",
@@ -98,6 +102,46 @@
     "publish": {
       "provider": "generic",
       "url": "https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest/download/"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video",
+      "icon": "build/icon.png",
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "artifactName": "Twitch-VOD-Manager-${version}-mac-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": ".cache/macos-tools/${arch}",
+          "to": "macos-tools",
+          "filter": [
+            "*.zip",
+            "manifest.json"
+          ]
+        }
+      ],
+      "publish": {
+        "provider": "generic",
+        "url": "https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest/download/"
+      }
+    },
+    "dmg": {
+      "title": "Twitch VOD Manager",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180
+        },
+        {
+          "x": 420,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     }
   }
 }

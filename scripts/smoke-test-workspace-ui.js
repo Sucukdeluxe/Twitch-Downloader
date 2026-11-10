@@ -374,7 +374,11 @@ async function run() {
       });
       const changelogCollapsed = await captureUpdateChangelog();
       await win.locator('#updateChangelogToggle').click();
-      await win.waitForTimeout(100);
+      await win.waitForFunction(() => {
+        const panel = document.getElementById('updateChangelogPanel');
+        const height = panel.getBoundingClientRect().height;
+        return height > 0 && panel.getAnimations().some((animation) => animation.playState === 'running');
+      }, null, { polling: 'raf' });
       const changelogOpening = await captureUpdateChangelog();
       await win.waitForTimeout(260);
       const changelogExpanded = await captureUpdateChangelog();

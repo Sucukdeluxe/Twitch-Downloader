@@ -35,6 +35,7 @@ interface SafeStorageLike {
  * (zB Tests) das Modul importieren koennen ohne Crash.
  */
 export function createElectronSecureStorage(): SecureStorage {
+    if (!process.versions.electron) throw new Error('Electron safeStorage is only available inside Electron');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const electron = require('electron');
     const safeStorage = electron?.safeStorage as SafeStorageLike | undefined;
