@@ -359,35 +359,44 @@ async function run() {
           releaseNotes: '- Stable Windows shell registration\n- Smoother update details'
         });
       });
-      const captureUpdateChangelog = () => win.evaluate(() => {
+      // Sample CSS transitions at a fixed animation time. Cross-process clicks
+      // and wall-clock sleeps can miss the entire 260ms transition on CI.
+      const changelogMotion = await win.evaluate(async () => {
         const panel = document.getElementById('updateChangelogPanel');
         const toggle = document.getElementById('updateChangelogToggle');
-        const style = panel ? getComputedStyle(panel) : null;
-        return {
-          hidden: panel?.hidden || false,
-          expanded: panel?.classList.contains('is-expanded') || false,
-          ariaHidden: panel?.getAttribute('aria-hidden') || '',
-          ariaExpanded: toggle?.getAttribute('aria-expanded') || '',
-          height: panel?.getBoundingClientRect().height || 0,
-          transitionDuration: style?.transitionDuration || ''
+        const capture = () => ({
+          hidden: panel.hidden,
+          expanded: panel.classList.contains('is-expanded'),
+          ariaHidden: panel.getAttribute('aria-hidden') || '',
+          ariaExpanded: toggle.getAttribute('aria-expanded') || '',
+          height: panel.getBoundingClientRect().height,
+          transitionDuration: getComputedStyle(panel).transitionDuration
+        });
+        const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+        const sampleToggle = async () => {
+          toggle.click();
+          const transitions = panel.getAnimations();
+          for (const transition of transitions) {
+            transition.pause();
+            transition.currentTime = 20;
+          }
+          await frame();
+          const intermediate = capture();
+          for (const transition of transitions) transition.finish();
+          await frame();
+          return { intermediate, settled: capture() };
         };
+        const collapsed = capture();
+        const opening = await sampleToggle();
+        const closing = await sampleToggle();
+        return { collapsed, opening: opening.intermediate, expanded: opening.settled, closing: closing.intermediate, closed: closing.settled };
       });
-      const changelogCollapsed = await captureUpdateChangelog();
-      await win.locator('#updateChangelogToggle').click();
-      await win.waitForFunction(() => {
-        const panel = document.getElementById('updateChangelogPanel');
-        const height = panel.getBoundingClientRect().height;
-        return height > 0 && panel.getAnimations().some((animation) => animation.playState === 'running');
-      }, null, { polling: 'raf' });
-      const changelogOpening = await captureUpdateChangelog();
-      await win.waitForTimeout(260);
-      const changelogExpanded = await captureUpdateChangelog();
-      await win.locator('#updateChangelogToggle').click();
-      await win.waitForTimeout(100);
-      const changelogClosing = await captureUpdateChangelog();
-      await win.waitForTimeout(260);
-      const changelogClosed = await captureUpdateChangelog();
-      await win.evaluate(() => dismissUpdateModal());
+      const { collapsed: changelogCollapsed, opening: changelogOpening, expanded: changelogExpanded, closing: changelogClosing, closed: changelogClosed } = changelogMotion;
+      await win.evaluate(async () => {
+        dismissUpdateModal();
+        // Let the dialog restore focus before focusing the next control.
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
       await win.emulateMedia({ reducedMotion: 'no-preference' });
       checks.updateChangelogMotion = {
         collapsed: changelogCollapsed,

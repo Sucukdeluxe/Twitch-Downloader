@@ -48,7 +48,7 @@ async function run() {
     const ffmpeg = path.join(toolRoot, 'ffmpeg', 'ffmpeg');
     const ffprobe = path.join(toolRoot, 'ffmpeg', 'ffprobe');
     const streamlink = path.join(toolRoot, 'streamlink', 'streamlink');
-    const cleanEnv = { ...options.env, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' };
+    const cleanEnv = { ...options.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
     const media = path.join(environment.mediaDir, 'Mac Test ä $ literal.mp4');
     await execute(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=25', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', media], { env: cleanEnv });
     const playlist = path.join(environment.mediaDir, 'index.m3u8');
@@ -60,7 +60,7 @@ async function run() {
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const downloaded = path.join(environment.mediaDir, 'downloaded.ts');
-    await execute(streamlink, [`hls://http://127.0.0.1:${server.address().port}/index.m3u8`, 'best', '--output', downloaded, '--force'], { env: cleanEnv, timeout: 30000 });
+    await execute(streamlink, [`hls://http://localhost:${server.address().port}/index.m3u8`, 'best', '--output', downloaded, '--force'], { env: cleanEnv, timeout: 30000 });
     const probe = await execute(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', downloaded], { env: cleanEnv });
     checks.hlsDownloadSeconds = Number(probe.stdout.trim());
     assert(checks.hlsDownloadSeconds >= 2.9);

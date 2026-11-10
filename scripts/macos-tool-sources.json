@@ -1,6 +1,6 @@
 {
   "pythonVersion": "3.13.18",
-  "streamlinkVersion": "8.4.0",
+  "streamlinkVersion": "8.6.3",
   "ffmpegVersion": "8.1.2",
   "arm64": {
     "python": {

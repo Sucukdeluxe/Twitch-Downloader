@@ -2,7 +2,7 @@
 
 The original application is MIT licensed. Bundled external programs run as separate processes.
 
-- **Streamlink 8.4.0**: BSD-2-Clause, https://github.com/streamlink/streamlink/tree/8.4.0.
+- **Streamlink 8.6.3**: BSD-2-Clause, https://github.com/streamlink/streamlink/tree/8.6.3.
   The Python package and its dependencies include their original licenses in `*.dist-info`.
 - **CPython 3.13.18**: Python Software Foundation license and bundled library licenses,
   distributed by https://github.com/astral-sh/python-build-standalone/releases/tag/20261026.

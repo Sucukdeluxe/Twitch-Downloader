@@ -14,7 +14,7 @@ npm ci
 node node_modules/electron/install.js
 npm run tools:mac -- arm64
 npm run tools:mac -- x64
-npm run test:e2e:release
+PATH="$PWD/.cache/macos-tools/stage-$(node -p process.arch)/ffmpeg:$PATH" npm run test:e2e:release
 npm run test:mac
 npm run dist:mac -- --arm64 --x64 -c.mac.identity=- --publish never
 ```
@@ -38,7 +38,8 @@ portable tool packaging, process argument safety and macOS test/build support.
 Window closing follows macOS behavior: the app and background downloads stay alive;
 Command-Q runs the existing orderly shutdown and partial-file cleanup.
 
-The managed tool versions remain Streamlink 8.4.0 and FFmpeg/FFprobe 8.1.2, as on Windows.
+FFmpeg/FFprobe remains at 8.1.2, as on Windows. The Mac bundle uses Streamlink 8.6.3
+for current urllib3 compatibility and upstream security fixes; the Windows manifest is unchanged.
 Every tool archive is bundled and SHA-256 verified before first use. Repair/reset works
 offline. Python, dependencies, upstream archives and checksums are pinned in `scripts/`.
 

@@ -198,6 +198,20 @@ async function run() {
     };
     app = await electron.launch(launchOptions);
     const win = await app.firstWindow();
+    // Keep CDP viewport emulation at the native display density on macOS.
+    // Forcing a Retina window to scale 1 changes the delivered wheel deltas.
+    const nativeDisplayScale = process.platform === 'darwin'
+      ? await app.evaluate(({ screen, BrowserWindow }) => screen.getDisplayMatching(BrowserWindow.getAllWindows()[0].getBounds()).scaleFactor)
+      : 1;
+    const macViewportSession = process.platform === 'darwin' ? await win.context().newCDPSession(win) : null;
+    const setViewportSize = async (viewport) => {
+      await win.setViewportSize(viewport);
+      if (macViewportSession) {
+        await macViewportSession.send('Emulation.setDeviceMetricsOverride', {
+          ...viewport, deviceScaleFactor: nativeDisplayScale, mobile: false
+        });
+      }
+    };
     check(staleCutterDirectories.every((directory) => !fs.existsSync(directory)), `Startup left stale cutter directories: ${JSON.stringify(staleCutterDirectories.filter((directory) => fs.existsSync(directory)))}`);
     const minimumWindowSize = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getMinimumSize() || [0, 0]);
     const isolation = await verifyE2eIsolation(app, win, environment);
@@ -208,7 +222,7 @@ async function run() {
     win.on('pageerror', (error) => runtimeIssues.push(`pageerror: ${String(error)}`));
     win.on('console', (message) => { if (message.type() === 'error') runtimeIssues.push(`console.error: ${message.text()}`); });
     await win.waitForFunction(() => typeof window.loadCutterFromPath === 'function');
-    await win.setViewportSize({ width: 1440, height: 900 });
+    await setViewportSize({ width: 1440, height: 900 });
     await win.emulateMedia({ reducedMotion: 'reduce' });
     await win.evaluate(() => window.showTab('cutter'));
     const additionalContainerCapabilities = await Promise.all(Object.entries(additionalContainerFiles).map(async ([extension, filePath]) => ({
@@ -280,7 +294,7 @@ async function run() {
       `Empty cutter layout is stretched or displaced: ${JSON.stringify(emptyLayout)}`
     );
     await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'empty.png') });
-    await win.setViewportSize({ width: 2048, height: 1152 });
+    await setViewportSize({ width: 2048, height: 1152 });
     const emptyFullscreenLayout = await win.evaluate(() => {
       const preview = document.getElementById('cutterPreview').getBoundingClientRect();
       const placeholder = document.getElementById('cutterPreviewEmpty').getBoundingClientRect();
@@ -305,7 +319,7 @@ async function run() {
       `Fullscreen empty cutter layout is stretched or displaced: ${JSON.stringify(emptyFullscreenLayout)}`
     );
     await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'empty-fullscreen.png') });
-    await win.setViewportSize({ width: 1440, height: 900 });
+    await setViewportSize({ width: 1440, height: 900 });
     const emptyVolumeBefore = await win.evaluate(() => ({
       width: document.getElementById('cutterVolume').getBoundingClientRect().width,
       timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left,
@@ -516,7 +530,7 @@ async function run() {
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: originalDevicePixelRatio });
       window.updateCutterZoom(1);
     }, initialOriginalDevicePixelRatio);
-    await win.setViewportSize({ width: 1060, height: 700 });
+    await setViewportSize({ width: 1060, height: 700 });
     await win.evaluate(() => {
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 });
       window.updateCutterZoom(1);
@@ -550,7 +564,7 @@ async function run() {
     await win.evaluate((originalDevicePixelRatio) => {
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: originalDevicePixelRatio });
     }, initialOriginalDevicePixelRatio);
-    await win.setViewportSize({ width: 1440, height: 900 });
+    await setViewportSize({ width: 1440, height: 900 });
     await win.evaluate(() => window.updateCutterZoom(1));
     const loaded = await win.evaluate(() => {
       const video = document.getElementById('cutterVideo');
@@ -1553,7 +1567,7 @@ async function run() {
     check(layoutAudit.playerButtons.every((size) => size.height <= 36 && size.width <= 42), `Player icon buttons have inconsistent bounds: ${JSON.stringify(layoutAudit.playerButtons)}`);
     const responsiveLayouts = [];
     for (const viewport of [{ width: 1060, height: 700 }, { width: 1280, height: 700 }, { width: 1280, height: 720 }, { width: 1280, height: 800 }, { width: 1400, height: 860 }, { width: 1600, height: 900 }, { width: 2048, height: 1152 }]) {
-      await win.setViewportSize(viewport);
+      await setViewportSize(viewport);
       await win.evaluate(() => document.getElementById('cutterTab').scrollTo(0, 0));
       await win.waitForTimeout(150);
       responsiveLayouts.push(await win.evaluate((size) => {
@@ -1587,7 +1601,7 @@ async function run() {
     const mediumWindowLayout = responsiveLayouts.find((layout) => layout.size.width === 1600);
     const fullWindowLayout = responsiveLayouts.find((layout) => layout.size.width === 2048);
     check(mediumWindowLayout.previewWidth >= 900 && fullWindowLayout.previewWidth >= 1300, `Loaded player does not expand with available window width: ${JSON.stringify({ mediumWindowLayout, fullWindowLayout })}`);
-    await win.setViewportSize({ width: 1060, height: 700 });
+    await setViewportSize({ width: 1060, height: 700 });
     await win.emulateMedia({ reducedMotion: 'reduce' });
     const collapsedVolumeLayout = await win.evaluate(() => ({
       volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
@@ -1657,7 +1671,7 @@ async function run() {
     check(keyboardVolumeFocus.inputFocused && keyboardVolumeFocus.focusVisible && keyboardVolumeFocus.indicator !== 'none', `Keyboard-focused volume control has no visible focus indicator: ${JSON.stringify(keyboardVolumeFocus)}`);
     await win.evaluate(() => document.getElementById('cutterVolume').blur());
     await win.emulateMedia({ reducedMotion: 'no-preference' });
-    await win.setViewportSize({ width: 1440, height: 900 });
+    await setViewportSize({ width: 1440, height: 900 });
     const actualDevicePixelRatio = await win.evaluate(() => {
       const actual = window.devicePixelRatio;
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
