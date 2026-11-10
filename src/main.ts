@@ -7278,6 +7278,13 @@ async function requestUpdateCheck(source: UpdateCheckSource, force = false): Pro
                     appendDebugLog('github-feed-url-set', { tagName, owner: GITHUB_REPO_OWNER, repo: GITHUB_REPO_NAME });
                 }
             } catch (apiErr) {
+                if (process.platform === 'darwin' && axios.isAxiosError(apiErr) && apiErr.response?.status === 404) {
+                    // GitHub has no /latest release while this new repository
+                    // contains previews only. There is no stable update yet.
+                    appendDebugLog('github-no-stable-release');
+                    mainWindow?.webContents.send('update-not-available');
+                    return;
+                }
                 appendDebugLog('github-api-failed', String(apiErr));
             }
             await autoUpdater.checkForUpdates();

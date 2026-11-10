@@ -145,6 +145,36 @@ async function run() {
     assert.equal(checks.reinstall.checks.ffmpeg, true);
     assert.equal(checks.reinstall.checks.streamlink, true);
 
+    // A public repository containing only previews has no /latest release.
+    // That must mean "no stable update", not a startup error or a broken feed.
+    await app.evaluate(({ app: nativeApp }) => {
+      const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+      const axios = appRequire('axios').default;
+      const updater = appRequire('electron-updater').autoUpdater;
+      const originalGet = axios.get;
+      const originalCheck = updater.checkForUpdates;
+      globalThis.__emptyReleaseFallbackCalls = 0;
+      axios.get = async (url, ...args) => {
+        if (String(url).endsWith('/releases/latest')) {
+          throw Object.assign(new Error('No stable release'), { isAxiosError: true, response: { status: 404 } });
+        }
+        return originalGet.call(axios, url, ...args);
+      };
+      updater.checkForUpdates = async () => { globalThis.__emptyReleaseFallbackCalls += 1; throw new Error('Unexpected empty feed lookup'); };
+      globalThis.__restoreReleaseCheck = () => { axios.get = originalGet; updater.checkForUpdates = originalCheck; };
+    });
+    await win.evaluate(() => {
+      window.__emptyReleaseEvents = { unavailable: 0, errors: 0 };
+      window.api.onUpdateNotAvailable(() => { window.__emptyReleaseEvents.unavailable += 1; });
+      window.api.onUpdateError(() => { window.__emptyReleaseEvents.errors += 1; });
+    });
+    await win.evaluate(() => window.api.checkUpdate());
+    await win.waitForFunction(() => window.__emptyReleaseEvents.unavailable > 0);
+    checks.emptyRelease = await win.evaluate(() => window.__emptyReleaseEvents);
+    assert.equal(checks.emptyRelease.errors, 0);
+    assert.equal(await app.evaluate(() => globalThis.__emptyReleaseFallbackCalls), 0);
+    await app.evaluate(() => { globalThis.__restoreReleaseCheck(); delete globalThis.__restoreReleaseCheck; });
+
     // Closing a Mac window must preserve the background app and persisted settings.
     await win.evaluate(async () => {
       const config = await window.api.getConfig();
