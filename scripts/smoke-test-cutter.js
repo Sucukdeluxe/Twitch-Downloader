@@ -13,6 +13,17 @@ const {
   cleanupE2eEnvironment
 } = require('./e2e-test-environment');
 
+async function captureCutterScreenshot(app, win, options) {
+  if (process.platform !== 'darwin') return win.screenshot(options);
+  // CDP Page.captureScreenshot can stall after viewport emulation on macOS Electron.
+  // Capture the actual compositor surface through Electron, preserving visual QA.
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const image = await BrowserWindow.getAllWindows()[0].webContents.capturePage();
+    return image.toPNG().toString('base64');
+  });
+  fs.writeFileSync(options.path, Buffer.from(png, 'base64'));
+}
+
 function findFileRecursive(rootDir, fileName) {
   if (!fs.existsSync(rootDir)) return null;
   for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
@@ -268,7 +279,7 @@ async function run() {
         && emptyLayout.contained,
       `Empty cutter layout is stretched or displaced: ${JSON.stringify(emptyLayout)}`
     );
-    await win.screenshot({ path: path.join(cutterArtifactDir, 'empty.png') });
+    await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'empty.png') });
     await win.setViewportSize({ width: 2048, height: 1152 });
     const emptyFullscreenLayout = await win.evaluate(() => {
       const preview = document.getElementById('cutterPreview').getBoundingClientRect();
@@ -293,7 +304,7 @@ async function run() {
         && emptyFullscreenLayout.contained,
       `Fullscreen empty cutter layout is stretched or displaced: ${JSON.stringify(emptyFullscreenLayout)}`
     );
-    await win.screenshot({ path: path.join(cutterArtifactDir, 'empty-fullscreen.png') });
+    await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'empty-fullscreen.png') });
     await win.setViewportSize({ width: 1440, height: 900 });
     const emptyVolumeBefore = await win.evaluate(() => ({
       width: document.getElementById('cutterVolume').getBoundingClientRect().width,
@@ -806,7 +817,7 @@ async function run() {
       `Short moving media did not show a sharp timeline quickly: ${JSON.stringify({ scrubFirstAssetsReadyMs, scrubFirstAssetQuality })}`
     );
     if (process.env.TWITCH_VOD_MANAGER_SCRUB_MEDIA) {
-      await win.screenshot({ path: path.join(cutterArtifactDir, 'real-clip-ready.png') });
+      await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'real-clip-ready.png') });
       await win.evaluate(() => window.updateCutterZoom(Number(document.getElementById('cutterZoom').max)));
       await win.waitForTimeout(500);
       realMaximumZoomState = await win.evaluate(() => {
@@ -822,7 +833,7 @@ async function run() {
         };
       });
       check(realMaximumZoomState.renderedCount >= 150 && realMaximumZoomState.imageNodes === realMaximumZoomState.renderedCount && realMaximumZoomState.firstImageWidth <= 100, `Real maximum zoom still stretches thumbnail frames: ${JSON.stringify(realMaximumZoomState)}`);
-      await win.screenshot({ path: path.join(cutterArtifactDir, 'real-clip-maximum-zoom.png') });
+      await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'real-clip-maximum-zoom.png') });
       await win.evaluate(() => window.updateCutterZoom(1));
     }
     await win.evaluate(async () => {
@@ -1009,7 +1020,7 @@ async function run() {
     ]));
     const mediumFirstAssetsReadyMs = Date.now() - mediumLoadStarted;
     if (process.env.TWITCH_VOD_MANAGER_MEDIUM_MEDIA) {
-      await win.screenshot({ path: path.join(cutterArtifactDir, 'medium-clip-ready.png') });
+      await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'medium-clip-ready.png') });
     }
     check(mediumWaveformReadyMs < 1000, `The full-resolution 58-second waveform was not independently ready within one second: ${mediumWaveformReadyMs}ms`);
     const mediumZoomReuseBefore = await win.evaluate(() => ({
@@ -1022,7 +1033,7 @@ async function run() {
     await win.evaluate(() => window.updateCutterZoom(Number(document.getElementById('cutterZoom').max)));
     await win.waitForTimeout(500);
     if (process.env.TWITCH_VOD_MANAGER_MEDIUM_MEDIA) {
-      await win.screenshot({ path: path.join(cutterArtifactDir, 'medium-clip-maximum-zoom.png') });
+      await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'medium-clip-maximum-zoom.png') });
     }
     const mediumZoomReuseAfter = await win.evaluate(() => ({
       thumbnailSource: document.querySelector('#cutterThumbnailStrip img').src,
@@ -1365,7 +1376,7 @@ async function run() {
     await win.locator('#cutterTrimStartHandle').press('ArrowRight');
     const trimAfterKeyboard = await win.evaluate(() => cutterEditorState.trimStart);
     check(trimAfterKeyboard > trimBeforeKeyboard, `Keyboard did not move the trim boundary: ${trimBeforeKeyboard} -> ${trimAfterKeyboard}`);
-    await win.locator('#cutterTrimStartHandle').press('Control+z');
+    await win.locator('#cutterTrimStartHandle').press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     check(Math.abs(await win.evaluate(() => cutterEditorState.trimStart) - trimBeforeKeyboard) < 0.001, 'Ctrl+Z did not work while a cutter control was focused');
     const cutStartHandle = win.locator('.cutter-cut-overlay').first().locator('.cutter-cut-handle.start');
     await cutStartHandle.focus();
@@ -1376,13 +1387,13 @@ async function run() {
     await win.waitForTimeout(30);
     const repeatedCutKeyboard = await win.evaluate(() => ({ start: cutterEditorState.cuts[0].start, focused: document.activeElement?.classList.contains('start') }));
     check(repeatedCutKeyboard.start > cutStartBeforeKeyboard + 1 / 25 && repeatedCutKeyboard.focused, `Cut handle lost focus after keyboard rerender: ${JSON.stringify(repeatedCutKeyboard)}`);
-    await cutStartHandle.press('Control+z');
+    await cutStartHandle.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     await win.evaluate(() => window.undoCutterEdit());
     const cutInput = win.locator('.cutter-cut-row').first().locator('input').first();
     const stateBeforeTextUndo = await win.evaluate(() => JSON.stringify(cutterEditorState));
     await cutInput.focus();
     await cutInput.fill('00:02:01');
-    await cutInput.press('Control+z');
+    await cutInput.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     const textUndoState = await win.evaluate((before) => ({ stateUnchanged: JSON.stringify(cutterEditorState) === before, activeTag: document.activeElement?.tagName }), stateBeforeTextUndo);
     check(textUndoState.stateUnchanged && textUndoState.activeTag === 'INPUT', `Text-field undo changed the whole editor: ${JSON.stringify(textUndoState)}`);
     const crossedCutTime = await win.evaluate(() => window.findCutterPreviewTime(4.2, 1.9));
@@ -1608,7 +1619,7 @@ async function run() {
       volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
       timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left
     }));
-    await win.screenshot({ path: path.join(cutterArtifactDir, 'volume-expanded.png') });
+    await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'volume-expanded.png') });
     check(expandedVolumeLayout.controlsWidth <= expandedVolumeLayout.clientWidth + 1 && expandedVolumeLayout.documentOverflow <= 1, `Expanded volume control causes overflow: ${JSON.stringify(expandedVolumeLayout)}`);
     check(focusedVolumeAppearance.active && focusedVolumeAppearance.appearance === 'none' && focusedVolumeAppearance.borderTopWidth === 0 && (focusedVolumeAppearance.outlineStyle === 'none' || focusedVolumeAppearance.outlineWidth === 0), `Focused volume control shows a rectangular native outline: ${JSON.stringify(focusedVolumeAppearance)}`);
     check(
@@ -1793,7 +1804,7 @@ async function run() {
       };
     });
     check(assetDensity.zoom >= 8 && assetDensity.devicePixelRatio === 2 && assetDensity.thumbnailCount >= 190 && assetDensity.imageNodes === assetDensity.renderedFrames && assetDensity.renderedFrames >= 150 && assetDensity.renderedFrameIndexes.length === assetDensity.renderedFrames && assetDensity.renderedFrameIndexes[0] === 0 && assetDensity.renderedFrameIndexes.at(-1) === assetDensity.thumbnailCount - 1 && new Set(assetDensity.renderedFrameIndexes).size === assetDensity.renderedFrames && assetDensity.framePixelWidth > 0 && assetDensity.framePixelWidth <= assetDensity.sourceFrameWidth && assetDensity.sourceFrameWidth >= 320 && assetDensity.sourceFrameHeight >= 180 && assetDensity.canvasPixelWidth >= assetDensity.canvasCssWidth * 2 - 1 && assetDensity.waveformNaturalWidth >= assetDensity.targetWidth * 0.95 && assetDensity.waveformVerticalDensity >= 1 && assetDensity.waveformFilter === 'none' && assetDensity.waveformOpacity === 1 && assetDensity.trackEdgeError <= 1 && assetDensity.cutTimeError <= 1.5, `Timeline media is being upscaled, filtered or misaligned: ${JSON.stringify(assetDensity)}`);
-    await win.screenshot({ path: path.join(cutterArtifactDir, 'maximum-zoom.png') });
+    await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'maximum-zoom.png') });
     const maximumZoomGeometryDelta = Math.max(...Object.keys(wheelZoomBefore.geometry).flatMap((key) => {
       const before = wheelZoomBefore.geometry[key];
       const after = assetDensity.geometry[key];
@@ -1929,7 +1940,7 @@ async function run() {
       document.getElementById('cutterTab').scrollTop = 0;
     });
     await win.waitForTimeout(250);
-    await win.screenshot({ path: path.join(cutterArtifactDir, 'editor.png'), fullPage: true });
+    await captureCutterScreenshot(app, win, { path: path.join(cutterArtifactDir, 'editor.png'), fullPage: true });
     await loadCutterCapability(win, silentInputFile);
     await win.waitForFunction(() => {
       const video = document.getElementById('cutterVideo');
