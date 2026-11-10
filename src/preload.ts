@@ -101,6 +101,7 @@ interface FileCapabilityReference {
 
 // Expose protected methods to renderer
 contextBridge.exposeInMainWorld('api', {
+    platform: process.platform,
     // Config
     getConfig: () => ipcRenderer.invoke('get-config'),
     getDownloadPolicyStatus: () => ipcRenderer.invoke('get-download-policy-status'),

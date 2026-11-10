@@ -93,7 +93,7 @@ def main():
         manifest[name] = {
             'id': name,
             'version': SOURCES[f'{name}Version'],
-            'sourceUrl': f'https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/download/tools-1/{archive.name}',
+            'sourceUrl': f'bundled:macos/{ARCH}/{archive.name}',
             'archiveName': archive.name,
             'sha256': digest(archive),
             'executables': ['streamlink', 'python3.13'] if name == 'streamlink' else ['ffmpeg', 'ffprobe'],

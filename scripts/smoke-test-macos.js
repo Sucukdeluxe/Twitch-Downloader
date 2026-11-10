@@ -97,9 +97,13 @@ async function run() {
       const config = await window.api.getConfig();
       await window.api.saveConfig({ ...config, language: 'en', theme: 'light' });
     });
+    const closed = win.waitForEvent('close');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await closed;
+    const reopened = app.waitForEvent('window');
     await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-    win = await app.firstWindow();
+    win = await reopened;
+    await win.waitForLoadState('domcontentloaded');
     const config = await win.evaluate(() => window.api.getConfig());
     assert.equal(config.theme, 'light');
     assert.equal(config.language, 'en');

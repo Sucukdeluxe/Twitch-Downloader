@@ -420,6 +420,7 @@ interface ArchiveStats {
 }
 
 interface ApiBridge {
+    readonly platform?: string;
     getConfig(): Promise<AppConfig>;
     getDownloadPolicyStatus(): Promise<DownloadPolicyStatus>;
     saveConfig(config: Partial<AppConfig>, fileCapability?: string): Promise<AppConfig>;
