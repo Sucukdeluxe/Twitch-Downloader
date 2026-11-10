@@ -5,11 +5,11 @@
 
   A macOS port of the Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
 
-  [![Latest release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-VOD-Manager?display_name=tag&sort=semver)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
-  [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
-  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-VOD-Manager)](LICENSE)
+  [![Mac preview](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader-macos?include_prereleases&display_name=tag)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
+  [![macOS](https://img.shields.io/badge/platform-macOS_12%2B-333333?logo=apple)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
+  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-Downloader-macos)](LICENSE)
 
-  [Download for Windows](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
+  [Download for Mac](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases) · [Original Windows release](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
 </div>
 
 ![Twitch VOD Manager workspace](docs/images/twitch-vod-manager-overview.png)

@@ -4,6 +4,14 @@ Baseline: `Sucukdeluxe/Twitch-Downloader` at `5113089`, version **1.0.9**.
 The complete upstream history is retained. `upstream` points to the Windows repository;
 `origin` points to `Sucukdeluxe/Twitch-Downloader-macos`. No upstream merge has been made.
 
+## Install the preview
+
+Download the DMG from [Releases](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases),
+choose `arm64` for Apple Silicon (M1 and newer) or `x64` for Intel, and drag the app to Applications.
+The preview is ad-hoc signed, without Apple Developer ID signing or notarization.
+If macOS blocks its first launch, follow [Apple's instructions for a trusted app](https://support.apple.com/en-us/102445).
+No system-wide security settings need to be disabled. The preview is not offered as a stable automatic update.
+
 ## Build
 
 macOS 12 or later, Apple Silicon or Intel. Node.js 24 and the Xcode Command Line Tools
