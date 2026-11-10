@@ -4152,6 +4152,14 @@ input[type="checkbox"].vod-select-checkbox {
 .cutter-cut-handle.start { left: 0; }
 .cutter-cut-handle.end { right: 0; }
 
+/* Pointer geometry must remain immediate, including when the reduced-motion
+   fallback supplies a small transition-duration to every element. */
+.timeline-current,
+.timeline-selection,
+.cutter-outside-shade {
+    transition-property: none;
+}
+
 .timeline-current {
     width: 2px;
     position: absolute;

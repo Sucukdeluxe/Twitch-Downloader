@@ -46,6 +46,11 @@ portable tool packaging, process argument safety and macOS test/build support.
 Window closing follows macOS behavior: the app and background downloads stay alive;
 Command-Q runs the existing orderly shutdown and partial-file cleanup.
 
+Two shared cutter corrections came from the Mac acceptance tests: previews normalize
+nonzero Twitch fragment timestamps and use the resulting excerpt duration, and pointer
+geometry has no CSS transitions even with reduced motion enabled. Source videos are
+preserved; the timestamp normalization only affects the temporary preview.
+
 FFmpeg/FFprobe remains at 8.1.2, as on Windows. The Mac bundle uses Streamlink 8.6.3
 for current urllib3 compatibility and upstream security fixes; the Windows manifest is unchanged.
 Every tool archive is bundled and SHA-256 verified before first use. Repair/reset works
@@ -58,6 +63,8 @@ upstream release suite and real packaged-app tests. The macOS-specific test remo
 Homebrew from PATH, provisions the bundled tools offline, downloads a generated HLS
 stream with Streamlink, probes it, trims video through the app's real IPC, repairs a
 corrupted executable, resets/reinstalls tools, and closes/reopens the Mac window.
+It also builds a fragmented MP4 with a two-minute timestamp offset and verifies the
+three-second editor timeline, playback start and a real cut export.
 The existing Windows CI remains enabled for regression coverage.
 CPU-bound thumbnail/waveform checks keep the original local time budgets; hosted Mac
 runners get a threefold budget and still report measured times. Pointer accuracy and

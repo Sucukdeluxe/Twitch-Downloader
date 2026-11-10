@@ -866,6 +866,15 @@ async function run() {
         video.currentTime = video.duration * 0.86;
       });
       window.__cutterScrubSyncSamples = [];
+      window.__cutterDeliveredCursorErrors = [];
+      // Check the immediate geometry in the app's pointer dispatch. A later
+      // CDP read can hide a CSS transition that delays movement by one frame.
+      window.__cutterRecordDeliveredPointer = (event) => {
+        if (cutterDragState?.kind !== 'playhead') return;
+        const cursorX = document.getElementById('timelineCurrent').getBoundingClientRect().left;
+        window.__cutterDeliveredCursorErrors.push(Math.abs(cursorX - event.clientX));
+      };
+      document.addEventListener('pointermove', window.__cutterRecordDeliveredPointer);
       window.__cutterScrubSyncRecording = true;
       const parseTimecode = (value, fps) => {
         const fields = value.split(':').map(Number);
@@ -914,8 +923,13 @@ async function run() {
         firstMediaTime: samples[0]?.mediaTime ?? null,
         lastMediaTime: samples.at(-1)?.mediaTime ?? null,
         finalUiTime: samples.at(-1)?.uiTime ?? null,
-        expectedEnd: document.getElementById('cutterVideo').duration * 0.2
+        expectedEnd: document.getElementById('cutterVideo').duration * 0.2,
+        deliveredPointerSamples: window.__cutterDeliveredCursorErrors.length,
+        maximumDeliveredCursorError: Math.max(0, ...window.__cutterDeliveredCursorErrors)
       };
+      document.removeEventListener('pointermove', window.__cutterRecordDeliveredPointer);
+      delete window.__cutterRecordDeliveredPointer;
+      delete window.__cutterDeliveredCursorErrors;
       delete window.__cutterScrubSyncSamples;
       delete window.__cutterScrubSyncRecording;
       return result;
@@ -933,8 +947,8 @@ async function run() {
       `Backward scrubbing is not synchronized to presented frames: ${JSON.stringify(scrubSyncProbe)}`
     );
     check(
-      scrubSyncProbe.maximumCursorError !== null
-        && scrubSyncProbe.maximumCursorError <= 3
+      scrubSyncProbe.deliveredPointerSamples >= 60
+        && scrubSyncProbe.maximumDeliveredCursorError <= 3
         && scrubSyncProbe.finalCursorError <= 2,
       `Scrub cursor does not follow the pointer immediately: ${JSON.stringify(scrubSyncProbe)}`
     );

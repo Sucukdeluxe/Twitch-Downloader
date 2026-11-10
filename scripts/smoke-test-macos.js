@@ -9,6 +9,30 @@ const { _electron: electron } = require('playwright');
 const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment } = require('./e2e-test-environment');
 const execute = promisify(execFile);
 
+function offsetFragmentTimestamps(file) {
+  // The fixture has one video track with a 1000 Hz clock. Reproduce a Twitch
+  // excerpt that keeps its original VOD timestamps instead of starting at zero.
+  const data = fs.readFileSync(file);
+  let fragments = 0;
+  const walk = (start, end) => {
+    for (let at = start; at + 8 <= end;) {
+      const size = data.readUInt32BE(at);
+      const type = data.toString('ascii', at + 4, at + 8);
+      assert(size >= 8 && at + size <= end);
+      if (type === 'moof' || type === 'traf') walk(at + 8, at + size);
+      if (type === 'tfdt') {
+        if (data[at + 8] === 1) data.writeBigUInt64BE(data.readBigUInt64BE(at + 12) + 120000n, at + 12);
+        else data.writeUInt32BE(data.readUInt32BE(at + 12) + 120000, at + 12);
+        fragments += 1;
+      }
+      at += size;
+    }
+  };
+  walk(0, data.length);
+  assert(fragments > 0);
+  fs.writeFileSync(file, data);
+}
+
 async function run() {
   assert.equal(process.platform, 'darwin');
   const environment = createE2eEnvironment('macos', { language: 'en' });
@@ -77,6 +101,35 @@ async function run() {
     });
     assert.equal(checks.cut.success, true);
     assert(fs.statSync(path.join(environment.mediaDir, checks.cut.outputName)).size > 0);
+
+    const fragment = path.join(environment.mediaDir, 'Twitch excerpt.mp4');
+    const fragmentExport = path.join(environment.mediaDir, 'Excerpt edit.mp4');
+    await execute(ffmpeg, ['-v', 'error', '-i', media, '-an', '-c:v', 'copy', '-video_track_timescale', '1000', '-movflags', '+empty_moov+frag_keyframe+default_base_moof', '-y', fragment], { env: cleanEnv });
+    offsetFragmentTimestamps(fragment);
+    await app.evaluate(({ dialog }, files) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [files.fragment] });
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: files.fragmentExport });
+    }, { fragment, fragmentExport });
+    checks.fragment = await win.evaluate(async () => {
+      const input = await window.api.selectVideoFile();
+      const source = await window.api.getVideoInfo(input.token);
+      window.showTab('cutter');
+      await window.loadCutterFromPath(input);
+      return { sourceDuration: source.duration, editorDuration: cutterEditorState.duration, token: input.token };
+    });
+    assert(checks.fragment.sourceDuration > 120, 'Fixture must retain its VOD timestamps');
+    assert(checks.fragment.editorDuration >= 2.9 && checks.fragment.editorDuration < 3.2, 'Cutter must use the excerpt duration');
+    await win.waitForFunction(() => document.getElementById('cutterVideo').readyState >= 2);
+    checks.fragment.previewStart = await win.evaluate(() => document.getElementById('cutterVideo').currentTime);
+    assert(checks.fragment.previewStart < 0.2, 'Cutter preview must start at zero');
+    const fragmentEdit = await win.evaluate((inputCapability) => window.api.exportVideoEdit({
+      inputCapability, trimStart: 0.5, trimEnd: 2, cuts: [], profile: 'balanced', encoder: 'software', audioStreamIndex: 0,
+    }), checks.fragment.token);
+    assert.equal(fragmentEdit.success, true);
+    const exportedProbe = await execute(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', fragmentExport], { env: cleanEnv });
+    checks.fragment.exportDuration = Number(exportedProbe.stdout.trim());
+    assert(Math.abs(checks.fragment.exportDuration - 1.5) < 0.12);
+    delete checks.fragment.token;
 
     // Verify repair replaces corrupted executables using only the offline bundle.
     fs.appendFileSync(ffmpeg, 'corruption');

@@ -2961,6 +2961,7 @@ async function getVideoInfo(filePath: string, trackedProcesses?: Set<ChildProces
 
                 const videoCodec = String(videoStream.codec_name || '').toLowerCase();
                 const audioCodec = audioStream?.codec ?? null;
+                const startsAfterZero = Number(info.format?.start_time || 0) > 1 / fps;
                 const variableFrameRate = averageFps > 0 && realFps > 0 && Math.abs(averageFps - realFps) / Math.max(averageFps, realFps) > 0.005;
                 const rotationData = Array.isArray(videoStream.side_data_list)
                     ? videoStream.side_data_list.find((entry: any) => Number.isFinite(Number(entry?.rotation)))?.rotation
@@ -2973,7 +2974,7 @@ async function getVideoInfo(filePath: string, trackedProcesses?: Set<ChildProces
                     hasAudio: Boolean(audioStream),
                     videoCodec,
                     audioCodec,
-                    previewCompatible: isVideoEditorPreviewCompatible(filePath, videoCodec, audioCodec),
+                    previewCompatible: !startsAfterZero && isVideoEditorPreviewCompatible(filePath, videoCodec, audioCodec),
                     variableFrameRate,
                     rotation: normalizeCutterRotation(rotationData ?? videoStream.tags?.rotate),
                     audioStreams,
@@ -3124,7 +3125,7 @@ function removeCutterPreviewDirectory(directory: string | null): void {
     try { fs.rmSync(directory, { recursive: true, force: true }); } catch { }
 }
 
-function createVideoEditorPreview(filePath: string, info: VideoInfo, requestGeneration: number): Promise<{ sourceUrl: string; directory: string } | null> {
+function createVideoEditorPreview(filePath: string, info: VideoInfo, requestGeneration: number): Promise<{ sourceUrl: string; directory: string; duration: number } | null> {
     const directory = fs.mkdtempSync(path.join(app.getPath('temp'), `tvm-editor-preview-${process.pid}-`));
     const previewFile = path.join(directory, 'preview.mp4');
     const copyVideo = ['h264', 'av1', 'vp9'].includes(info.videoCodec);
@@ -3139,12 +3140,17 @@ function createVideoEditorPreview(filePath: string, info: VideoInfo, requestGene
         args.push('-an');
     }
     args.push('-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', '-y', previewFile);
-    return runEditorPreviewProcess(args, requestGeneration).then((success) => {
+    return runEditorPreviewProcess(args, requestGeneration).then(async (success) => {
         if (!success || !fs.existsSync(previewFile) || fs.statSync(previewFile).size <= 256) {
             removeCutterPreviewDirectory(directory);
             return null;
         }
-        return { sourceUrl: pathToFileURL(previewFile).href, directory };
+        const previewInfo = await getVideoInfo(previewFile, currentCutterProbeProcesses);
+        if (!previewInfo || requestGeneration !== cutterMediaRequestGeneration || appShutdownStarted) {
+            removeCutterPreviewDirectory(directory);
+            return null;
+        }
+        return { sourceUrl: pathToFileURL(previewFile).href, directory, duration: previewInfo.duration };
     });
 }
 
@@ -3166,7 +3172,7 @@ async function prepareVideoEditorMedia(filePath: string): Promise<VideoEditorMed
     const identityAfter = getCutterInputIdentity(filePath);
     if (!info || info.variableFrameRate || requestGeneration !== cutterMediaRequestGeneration || !cutterInputIdentitiesMatch(identityBefore, identityAfter) || appShutdownStarted) return null;
     const preview = info.previewCompatible
-        ? { sourceUrl: pathToFileURL(filePath).href, directory: null }
+        ? { sourceUrl: pathToFileURL(filePath).href, directory: null, duration: info.duration }
         : await createVideoEditorPreview(filePath, info, requestGeneration);
     if (!preview || requestGeneration !== cutterMediaRequestGeneration || !cutterInputIdentitiesMatch(identityBefore, getCutterInputIdentity(filePath)) || appShutdownStarted) {
         removeCutterPreviewDirectory(preview?.directory || null);
@@ -3176,10 +3182,13 @@ async function prepareVideoEditorMedia(filePath: string): Promise<VideoEditorMed
     cancelCutterWaveformPreparation();
     removeCutterPreviewDirectory(cutterMediaJob?.previewDirectory || null);
     const jobId = ++cutterMediaGeneration;
-    cutterMediaJob = { jobId, path: identityAfter!.path, identity: identityAfter!, info, waveform: null, waveformPromise: null, previewDirectory: preview.directory };
+    // Twitch fMP4 excerpts can retain a VOD's original presentation timestamps.
+    // Use the zero-based preview duration for editing without changing the source.
+    const editorInfo = { ...info, duration: preview.duration };
+    cutterMediaJob = { jobId, path: identityAfter!.path, identity: identityAfter!, info: editorInfo, waveform: null, waveformPromise: null, previewDirectory: preview.directory };
     return {
         sourceUrl: preview.sourceUrl,
-        info,
+        info: editorInfo,
         jobId,
         thumbnails: [],
         waveform: null,
