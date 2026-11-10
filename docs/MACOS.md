@@ -59,6 +59,9 @@ Homebrew from PATH, provisions the bundled tools offline, downloads a generated 
 stream with Streamlink, probes it, trims video through the app's real IPC, repairs a
 corrupted executable, resets/reinstalls tools, and closes/reopens the Mac window.
 The existing Windows CI remains enabled for regression coverage.
+CPU-bound thumbnail/waveform checks keep the original local time budgets; hosted Mac
+runners get a threefold budget and still report measured times. Pointer accuracy and
+frame synchronization assertions remain unchanged, with input delivery awaited explicitly.
 
 A preview is not a declaration that every Twitch account-specific scenario is accepted.
 Subscriber-only Twitch access and long-running live recording require an eligible
