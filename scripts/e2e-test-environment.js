@@ -246,6 +246,32 @@ async function installOfflineFixtures(app) {
   });
 }
 
+// A Playwright Page close event and native BrowserWindow teardown need not
+// arrive together. Wait for both before simulating Dock activation, and accept
+// a window macOS already reopened instead of waiting for a second window event.
+async function closeElectronWindow(app, win) {
+  const pageClosed = win.waitForEvent('close');
+  await app.evaluate(({ BrowserWindow }) => new Promise((resolve, reject) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) { resolve(); return; }
+    const timeout = setTimeout(() => reject(new Error('Native window did not close')), 10000);
+    window.once('closed', () => { clearTimeout(timeout); resolve(); });
+    window.close();
+  }));
+  await pageClosed;
+}
+
+async function activateElectronWindow(app) {
+  let win = app.windows().find((window) => !window.isClosed());
+  if (!win) {
+    const opened = app.waitForEvent('window');
+    await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
+    win = await opened;
+  }
+  await win.waitForLoadState('domcontentloaded');
+  return win;
+}
+
 function cleanupE2eEnvironment(environment) {
   if (!environment?.rootDir) {
     return;
@@ -262,5 +288,7 @@ module.exports = {
   getElectronLaunchOptions,
   verifyE2eIsolation,
   installOfflineFixtures,
-  cleanupE2eEnvironment
+  cleanupE2eEnvironment,
+  closeElectronWindow,
+  activateElectronWindow
 };

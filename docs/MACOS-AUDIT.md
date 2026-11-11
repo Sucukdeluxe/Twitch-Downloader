@@ -90,3 +90,9 @@ check: a snapshot 70 ms after sending hover could precede delivery of that event
 The test now observes real intermediate animation frames and the fully opened/
 closed states. Geometry assertions and the animation itself are unchanged;
 reduced-motion emulation remains local to the test page.
+
+Window recovery tests wait for both Playwright's page-close event and the native
+BrowserWindow `closed` event before activation. They also reuse a window already
+reopened by macOS. This avoids treating the ordering of Cocoa and test-protocol
+events as an application failure; the save-failure assertion still requires the
+window to remain open until saving succeeds.

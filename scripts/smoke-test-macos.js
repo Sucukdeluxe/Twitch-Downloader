@@ -6,7 +6,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron } = require('playwright');
-const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment } = require('./e2e-test-environment');
+const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment, closeElectronWindow, activateElectronWindow } = require('./e2e-test-environment');
 const execute = promisify(execFile);
 
 function offsetFragmentTimestamps(file) {
@@ -193,13 +193,8 @@ async function run() {
       const config = await window.api.getConfig();
       await window.api.saveConfig({ ...config, language: 'en', theme: 'light' });
     });
-    const closed = win.waitForEvent('close');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-    await closed;
-    const reopened = app.waitForEvent('window');
-    await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-    win = await reopened;
-    await win.waitForLoadState('domcontentloaded');
+    await closeElectronWindow(app, win);
+    win = await activateElectronWindow(app);
     const config = await win.evaluate(() => window.api.getConfig());
     assert.equal(config.theme, 'light');
     assert.equal(config.language, 'en');

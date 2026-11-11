@@ -7,7 +7,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron } = require('playwright');
-const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment } = require('./e2e-test-environment');
+const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment, closeElectronWindow, activateElectronWindow } = require('./e2e-test-environment');
 const execute = promisify(execFile);
 
 async function run() {
@@ -125,13 +125,8 @@ async function run() {
         cutterExportEncoder = 'h264_videotoolbox';
         commitCutterChange(before);
       });
-      const closed = win.waitForEvent('close');
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-      await closed;
-      const reopened = app.waitForEvent('window');
-      await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-      win = await reopened;
-      await win.waitForLoadState('domcontentloaded');
+      await closeElectronWindow(app, win);
+      win = await activateElectronWindow(app);
       const recovered = await win.evaluate(async () => {
         const input = await window.api.selectVideoFile();
         return window.api.getCutterProjectRecovery(input.token);
@@ -160,13 +155,8 @@ async function run() {
         await win.waitForFunction(() => document.body.textContent.includes('Projekt konnte nicht gespeichert werden'));
         assert.equal(win.isClosed(), false);
         fs.rmdirSync(blockedTemporaryFile);
-        const closed = win.waitForEvent('close');
-        await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-        await closed;
-        const reopened = app.waitForEvent('window');
-        await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-        win = await reopened;
-        await win.waitForLoadState('domcontentloaded');
+        await closeElectronWindow(app, win);
+        win = await activateElectronWindow(app);
         const recovered = await win.evaluate(async () => {
           const input = await window.api.selectVideoFile();
           return window.api.getCutterProjectRecovery(input.token);
@@ -281,13 +271,8 @@ async function run() {
         QueueRunLifecycle.prototype.schedule = function () { globalThis.__unexpectedSchedules += 1; return false; };
         globalThis.__restoreSchedule = () => { QueueRunLifecycle.prototype.schedule = original; };
       });
-      const closed = win.waitForEvent('close');
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-      await closed;
-      const reopened = app.waitForEvent('window');
-      await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-      win = await reopened;
-      await win.waitForLoadState('domcontentloaded');
+      await closeElectronWindow(app, win);
+      win = await activateElectronWindow(app);
       await new Promise((resolve) => setTimeout(resolve, 5600));
       const schedules = await app.evaluate(() => globalThis.__unexpectedSchedules);
       await app.evaluate(() => globalThis.__restoreSchedule());
