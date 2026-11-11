@@ -118,15 +118,19 @@ The VOD trim workspace uses the Streamrecorder player to play and seek through t
 
 To remove multiple sections, choose **Exclude ranges** in **Trim VOD**, mark each section with I/O and select **Exclude selection**. Edit or restore exclusions individually in the list. Remaining content is joined in order and split into the selected number of minutes per part; only the final part can be shorter. The file preview shows each part's duration and original VOD ranges. Completely excluded original parts retain a gap in the numbering. Part length and exclusions are saved with the queue item. Downloads and joins preserve the source codecs; boundaries may align with HLS segments or video keyframes. Completed source ranges are retained for retry after interruption and removed when the job completes or is removed from the queue.
 
-Project memory, test sources, fixtures and test artifacts are kept locally and are excluded from the repository. Test commands run the local checks when available and report their absence in a fresh checkout. Build, lint and security scanning remain available without local tests. Release builds require the complete local verification suite; missing or skipped checks block packaging.
+Release verification sources are included in the repository. The public suite reconstructs the previously private acceptance checks against the current application; it does not claim to recover the original private test files. Shared domain tests, Chromium and WebKit renderer scenarios, native Electron workflows, media fixtures, package checks and an isolated NSIS installation test cover the release path. Test data is generated in temporary directories; project memory and test artifacts remain excluded.
 
 ### Verify and build
 
 ```powershell
+npm ci
+npx playwright install chromium webkit
 npm run release:build
 ```
 
-The Windows installer and updater metadata are written to `release/`. Verification receipts in `release/verification/` bind the tests to the source and runtime files. Packaging rejects stale receipts, checks the exact packaged file list and runs the isolated native package test. Only current renderer assets are included. CI can build an unverified candidate with `npm run dist:ci`; that candidate is not a release approval.
+Run the release gate on Windows with FFmpeg and FFprobe available on `PATH`. The verified release workflow provisions those tools and both browsers. Missing prerequisites, failed checks and skipped unit tests block packaging. Node unit tests run before dependencies are rebuilt for Electron.
+
+The Windows installer and updater metadata are written to `release/`. Verification receipts in `release/verification/` bind the tests to the source, test code and runtime files. Packaging rejects stale or incomplete receipts, checks the exact packaged file list and runs the isolated native package, application workflow and NSIS install/reinstall/uninstall checks. The installer check is restricted to a Windows Actions runner with administrator access and its own temporary installation directory. Only current renderer assets are included. CI can build an unverified candidate with `npm run dist:ci`; that candidate is not a release approval. Stable `v*` tags publish only after the complete native gate and artifact-integrity checks succeed.
 
 ## Project structure
 

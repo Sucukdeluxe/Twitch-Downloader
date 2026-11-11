@@ -10,6 +10,7 @@ const output = resolve(root, 'release/verification');
 const execute = promisify(execFile);
 const checks = [
     ['release-receipt', ['--test', 'scripts/release-tools.test.mjs']],
+    ['release-harness', ['--test', 'scripts/release-test-harness.test.cjs']],
     ['security', ['scripts/security-check.js']],
     ['release-contract', ['scripts/smoke-test-public-release-config.js']],
     ['ci-contract', ['scripts/smoke-test-ci-contract.js']],
@@ -75,6 +76,7 @@ await run('lint', ['node_modules/eslint/bin/eslint.js', '.']);
 await run('unit', ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=2', '--reporter=json', '--outputFile=' + resolve(output, 'unit.json')]);
 const units = JSON.parse(await readFile(resolve(output, 'unit.json'), 'utf8'));
 if (!units.success || !(units.numTotalTests > 0) || units.numFailedTests > 0 || units.numPendingTests > 0) throw new Error('Unit test suite is incomplete');
+await run('electron-native-dependencies', ['node_modules/electron-builder/cli.js', 'install-app-deps']);
 for (const [name, args] of checks) await run(name, args);
 if (fingerprint !== await releaseFingerprint(root)) throw new Error('Sources changed during verification');
 const commit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: root, windowsHide: true })).stdout.trim();

@@ -28,13 +28,28 @@ export async function runtimeFiles(root) {
 export async function releaseFingerprint(root) {
     const hash = createHash('sha256');
     hash.update(await sourceFingerprint(root));
-    const files = [...await runtimeFiles(root), 'build/installer.nsh', 'build/close-installed-app.ps1', 'scripts/package-release.mjs', 'scripts/release-gate.mjs', 'scripts/release-tools.mjs', 'scripts/public-release-files.json'];
-    for (const file of files) { hash.update(file); hash.update(await readFile(resolve(root, file))); }
+    const verificationInputs = [];
+    async function visit(directory) {
+        for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
+            const file = `${directory}/${entry.name}`;
+            if (entry.isSymbolicLink()) throw new Error('Unexpected verification symlink');
+            if (entry.isDirectory()) await visit(file);
+            else if ((directory.startsWith('scripts') && /\.(?:cjs|mjs|js)$/.test(file)) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)) verificationInputs.push(file);
+        }
+    }
+    await visit('scripts');
+    await visit('src');
+    const files = new Set([...await runtimeFiles(root), ...verificationInputs, 'build/installer.nsh', 'build/close-installed-app.ps1', 'scripts/public-release-files.json']);
+    for (const file of [...files].sort()) { hash.update(file); hash.update(await readFile(resolve(root, file))); }
     return hash.digest('hex');
 }
 
 export async function verifyReceipt(root) {
     const receipt = JSON.parse(await readFile(resolve(root, 'release/verification/receipt.json'), 'utf8'));
-    if (receipt.fingerprint !== await releaseFingerprint(root) || !receipt.success || !(receipt.tests > 0)) throw new Error('Release checks are missing or outdated. Run npm run release:verify.');
+    const checks = receipt.checks;
+    const complete = Array.isArray(checks) && checks.length > 0
+        && checks.every(check => check && typeof check.name === 'string' && check.name.split('-').every(part => /^[a-z0-9]+$/i.test(part)) && check.success === true)
+        && new Set(checks.map(check => check.name)).size === checks.length;
+    if (receipt.fingerprint !== await releaseFingerprint(root) || receipt.success !== true || !(receipt.tests > 0) || !complete) throw new Error('Release checks are missing or outdated. Run npm run release:verify.');
     return receipt;
 }
