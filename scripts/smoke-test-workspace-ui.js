@@ -245,7 +245,10 @@ async function run() {
         apiType: typeof window.api.selectDroppedVideo
       };
     });
-    await win.waitForTimeout(250);
+    // Media preparation and the editor render complete asynchronously. A loaded
+    // filename alone does not mean the new editor's controls are ready yet.
+    await win.waitForFunction(() => document.getElementById('cutterInfo')?.classList.contains('shown')
+      && document.getElementById('btnCut')?.disabled === false, null, { timeout: 10000 });
     const cutterDropPaths = await app.evaluate(() => ({ ...globalThis.__workspaceCutterDropPaths }));
     const cutterDropUi = await win.evaluate(() => ({
       filePath: document.getElementById('cutterFilePath')?.value || '',

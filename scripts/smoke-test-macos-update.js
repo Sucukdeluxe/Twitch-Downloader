@@ -96,6 +96,7 @@ async function run() {
   const executable = path.join(target, 'Contents', 'MacOS', 'Twitch VOD Manager');
   const state = path.join(environment.userDataDir, 'mac-updates');
   const helperPrefix = path.join(fs.realpathSync(environment.userDataDir), 'mac-updates', 'installer-');
+  const commandLog = path.join(directory, 'installer-commands.jsonl');
   const checks = { previous, version, arch: process.arch, source: originalApp ? 'original released application with isolated test signing key' : 'synthetic older-version fixture with current updater', destination: 'unmodified packaged release' };
   let app;
   let phase = 'preparing isolated bundle';
@@ -170,6 +171,25 @@ async function run() {
       const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
       const axios = appRequire('axios').default;
       const fs = process.getBuiltinModule('fs');
+      // Observe the original installer's commands without altering their
+      // arguments, output or results. Its cleanup can otherwise hide an earlier
+      // extraction/validation error behind an ENOTEMPTY failure.
+      const childProcess = process.getBuiltinModule('child_process');
+      const originalSpawn = childProcess.ChildProcess.prototype.spawn;
+      childProcess.ChildProcess.prototype.spawn = function (options) {
+        const result = originalSpawn.call(this, options);
+        if (['/usr/bin/ditto', '/usr/bin/codesign', '/usr/bin/unzip', '/usr/bin/plutil', '/usr/bin/lipo'].includes(options.file)) {
+          const startedAt = Date.now();
+          let stderr = '';
+          this.stderr?.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });
+          this.once('close', (code, signal) => {
+            try { fs.appendFileSync(fixture.commandLog, JSON.stringify({
+              file: options.file, args: options.args, code, signal, milliseconds: Date.now() - startedAt, stderr,
+            }) + '\n'); } catch { /* Observation must never change installer behavior. */ }
+          });
+        }
+        return result;
+      };
       const Database = appRequire('better-sqlite3');
       const database = new Database(fixture.database);
       database.exec('CREATE TABLE mac_update_acceptance (value TEXT NOT NULL)');
@@ -183,7 +203,7 @@ async function run() {
         if (url === fixture.url) return { data: fs.createReadStream(fixture.zip), status: 200 };
         return original.call(axios, url, ...args);
       };
-    }, { database: path.join(environment.appDataDir, 'app.db'), sentinel, feed, envelope, url: artifacts[process.arch].url, zip });
+    }, { database: path.join(environment.appDataDir, 'app.db'), sentinel, feed, envelope, url: artifacts[process.arch].url, zip, commandLog });
     phase = 'checking signed manifest';
     console.log('[macos-update] Checking signed manifest through renderer IPC');
     checks.checkResponse = await win.evaluate(() => window.api.checkUpdate());
@@ -260,6 +280,7 @@ async function run() {
     if (fs.existsSync(state)) diagnostics.markers = Object.fromEntries(fs.readdirSync(state).filter((name) => /^(ready|armed|result|health)-.*\.json$/.test(name)).map((name) => [name, readIfExists(path.join(state, name))]));
     const debugLog = path.join(environment.appDataDir, 'debug.log');
     if (fs.existsSync(debugLog)) diagnostics.updateLog = fs.readFileSync(debugLog, 'utf8').split('\n').filter(line => /mac-update|update-install|shutdown|auto-updater/.test(line)).slice(-40);
+    if (fs.existsSync(commandLog)) diagnostics.installerCommands = fs.readFileSync(commandLog, 'utf8').trim().split('\n').map(line => JSON.parse(line));
     console.error(JSON.stringify(diagnostics, null, 2));
     throw error;
   } finally {

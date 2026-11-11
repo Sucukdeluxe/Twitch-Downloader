@@ -257,9 +257,15 @@ export class MacUpdater extends EventEmitter {
             child.unref();
             await this.waitForMarker('ready', 100000);
         } catch (error) {
-            await this.cancelInstall();
+            try { await this.cancelInstall(); }
+            catch (cleanupError) { this.options.log('mac-update-cancel-failed', String(cleanupError)); }
             throw error;
-        } finally { await fs.promises.rm(extraction, { recursive: true, force: true }); }
+        } finally {
+            // Cleanup must not hide the preparation error or invalidate a ready
+            // helper. macOS can temporarily report ENOTEMPTY while removing a tree.
+            try { await fs.promises.rm(extraction, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+            catch (cleanupError) { this.options.log('mac-update-extraction-cleanup-failed', String(cleanupError)); }
+        }
     }
 
     private async waitForMarker(kind: 'ready' | 'armed', timeout: number): Promise<void> {

@@ -75,7 +75,7 @@ describe('macOS update system compatibility', () => {
         expect(() => assertMacOSVersionSupported(minimum, '13.0')).toThrow('Invalid macOS system version');
     });
 
-    it.runIf(process.platform === 'darwin')('rejects an incompatible authenticated archive before staging or launching its helper', async () => {
+    it.runIf(process.platform === 'darwin').each([false, true])('rejects an incompatible authenticated archive before staging (cleanup failure: %s)', async cleanupFails => {
         const bundle = path.join(directory, 'Twitch VOD Manager.app');
         fs.mkdirSync(path.join(bundle, 'Contents'), { recursive: true });
         fs.writeFileSync(path.join(bundle, 'Contents', 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
@@ -91,11 +91,24 @@ describe('macOS update system compatibility', () => {
         saveCached(release('1.2.3', bytes), bytes);
         fs.writeFileSync(path.join(directory, 'Installed.app', 'unchanged'), 'installed application');
         const state = updater();
+        if (cleanupFails) {
+            const remove = fs.promises.rm.bind(fs.promises);
+            vi.spyOn(fs.promises, 'rm').mockImplementation(async (file, options) => {
+                if (String(file).startsWith(path.join(fs.realpathSync(directory), '.twitch-vod-extract-'))) {
+                    throw Object.assign(new Error('directory not empty'), { code: 'ENOTEMPTY' });
+                }
+                return remove(file, options);
+            });
+        }
 
         await expect(state.instance.prepareInstall()).rejects.toThrow('Update requires macOS 999.0');
 
         expect(fs.readFileSync(path.join(directory, 'Installed.app', 'unchanged'), 'utf8')).toBe('installed application');
-        expect(fs.readdirSync(directory).filter(name => name.startsWith('.twitch-vod-extract-') || name.startsWith('.Twitch-VOD-Manager-update-'))).toEqual([]);
+        if (cleanupFails) {
+            expect(state.log).toHaveBeenCalledWith('mac-update-extraction-cleanup-failed', 'Error: directory not empty');
+        } else {
+            expect(fs.readdirSync(directory).filter(name => name.startsWith('.twitch-vod-extract-') || name.startsWith('.Twitch-VOD-Manager-update-'))).toEqual([]);
+        }
         expect(fs.readdirSync(path.join(directory, 'cache')).filter(name => name.startsWith('plan-') || name.startsWith('installer-'))).toEqual([]);
     });
 });
