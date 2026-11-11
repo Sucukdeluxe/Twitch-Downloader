@@ -46,6 +46,29 @@ Native Cmd-Z, Shift-Cmd-Z and the Edit menu additionally require a real macOS
 keyboard/menu check: synthetic renderer key events do not exercise Cocoa's
 menu accelerator routing.
 
+## Keychain isolation
+
+An isolated `userData` directory does not create a separate macOS Keychain
+identity. All shared E2E launch paths now select an authenticated AES-GCM test
+provider before the application reads any secrets. Its random per-test key
+exists only in the test parent and child processes, not in files. Both data
+directories must resolve inside the marked temporary test root; invalid or
+partial test configuration fails without falling back to the native Keychain.
+Native encryption methods are guarded during these tests so an accidental
+bypass throws instead of presenting a password dialog.
+
+Real database writes, failed-save recovery, ciphertext authentication and
+restart behavior remain exercised. Native-provider denial is tested through
+the production adapter, separately from the test provider. The installed app
+continues to use Electron safeStorage; no plaintext fallback or system-wide
+Keychain permission change is introduced. System Reduce Motion is not changed.
+
+The development command reuses the same Electron executable while rebuilding
+JavaScript. Its current executable is linker/ad-hoc signed and unchanged across
+code-only development builds. Preview app bundles are also ad-hoc signed, so
+their identities can change between releases. A consistent Developer ID is
+still required to make production Keychain identity stable across releases.
+
 This does not establish absence of every possible defect. Developer ID signing,
 notarization, a signed update installation and account-specific subscriber/live
 workflows remain separate acceptance checks.

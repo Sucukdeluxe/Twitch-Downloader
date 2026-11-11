@@ -31,6 +31,17 @@ async function run() {
     app = await electron.launch(options);
     let win = await app.firstWindow();
     await verifyE2eIsolation(app, win, environment);
+    await check('encrypted-test-secret-without-keychain-access', async () => {
+      await win.evaluate(() => window.api.setClientSecret('synthetic-audit-secret'));
+      const encrypted = await app.evaluate(({ app: nativeApp }) => {
+        const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+        const row = appRequire('./dist/main.js').getAppDb().get("SELECT encrypted_value FROM app_secrets WHERE key='twitch_client_secret'");
+        return row?.encrypted_value.startsWith('e2e-v1:') && !row.encrypted_value.includes('synthetic-audit-secret');
+      });
+      assert.equal(encrypted, true);
+      await win.evaluate(() => window.api.clearClientSecret());
+      return true;
+    });
     const initial = await win.evaluate(() => window.api.runPreflight(true));
     assert(initial.checks.ffmpeg && initial.checks.streamlink);
     const toolRoot = path.join(environment.appDataDir, 'tools');
@@ -56,7 +67,8 @@ async function run() {
 
     const media = path.join(environment.mediaDir, 'clip.mp4');
     const playlist = path.join(environment.mediaDir, 'index.m3u8');
-    await execute(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=25', '-t', '3', '-c:v', 'libx264', '-y', media]);
+    await execute(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25', '-t', '3', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-y', media]);
+    assert(fs.statSync(media).size > 256 * 1024, 'Fixture must exceed the VOD minimum file size');
     await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, media);
     await win.evaluate(async () => {
       const input = await window.api.selectVideoFile();
@@ -154,14 +166,11 @@ async function run() {
       fs.createReadStream(file).pipe(response);
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    await app.evaluate(({ app: nativeApp, safeStorage }, port) => {
+    await app.evaluate(({ app: nativeApp }, port) => {
       const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
       const axios = appRequire('axios').default;
       const childProcess = appRequire('node:child_process');
-      const original = { get: axios.get, post: axios.post, spawn: childProcess.spawn, encrypt: safeStorage.encryptString, available: safeStorage.isEncryptionAvailable };
-      // Credentials are dummy test data; avoid touching the real login keychain.
-      safeStorage.isEncryptionAvailable = () => true;
-      safeStorage.encryptString = (text) => Buffer.from(text);
+      const original = { get: axios.get, post: axios.post, spawn: childProcess.spawn };
       axios.post = async (url, ...args) => String(url).includes('/oauth2/token')
         ? { data: { access_token: 'audit-fixture-token' } } : original.post.call(axios, url, ...args);
       axios.get = async (url, ...args) => String(url).includes('/helix/clips')
@@ -176,7 +185,6 @@ async function run() {
       };
       globalThis.__restoreAudit = () => {
         axios.get = original.get; axios.post = original.post; childProcess.spawn = original.spawn;
-        safeStorage.encryptString = original.encrypt; safeStorage.isEncryptionAvailable = original.available;
       };
     }, server.address().port);
     await win.evaluate(async () => {
@@ -231,6 +239,9 @@ async function run() {
       await win.evaluate((id) => window.api.removeFromQueue(id), item.id);
       return true;
     });
+    await win.evaluate(async () => {
+      for (const item of await window.api.getQueue()) await window.api.removeFromQueue(item.id);
+    });
     await win.evaluate(() => window.api.clearClientSecret());
     await app.evaluate(() => globalThis.__restoreAudit());
 
@@ -274,7 +285,7 @@ async function run() {
     await app.close(); app = null;
     app = await electron.launch(options);
     win = await app.firstWindow();
-    await check('keychain-denial-preserves-config-and-queue', async () => {
+    await check('secret-read-failure-preserves-config-and-queue', async () => {
       const config = await win.evaluate(() => window.api.getConfig());
       assert.equal(config.theme, 'light', 'Failed secret decryption reset ordinary preferences');
       assert.equal(config.download_path, environment.downloadsDir);
@@ -288,6 +299,13 @@ async function run() {
       assert.equal((await win.evaluate(() => window.api.getConfig())).theme, 'dark');
       return true;
     });
+    const encryption = await app.evaluate(({ app: nativeApp }) => {
+      const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+      return appRequire('./dist/main/infra/secure-storage.js').getSecureStorageDiagnostics();
+    });
+    assert.equal(encryption.backend, 'isolated-test');
+    assert.equal(encryption.blockedNativeCalls, 0, 'App attempted to bypass test encryption');
+    checks.nativeKeychainCalls = 0;
     await app.close(); app = null;
     console.log(JSON.stringify({ failures, checks }, null, 2));
     if (failures.length) process.exitCode = 1;

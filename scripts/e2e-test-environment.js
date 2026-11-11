@@ -1,6 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const nodeCrypto = require('node:crypto');
+const testEncryption = new WeakMap();
 
 const OFFLINE_PROXY = 'http://127.0.0.1:1';
 
@@ -73,7 +75,7 @@ function createE2eEnvironment(name, configOverrides = {}) {
   writeJson(configFile, buildSafeConfig(downloadsDir, configOverrides));
   writeJson(queueFile, []);
 
-  return {
+  const environment = {
     rootDir,
     programDataDir,
     userDataDir,
@@ -83,6 +85,10 @@ function createE2eEnvironment(name, configOverrides = {}) {
     configFile,
     queueFile
   };
+  const id = nodeCrypto.randomUUID();
+  fs.writeFileSync(path.join(rootDir, '.tvm-e2e'), id, { mode: 0o600 });
+  testEncryption.set(environment, { id, key: nodeCrypto.randomBytes(32).toString('hex') });
+  return environment;
 }
 
 function writeE2eConfig(environment, overrides = {}) {
@@ -107,6 +113,8 @@ function readE2eConfig(environment) {
 }
 
 function getElectronLaunchOptions(environment, extraArgs = []) {
+  const encryption = testEncryption.get(environment);
+  if (!encryption) throw new Error('Electron tests require a freshly created isolated environment');
   return {
     executablePath: require('electron'),
     args: [
@@ -121,6 +129,9 @@ function getElectronLaunchOptions(environment, extraArgs = []) {
       ...process.env,
       PROGRAMDATA: environment.programDataDir,
       TWITCH_VOD_MANAGER_DATA_DIR: environment.appDataDir,
+      TVM_E2E_ROOT: environment.rootDir,
+      TVM_E2E_ID: encryption.id,
+      TVM_E2E_SECRET_KEY: encryption.key,
       HTTP_PROXY: OFFLINE_PROXY,
       HTTPS_PROXY: OFFLINE_PROXY,
       ALL_PROXY: OFFLINE_PROXY,
@@ -142,10 +153,14 @@ function isSamePath(left, right) {
 }
 
 async function verifyE2eIsolation(app, win, environment) {
-  const main = await app.evaluate(({ app: electronApp }) => ({
-    programData: process.env.PROGRAMDATA || '',
-    userData: electronApp.getPath('userData')
-  }));
+  const main = await app.evaluate(({ app: electronApp }) => {
+    const appRequire = process.getBuiltinModule('module').createRequire(`${electronApp.getAppPath()}/package.json`);
+    return {
+      programData: process.env.PROGRAMDATA || '',
+      userData: electronApp.getPath('userData'),
+      encryption: appRequire('./dist/main/infra/secure-storage.js').getSecureStorageDiagnostics(),
+    };
+  });
   const rendererDownloadPath = await win.evaluate(async () => {
     const currentConfig = await window.api.getConfig();
     return currentConfig.download_path;
@@ -159,6 +174,10 @@ async function verifyE2eIsolation(app, win, environment) {
     userDataIsolated: isSamePath(main.userData, environment.userDataDir),
     downloadPathIsolated: isSamePath(rendererDownloadPath, environment.downloadsDir)
   };
+
+  if (main.encryption.backend !== 'isolated-test' || main.encryption.blockedNativeCalls !== 0) {
+    throw new Error('E2E encryption isolation is not active');
+  }
 
   if (!verification.programDataIsolated || !verification.userDataIsolated || !verification.downloadPathIsolated) {
     throw new Error(`E2E isolation verification failed: ${JSON.stringify(verification)}`);

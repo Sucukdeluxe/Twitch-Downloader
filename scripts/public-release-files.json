@@ -134,6 +134,8 @@
     "src/main/infra/schema-v5.ts",
     "src/main/infra/secure-storage.test.ts",
     "src/main/infra/secure-storage.ts",
+    "src/main/infra/test-secure-storage.test.ts",
+    "src/main/infra/test-secure-storage.ts",
     "src/main/queue/process-lifecycle.integration.test.ts",
     "src/main/queue/process-registry.test.ts",
     "src/main/queue/process-registry.ts",

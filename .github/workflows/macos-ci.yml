@@ -47,9 +47,9 @@ jobs:
           name: macos-${{ matrix.arch }}-diagnostics
           path: artifacts/
 
-  # A fresh runner also gives the packaged app a fresh login Keychain. Running
-  # source Electron first can leave a Safe Storage key owned by another code
-  # signature and block the packaged app on an interactive permission dialog.
+  # Validate the packaged app independently on both native architectures.
+  # E2E runs use authenticated encryption with per-test, in-memory keys and
+  # explicitly block native Keychain calls; no login-Keychain prompts are needed.
   package:
     strategy:
       fail-fast: false
