@@ -90,7 +90,7 @@ describe('Windows taskbar identity', () => {
         const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
         const windowCreation = mainSource.indexOf('mainWindow = new BrowserWindow');
         const appDetails = mainSource.indexOf('mainWindow.setAppDetails', windowCreation);
-        const windowShow = mainSource.indexOf('window.show()', windowCreation);
+        const windowShow = mainSource.indexOf('presentApplicationWindow(window, IS_BACKGROUND_E2E)', windowCreation);
 
         expect(mainSource.slice(windowCreation, appDetails)).toContain('show: false');
         expect(appDetails).toBeGreaterThan(windowCreation);
