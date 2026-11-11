@@ -369,24 +369,30 @@ async function run() {
       const info = document.getElementById('cutterInfo');
       window.__cutterRevealFrames = [];
       window.__cutterAssetAudit = { thumbnailSets: [], waveformLoads: [] };
-      const sampleReveal = () => {
-        const rect = preview.getBoundingClientRect();
+      const sampleReveal = async () => {
         const animations = [previewPanel, sidebar, timeline, info].flatMap((element) => element.getAnimations());
-        window.__cutterRevealFrames.push({
-          width: rect.width,
-          height: rect.height,
-          left: rect.left,
-          top: rect.top,
-          running: animations.some((animation) => animation.playState === 'running')
-        });
-        if ((animations.some((animation) => animation.playState === 'running') || window.__cutterRevealFrames.length < 4) && window.__cutterRevealFrames.length < 90) {
-          requestAnimationFrame(sampleReveal);
+        window.__cutterRevealStartedAnimations = animations.filter((animation) => animation.playState === 'running').length;
+        for (const animation of animations) animation.pause();
+        // Capture the actual reveal from its start, even if a busy runner would
+        // not deliver the first natural frame until the animation was nearly over.
+        for (const elapsed of [0, 60, 120, 180, 240, 360]) {
+          for (const animation of animations) animation.currentTime = elapsed;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const rect = preview.getBoundingClientRect();
+          window.__cutterRevealFrames.push({
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top,
+            active: animations.some((animation) => elapsed < animation.effect.getComputedTiming().endTime)
+          });
         }
+        for (const animation of animations) animation.finish();
       };
       const workspaceObserver = new MutationObserver(() => {
         if (!workspace.classList.contains('shown')) return;
         workspaceObserver.disconnect();
-        requestAnimationFrame(sampleReveal);
+        window.__cutterRevealSampling = sampleReveal();
       });
       workspaceObserver.observe(workspace, { attributes: true, attributeFilter: ['class'] });
       let thumbnailAuditFrame = null;
@@ -428,13 +434,14 @@ async function run() {
         && document.querySelectorAll('#cutterThumbnailStrip img').length > 0
         && window.__cutterAssetAudit.waveformLoads.length > 0;
     }, null, { timeout: 90000 });
-    await win.waitForTimeout(480);
+    await win.evaluate(() => window.__cutterRevealSampling);
     const revealAnimation = await win.evaluate(() => {
       const preview = document.getElementById('cutterPreview').getBoundingClientRect();
       const frames = window.__cutterRevealFrames;
       return {
         frames: frames.length,
-        runningFrames: frames.filter((frame) => frame.running).length,
+        startedAnimations: window.__cutterRevealStartedAnimations,
+        activeFrames: frames.filter((frame) => frame.active).length,
         distinctWidths: new Set(frames.map((frame) => frame.width.toFixed(1))).size,
         distinctHeights: new Set(frames.map((frame) => frame.height.toFixed(1))).size,
         intermediate: frames.some((frame) => {
@@ -453,7 +460,8 @@ async function run() {
     });
     check(
       revealAnimation.frames >= 4
-        && revealAnimation.runningFrames >= 3
+        && revealAnimation.startedAnimations >= 4
+        && revealAnimation.activeFrames >= 3
         && revealAnimation.distinctWidths >= 3
         && revealAnimation.distinctHeights >= 3
         && revealAnimation.intermediate
