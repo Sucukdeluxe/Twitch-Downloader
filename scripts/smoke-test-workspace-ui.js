@@ -1806,7 +1806,15 @@ async function run() {
       responsiveTabs[`${target.width}x${target.height}`] = {};
       for (const tab of TABS) {
         await win.evaluate((tabId) => window.showTab(tabId), tab);
-        await win.waitForTimeout(160);
+        // The current navigation animates its background for 180 ms. Wait for
+        // the rendered active state and its transition, rather than sampling
+        // before the compositor has necessarily presented its first frame.
+        await win.waitForFunction((tabId) => {
+          const item = document.querySelector(`.top-nav button[data-tab="${tabId}"]`);
+          return item?.getAttribute('aria-current') === 'page'
+            && getComputedStyle(item).backgroundColor !== 'rgba(0, 0, 0, 0)'
+            && item.getAnimations().every(animation => animation.playState === 'finished' || animation.playState === 'idle');
+        }, tab, { timeout: 10000 });
         const state = await win.evaluate((tabId) => {
           const isVisible = (element) => {
             if (!element || element.hidden) return false;
