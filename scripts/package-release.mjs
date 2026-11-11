@@ -41,6 +41,7 @@ if (JSON.stringify(actual) !== JSON.stringify(runtime)) throw new Error('Package
 for (const name of runtime) if (!extractFile(archive, normalize(name)).equals(await readFile(resolve(root, name)))) throw new Error('Package file mismatch: ' + name);
 if (JSON.parse(extractFile(archive, 'package.json')).version !== pkg.version) throw new Error('Package version mismatch');
 async function checkPackage(name, args, timeout) {
+    console.log('Checking ' + name);
     try {
         const result = await execute(process.execPath, args, { cwd: root, windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024 });
         await writeFile(resolve(verificationDirectory, name + '.log'), result.stdout + result.stderr);
@@ -50,9 +51,19 @@ async function checkPackage(name, args, timeout) {
     }
 }
 if (!ciCandidate) {
-    await checkPackage('native-package', ['scripts/smoke-test-release-package.js'], 180000);
-    await checkPackage('native-roadmap-package', ['scripts/smoke-test-roadmap-native.js', '--packaged'], 240000);
-    await checkPackage('native-installer', ['scripts/smoke-test-installer.js'], 600000);
+    const failures = [];
+    for (const [name, args, timeout] of [
+        ['native-package', ['scripts/smoke-test-release-package.js'], 180000],
+        ['native-roadmap-package', ['scripts/smoke-test-roadmap-native.js', '--packaged'], 240000],
+        ['native-installer', ['scripts/smoke-test-installer.js'], 600000],
+    ]) {
+        try { await checkPackage(name, args, timeout); }
+        catch (error) {
+            console.error(String(error.stdout || '') + String(error.stderr || '') + String(error));
+            failures.push(new Error(name + ' failed; see release/verification/' + name + '.log', { cause: error }));
+        }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Native package verification failed');
     await verifyReceipt(root);
 }
 const files = [];

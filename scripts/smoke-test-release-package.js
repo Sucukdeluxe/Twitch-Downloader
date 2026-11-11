@@ -64,12 +64,12 @@ async function main() {
     let session = await launchElectron(env, { packaged: true });
     await verifyRuntime(session);
     const saved = await session.page.evaluate(async () => {
-      await window.api.saveConfig({ language: 'de', theme: 'light', player_seek_seconds: 15 });
+      await window.api.saveConfig({ language: 'de', theme: 'light', player_seek_seconds: 30 });
       return window.api.getConfig();
     });
     assert.equal(saved.language, 'de');
     assert.equal(saved.theme, 'light');
-    assert.equal(saved.player_seek_seconds, 15);
+    assert.equal(saved.player_seek_seconds, 30);
     await cleanExit(session.app);
     assert.ok(fs.statSync(path.join(env.appDataDir, 'app.db')).size > 0, 'Real persistent application database');
     session = await launchElectron(env, { packaged: true });
@@ -77,7 +77,7 @@ async function main() {
     const restored = await session.page.evaluate(() => window.api.getConfig());
     assert.equal(restored.language, 'de', 'Language persisted across a real process restart');
     assert.equal(restored.theme, 'light', 'Theme persisted across a real process restart');
-    assert.equal(restored.player_seek_seconds, 15, 'Playback preference persisted across a real process restart');
+    assert.equal(restored.player_seek_seconds, 30, 'Playback preference persisted across a real process restart');
     assert.equal(restored.download_path, env.downloadsDir, 'Restart retains isolated storage');
     await cleanExit(session.app);
     console.log(`PASS packaged Windows ${pkg.version}: actual binary, runtime identity, core UI/IPC, DB restart persistence and clean exits`);
