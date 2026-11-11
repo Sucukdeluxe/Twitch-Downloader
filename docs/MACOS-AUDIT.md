@@ -106,6 +106,16 @@ and observes the actual first and second visible frames. Fixed sleeps could
 sample the old frame on Intel CI before the next timer callback ran; a preview
 that never advances still fails the bounded frame-transition check.
 
+The long-video scrub test now expresses its allowed gap in pointer-input steps,
+not an absolute media duration that changes with timeline width and zoom. The
+Intel runner presented 22 frames for 24 one-pixel moves, with a largest gap of
+0.84 seconds (two input steps); the old 0.75-second limit rejected this despite
+the existing 12-frame minimum allowing coalescing. The check still requires at
+least 12 frames, now permits at most two input steps plus one video frame, and
+additionally requires monotonic presentation and the exact first/final targets.
+It waits for those rendered targets with a bounded timeout. Pointer speed and
+the application's existing latest-target coalescing are unchanged.
+
 Window recovery tests wait for both Playwright's page-close event and the native
 BrowserWindow `closed` event before activation. They also reuse a window already
 reopened by macOS. This avoids treating the ordering of Cocoa and test-protocol

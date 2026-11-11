@@ -1152,14 +1152,24 @@ async function run() {
     });
     const longScrubY = longTimeline.y + longTimeline.height * 0.45;
     const longScrubStartX = longTimeline.x + longTimeline.width * 0.2;
+    const longScrubTargets = await win.evaluate(({ start, end }) => ({
+      first: cutterPointerTimeAt(start),
+      last: cutterPointerTimeAt(end),
+      stepSeconds: cutterEditorState.duration / document.getElementById('timeline').getBoundingClientRect().width,
+      frameSeconds: 1 / cutterEditorState.fps
+    }), { start: longScrubStartX, end: longScrubStartX + 24 });
     await win.mouse.move(longScrubStartX, longScrubY);
     await win.mouse.down();
+    await win.waitForFunction(({ first, frameSeconds }) =>
+      window.__cutterLongScrubFrames.some((time) => Math.abs(time - first) <= frameSeconds), longScrubTargets, { timeout: 3000 });
     for (let step = 1; step <= 24; step += 1) {
       await win.mouse.move(longScrubStartX + step, longScrubY);
       await win.waitForTimeout(35);
     }
     await win.mouse.up();
-    await win.waitForTimeout(180);
+    await win.waitForFunction(({ last, frameSeconds }) =>
+      !cutterScrubSeekInFlight && cutterScrubTargetTime === null
+      && Math.abs(window.__cutterLongScrubFrames.at(-1) - last) <= frameSeconds, longScrubTargets, { timeout: 3000 });
     const longScrubPresentation = await win.evaluate(() => {
       window.__cutterLongScrubRecording = false;
       const frames = [...new Set(window.__cutterLongScrubFrames.map((value) => Number(value.toFixed(3))))];
@@ -1170,13 +1180,19 @@ async function run() {
         frames: frames.length,
         first: frames[0] ?? null,
         last: frames.at(-1) ?? null,
+        monotonic: frames.every((value, index) => index === 0 || value >= frames[index - 1]),
         maximumGap: gaps.length ? Math.max(...gaps) : null
       };
     });
     check(
-      longScrubPresentation.frames >= 12 && longScrubPresentation.maximumGap !== null && longScrubPresentation.maximumGap <= 0.75,
-      `Long-video scrubbing skips too much visible media: ${JSON.stringify(longScrubPresentation)}`
+      longScrubPresentation.frames >= 12 && longScrubPresentation.maximumGap !== null
+        && longScrubPresentation.maximumGap <= 2 * longScrubTargets.stepSeconds + longScrubTargets.frameSeconds,
+      `Long-video scrubbing skips more than two input steps: ${JSON.stringify({ ...longScrubPresentation, targets: longScrubTargets })}`
     );
+    check(longScrubPresentation.monotonic
+      && Math.abs(longScrubPresentation.first - longScrubTargets.first) <= longScrubTargets.frameSeconds
+      && Math.abs(longScrubPresentation.last - longScrubTargets.last) <= longScrubTargets.frameSeconds,
+    `Long-video scrubbing presents a stale or incorrect target: ${JSON.stringify({ ...longScrubPresentation, targets: longScrubTargets })}`);
     const rapidSwitchCapabilities = await Promise.all([inputFile, longInputFile, silentInputFile, longInputFile, inputFile, silentInputFile, longInputFile, silentInputFile].map((filePath) => createCutterCapability(win, filePath)));
     const rapidSwitch = await win.evaluate(async (files) => {
       await Promise.allSettled(files.map((file) => window.loadCutterFromPath(file)));
@@ -2044,7 +2060,7 @@ async function run() {
     const shutdownArtifacts = fs.readdirSync(environment.mediaDir)
       .filter((name) => name.includes('.tvm-edit.mp4') || name.includes('.tvm-backup') || name === path.basename(shutdownOutputFile));
     check(cutterTempDirectoriesAfterShutdown.length === 0 && shutdownArtifacts.length === 0, `Shutdown left cutter artifacts: ${JSON.stringify({ cutterTempDirectoriesAfterShutdown, shutdownArtifacts })}`);
-    console.log(JSON.stringify({ failures, runtimeIssues, mediaTimingScale, frameTimingScale, additionalContainerSupport, emptyLayout, emptyFullscreenLayout, emptyVolumeBefore, emptyVolumeAfter, revealAnimation, firstAssetQuality, firstAssetsReadyMs, initialAssetStability, verticalProfileQuality, loaded, edgeGeometry, timestampTypography, playerControlGeometry, cutterInfoAlignment, replacementPromptState, replacementPlaybackState, scrubMediaInfo, scrubFirstAssetsReadyMs, scrubFirstAssetQuality, realMaximumZoomState, scrubSyncProbe, trimScrubProbe, mediumWaveformReadyMs, mediumFirstAssetsReadyMs, mediumZoomReuseBefore, mediumZoomReuseAfter, longPlayerReadyMs, longAssetsReadyMs, longAssetTopology, longPreservedAfterAssetInterruptions, longScrubPresentation, rapidSwitch, memoryBeforeStressMb, memoryAfterStressMb, stressMemoryDeltaMb, preservedAfterUnsupported, edited, cutHandleVisualGeometry, cutterAria, germanCutLabels, draggedCutStart, collisionBoundedCut, reversibleTrimStart, reversibleTrimEnd, crossedCutTime, skippedTime, smoothTimecodeFrames, playbackPerformance, playbackAfterDrag, stoppedTime, settingsMenuLayout, escapedSettings, playbackRateState, tabLeaveState, layoutAudit, responsiveLayouts, expandedVolumeLayout, wheelZoom, zoomGeometryDelta, maximumZoomGeometryDelta, assetDensity, zoomWaveformReuse, zoom, sourceProtection, invalidRequest, cancelledExport, exportResult, manyCutsExport, changedSourceExport, silentState, silentExportResult, cutterTempDirectoriesAfterShutdown, shutdownArtifacts }, null, 2));
+    console.log(JSON.stringify({ failures, runtimeIssues, mediaTimingScale, frameTimingScale, additionalContainerSupport, emptyLayout, emptyFullscreenLayout, emptyVolumeBefore, emptyVolumeAfter, revealAnimation, firstAssetQuality, firstAssetsReadyMs, initialAssetStability, verticalProfileQuality, loaded, edgeGeometry, timestampTypography, playerControlGeometry, cutterInfoAlignment, replacementPromptState, replacementPlaybackState, scrubMediaInfo, scrubFirstAssetsReadyMs, scrubFirstAssetQuality, realMaximumZoomState, scrubSyncProbe, trimScrubProbe, mediumWaveformReadyMs, mediumFirstAssetsReadyMs, mediumZoomReuseBefore, mediumZoomReuseAfter, longPlayerReadyMs, longAssetsReadyMs, longAssetTopology, longPreservedAfterAssetInterruptions, longScrubPresentation, longScrubTargets, rapidSwitch, memoryBeforeStressMb, memoryAfterStressMb, stressMemoryDeltaMb, preservedAfterUnsupported, edited, cutHandleVisualGeometry, cutterAria, germanCutLabels, draggedCutStart, collisionBoundedCut, reversibleTrimStart, reversibleTrimEnd, crossedCutTime, skippedTime, smoothTimecodeFrames, playbackPerformance, playbackAfterDrag, stoppedTime, settingsMenuLayout, escapedSettings, playbackRateState, tabLeaveState, layoutAudit, responsiveLayouts, expandedVolumeLayout, wheelZoom, zoomGeometryDelta, maximumZoomGeometryDelta, assetDensity, zoomWaveformReuse, zoom, sourceProtection, invalidRequest, cancelledExport, exportResult, manyCutsExport, changedSourceExport, silentState, silentExportResult, cutterTempDirectoriesAfterShutdown, shutdownArtifacts }, null, 2));
     if (failures.length > 0) process.exitCode = 1;
   } finally {
     if (app) await app.close();
