@@ -168,6 +168,28 @@ async function run() {
       assert.equal(await win.locator(`#${input}`).inputValue(), expected);
     }
     assert.equal(await win.locator('#clipDurationTime').textContent(), '00:01:30');
+    // Expanded filename options used to float over Hide details, swallowing
+    // its clicks. Exercise the real controls, including scrolling, without
+    // force-clicks or programmatically closing the filename section first.
+    for (const [width, height] of [[1400, 868], [1000, 700], [800, 700]]) {
+      await win.setViewportSize({ width, height });
+      await toggle.click();
+      const options = win.locator('#clipFilenameOptions');
+      if (!(await options.evaluate(element => element.open))) await options.locator('summary').click();
+      await win.locator('input[name="filenameFormat"][value="template"]').check();
+      await win.locator('#clipFilenameTemplate').fill('Trim-Test-{part}.mp4');
+      await screenshot(`filename-details-${width}x${height}`);
+      await toggle.click({ timeout: 5000 });
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await win.locator('#clipStartTime').inputValue(), '00:00:10');
+      assert.equal(await win.locator('#clipEndTime').inputValue(), '00:01:40');
+      await toggle.click();
+      assert.equal(await win.locator('#clipFilenameTemplate').inputValue(), 'Trim-Test-{part}.mp4');
+      await options.locator('summary').click();
+      await toggle.click();
+    }
+    checks.filenameDetails = { collapseWhileOpen: true, selectionAndTemplatePreserved: true };
+    await win.setViewportSize({ width: 1400, height: 868 });
     for (const [from, to] of [['#clipStartLater', '#clipMarkStart button'], ['#clipMarkEnd button', '#clipEndEarlier']]) {
       await win.locator(from).focus();
       await win.keyboard.press('Tab');
