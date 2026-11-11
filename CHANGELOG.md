@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (macOS)
+## macOS 1.1.22 - 2026-11-11
 
 - Seek trimmed VOD downloads on the player's media timeline instead of Streamlink's segment-rounded offsets, which could skip the beginning of a marked range. Preserve the requested quality and the lossless keyframe pre-roll.
 - Keep expanded filename settings inside the scrollable Trim details panel so they no longer cover Hide details or the selection controls.
