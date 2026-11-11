@@ -126,15 +126,24 @@ async function fullQueue(s) {
 }
 async function queueStartup(s, options) {
   const startup = await s.page.evaluate(() => window.api.getQueue());
-  assert.deepEqual(startup.map(item => item.id), ['startup-pending'], 'Startup must clear completed persisted items and keep pending work');
-  await s.page.evaluate(() => window.api.removeFromQueue('startup-pending'));
+  assert.equal(startup.length, 1, 'Startup must clear completed persisted items and keep pending work');
+  const expected = vod('startup-pending');
+  assert.equal(startup[0].url, expected.url);
+  assert.equal(startup[0].title, expected.title);
+  assert.equal(startup[0].status, 'pending');
+  assert.ok(startup[0].id, 'Restored work must have a usable runtime ID');
+  await s.page.evaluate(id => window.api.removeFromQueue(id), startup[0].id);
   const item = vod('11'); delete item.id; delete item.status; delete item.progress;
   const accepted = await s.page.evaluate(item => window.api.addToQueueWithResult(item), item);
   assert.equal(accepted.accepted, true);
   await s.app.close();
   s = await h.launchElectron(s.env, { packaged: options.packaged });
   try {
-    assert.equal((await s.page.evaluate(() => window.api.getQueue())).length, 1, 'Pending queue survives a real process restart');
+    const restored = await s.page.evaluate(() => window.api.getQueue());
+    assert.equal(restored.length, 1, 'Pending queue survives a real process restart');
+    assert.equal(restored[0].url, item.url);
+    assert.equal(restored[0].title, item.title);
+    assert.equal(restored[0].status, 'pending');
     await s.page.evaluate(async () => window.api.saveConfig({ ...(await window.api.getConfig()), persist_queue_on_restart: false }));
     await s.app.close();
     const next = await h.launchElectron(s.env, { packaged: options.packaged });

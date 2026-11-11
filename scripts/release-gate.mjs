@@ -82,8 +82,6 @@ for (const [name, args] of checks) {
     try { await run(name, args); }
     catch (error) {
         console.error(String(error.stdout || '') + String(error.stderr || '') + String(error));
-        // No native feature can be checked if the isolated application cannot start.
-        if (name === 'queue-startup') throw error;
         failures.push(new Error(name + ' failed; see release/verification/' + name + '.log', { cause: error }));
         console.error('Failed ' + name + '; continuing independent checks for complete diagnostics');
     }
