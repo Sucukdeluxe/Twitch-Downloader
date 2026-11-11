@@ -1607,9 +1607,17 @@ async function run() {
     check(openCallsAfterClick.length === 0, `VOD image click still opens Twitch: ${JSON.stringify(openCallsAfterClick)}`);
     check(openCallsAfterContextMenu.length === 1 && openCallsAfterContextMenu[0] === 'https://example.invalid/hover-hd-fixture', `VOD context menu does not exclusively open Twitch: ${JSON.stringify(openCallsAfterContextMenu)}`);
     await win.locator('#toolbarRefreshVodsBtn').hover();
-    await win.waitForTimeout(40);
-    await hoverCard.hover();
-    await win.waitForTimeout(320);
+    await win.waitForFunction(() => !document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-storyboard-preview'), null, { timeout: 3000 });
+    // Observe actual preview frames: native event delivery, the hover debounce
+    // and the interval need not finish within a fixed wall-clock sleep on CI.
+    const waitForPreviewFrame = (frame) => win.waitForFunction((expected) => {
+      const card = document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"]');
+      const overlay = card?.querySelector('.vod-storyboard-preview');
+      if (!overlay || !card.classList.contains('preview-active')) return false;
+      const style = getComputedStyle(overlay);
+      return Number(style.opacity) > 0 && style.backgroundImage.includes(expected);
+    }, frame, { timeout: 3000 });
+    await Promise.all([waitForPreviewFrame(previewFrames[0]), hoverCard.hover()]);
     const hdHoverFirst = await win.evaluate(() => {
       const overlay = document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-storyboard-preview');
       const checkbox = document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-select-checkbox');
@@ -1627,7 +1635,7 @@ async function run() {
         durationZIndex: durationStyle?.zIndex || ''
       } : null;
     });
-    await win.waitForTimeout(650);
+    await waitForPreviewFrame(previewFrames[1]);
     const hdHoverSecond = await win.evaluate(() => {
       const overlay = document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-storyboard-preview');
       return overlay ? getComputedStyle(overlay).backgroundImage : null;

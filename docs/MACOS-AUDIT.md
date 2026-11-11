@@ -101,6 +101,10 @@ reduced-motion emulation remains local to the test page.
 Update-popover checks likewise wait for the visible, expanded state after focus
 or hover rather than taking a snapshot after a fixed 80 ms delay. Keyboard
 focus, disabled-action semantics and popover visibility are still asserted.
+The animated VOD preview similarly waits for removal of the previous overlay
+and observes the actual first and second visible frames. Fixed sleeps could
+sample the old frame on Intel CI before the next timer callback ran; a preview
+that never advances still fails the bounded frame-transition check.
 
 Window recovery tests wait for both Playwright's page-close event and the native
 BrowserWindow `closed` event before activation. They also reuse a window already
