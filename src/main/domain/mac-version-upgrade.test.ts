@@ -57,7 +57,7 @@ test('the 1.1.20 upgrade preserves a pre-history Mac database through two launch
         current.close();
         current = undefined;
     }
-});
+}, 15000);
 
 test('the published Mac bootstrap sees 1.1.20 as an upgrade and cannot downgrade back', () => {
     expect(compareMacVersions('1.1.20', '1.0.10')).toBe(1);

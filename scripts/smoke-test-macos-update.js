@@ -100,6 +100,7 @@ async function run() {
   let app;
   let phase = 'preparing isolated bundle';
   let token;
+  let installOutcome;
   try {
     const keys = nodeCrypto.generateKeyPairSync('ed25519');
     const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' });
@@ -203,8 +204,16 @@ async function run() {
     console.log('[macos-update] Installing through renderer IPC and waiting for new-app health');
     const closed = app.waitForEvent('close', { timeout: 180000 });
     // Successful installation closes this renderer; a lost context is expected only after the helper plan exists.
-    const install = win.evaluate(() => window.api.installUpdate()).then((result) => ({ result }), (error) => ({ error: String(error) }));
-    const planFile = await waitFor(() => fs.readdirSync(state).find((name) => /^plan-[a-f0-9]{64}\.json$/.test(name)), phase, 120000);
+    const install = win.evaluate(() => window.api.installUpdate()).then((result) => ({ result }), (error) => ({ error: String(error) }))
+      .then((outcome) => { installOutcome = outcome; return outcome; });
+    const planFile = await waitFor(() => {
+      const filename = fs.readdirSync(state).find((name) => /^plan-[a-f0-9]{64}\.json$/.test(name));
+      if (filename) return filename;
+      if (installOutcome?.result?.error || installOutcome?.result?.skipped || installOutcome?.error) {
+        throw new Error(`Installer rejected the request before creating its plan: ${JSON.stringify(installOutcome)}`);
+      }
+      return null;
+    }, phase, 120000);
     const plan = readJson(path.join(state, planFile));
     token = plan.healthToken;
     assert.equal(plan.targetApp, target);
@@ -246,8 +255,11 @@ async function run() {
     assert.equal(fs.existsSync(plan.stagedApp), false, 'Old application backup should be removed only after health succeeds.');
     console.log(JSON.stringify({ failures: [], checks }, null, 2));
   } catch (error) {
-    const diagnostics = { phase, message: String(error) };
+    const disk = fs.statfsSync(directory);
+    const diagnostics = { phase, message: String(error), installOutcome, freeDiskBytes: disk.bavail * disk.bsize };
     if (fs.existsSync(state)) diagnostics.markers = Object.fromEntries(fs.readdirSync(state).filter((name) => /^(ready|armed|result|health)-.*\.json$/.test(name)).map((name) => [name, readIfExists(path.join(state, name))]));
+    const debugLog = path.join(environment.appDataDir, 'debug.log');
+    if (fs.existsSync(debugLog)) diagnostics.updateLog = fs.readFileSync(debugLog, 'utf8').split('\n').filter(line => /mac-update|update-install|shutdown|auto-updater/.test(line)).slice(-40);
     console.error(JSON.stringify(diagnostics, null, 2));
     throw error;
   } finally {
