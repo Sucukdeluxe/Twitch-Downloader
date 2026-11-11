@@ -291,14 +291,38 @@ private final class Installer {
         guard app.isTerminated else { throw UpdateFailure("Cannot stop the failed replacement application; backup retained at \(plan.stagedApp)") }
     }
 
+    func requireNoIndependentInstance(_ operation: String) throws {
+        // A separate profile (or a manual launch during the health window) can
+        // bypass the parent application's single-instance lock. Never exchange
+        // the bundle underneath an application this transaction does not own.
+        func resolved(_ url: URL?) -> String? {
+            guard let path = url?.path, let result = realpath(path, nil) else { return nil }
+            defer { free(result) }
+            return String(cString: result)
+        }
+        let independent = NSWorkspace.shared.runningApplications.filter { app in
+            guard !app.isTerminated, app.processIdentifier != plan.parentPid,
+                  app.processIdentifier != launchedApp?.processIdentifier else { return false }
+            if resolved(app.bundleURL) == plan.targetApp { return true }
+            return resolved(app.executableURL)?.hasPrefix(plan.targetApp + "/Contents/MacOS/") == true
+        }
+        guard independent.isEmpty else {
+            let pids = independent.map { String($0.processIdentifier) }.joined(separator: ", ")
+            let recovery = swapped ? "original backup retained at \(plan.stagedApp)" : "original application was preserved"
+            throw UpdateFailure("Cannot \(operation) while another application instance is running (PID \(pids)); \(recovery). Close the other instance before retrying.")
+        }
+    }
+
     func install() throws {
         try handshake()
+        try requireNoIndependentInstance("install the update")
         // Recheck sealed contents after the parent stopped; no destructive action
         // occurs before both explicit authorization and observed process exit.
         try validateApps()
         signal(SIGTERM, SIG_IGN)
         signal(SIGINT, SIG_IGN)
         try writeState("result", ["status": "installing", "targetApp": plan.targetApp, "backupApp": plan.stagedApp])
+        try requireNoIndependentInstance("install the update")
         try swap()
         do {
             let app = try launch(["--mac-update-token=" + plan.healthToken, "--mac-update-state=" + plan.stateDirectory])
@@ -306,7 +330,9 @@ private final class Installer {
             try awaitHealth(app)
         } catch {
             let originalFailure = String(describing: error)
+            try requireNoIndependentInstance("roll back the update")
             try stopReplacement()
+            try requireNoIndependentInstance("roll back the update")
             guard try identity(plan.targetApp) == stagedIdentity, try identity(plan.stagedApp) == targetIdentity else {
                 throw UpdateFailure("Application directories changed during rollback; original backup retained at \(plan.stagedApp)")
             }

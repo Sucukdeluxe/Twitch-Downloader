@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const nodeCrypto = require('node:crypto');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron } = require('playwright');
 const asar = require('@electron/asar');
@@ -116,6 +116,24 @@ async function run() {
     await win.waitForLoadState('domcontentloaded');
     checks.isolation = await verifyE2eIsolation(app, win, environment);
     assert.equal(await win.evaluate(() => window.api.getVersion()), previous);
+    phase = 'rejecting a second instance using the same profile';
+    const second = spawn(executable, options.args, { cwd: options.cwd, env: options.env, stdio: 'ignore' });
+    try {
+      const exited = new Promise((resolve, reject) => {
+        second.once('error', reject);
+        second.once('exit', (code, signal) => resolve({ code, signal }));
+      });
+      const timeout = delay(10000).then(() => { throw new Error('Second instance did not exit within 10 seconds'); });
+      const exit = await Promise.race([exited, timeout]);
+      assert.equal(exit.code, 0, `Second instance exited with signal ${exit.signal}`);
+      assert.equal(exit.signal, null);
+      assert.equal(app.process().exitCode, null, 'Original app must remain running');
+      assert.equal(await win.evaluate(() => window.api.getVersion()), previous);
+      await verifyE2eIsolation(app, win, environment);
+      checks.singleInstance = true;
+    } finally {
+      if (second.exitCode === null && second.signalCode === null) second.kill('SIGTERM');
+    }
     await win.evaluate(async () => {
       const config = await window.api.getConfig();
       await window.api.saveConfig({ ...config, theme: 'light', language: 'en' });

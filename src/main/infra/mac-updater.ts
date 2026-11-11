@@ -247,7 +247,14 @@ export class MacUpdater extends EventEmitter {
                 const state = JSON.parse(await fs.promises.readFile(marker, 'utf8'));
                 if (state.schema === 1 && state.token === prepared.token) return;
             } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-            if (!prepared.child.pid || prepared.child.exitCode !== null || prepared.child.signalCode !== null) throw new Error('Update installer exited before it was ready');
+            if (!prepared.child.pid || prepared.child.exitCode !== null || prepared.child.signalCode !== null) {
+                let message = 'Update installer exited before it was ready';
+                try {
+                    const result = JSON.parse(await fs.promises.readFile(path.join(prepared.directory, `result-${prepared.token}.json`), 'utf8'));
+                    if (result.token === prepared.token && typeof result.message === 'string') message = result.message;
+                } catch { /* The child may have failed before it could write a result. */ }
+                throw new Error(message);
+            }
             await wait(100);
         }
         throw new Error('Update installer did not become ready in time');

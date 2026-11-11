@@ -285,3 +285,46 @@ test('signature or directory replacement after readiness is rejected before exch
     assert.equal(scenario.versionAt(scenario.stage), stageBefore);
   }
 });
+
+test('an independent running instance prevents installation without terminating it', { skip: !enabled }, async () => {
+  const scenario = createScenario();
+  const launchedMarker = path.join(scenario.directory, 'launched-1.0.0.json');
+  run('/usr/bin/open', ['-n', scenario.target, '--args', '--independent-fixture']);
+  const independent = await waitFor(() => fs.existsSync(launchedMarker) && readJson(launchedMarker), 'independent old app launch');
+  fixturePids.add(independent.pid);
+  scenario.launch();
+  await scenario.arm();
+  stop(scenario.parent);
+  assert.equal(await scenario.waitExit(), 1);
+  const result = readJson(scenario.marker('result'));
+  assert.equal(result.status, 'failed');
+  assert.match(result.message, /another application instance is running/);
+  assert.equal(scenario.versionAt(scenario.target), '1.0.0');
+  assert.equal(scenario.versionAt(scenario.stage), '2.0.0');
+  assert.doesNotThrow(() => process.kill(independent.pid, 0));
+});
+
+test('an independent launch during the health window prevents rollback and retains the backup', { skip: !enabled }, async () => {
+  const scenario = createScenario('no-health');
+  const launchedMarker = path.join(scenario.directory, 'launched-2.0.0.json');
+  scenario.launch();
+  await scenario.arm();
+  stop(scenario.parent);
+  const owned = await waitFor(() => fs.existsSync(launchedMarker) && readJson(launchedMarker), 'owned replacement launch');
+  fixturePids.add(owned.pid);
+  run('/usr/bin/open', ['-n', scenario.target, '--args', '--independent-fixture']);
+  const independent = await waitFor(() => {
+    const launched = readJson(launchedMarker);
+    return launched.pid !== owned.pid && launched;
+  }, 'independent replacement launch');
+  fixturePids.add(independent.pid);
+  assert.equal(await scenario.waitExit(), 1);
+  const result = readJson(scenario.marker('result'));
+  assert.equal(result.status, 'failed');
+  assert.match(result.message, /Cannot roll back.*another application instance is running/);
+  assert.equal(result.backupApp, scenario.stage);
+  assert.equal(scenario.versionAt(scenario.target), '2.0.0');
+  assert.equal(scenario.versionAt(scenario.stage), '1.0.0');
+  assert.doesNotThrow(() => process.kill(independent.pid, 0));
+  assert.equal(fs.existsSync(path.join(scenario.directory, 'launched-1.0.0.json')), false);
+});

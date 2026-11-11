@@ -95,6 +95,9 @@ const APP_VERSION = app.getVersion();
 const IS_HOT_DEVELOPMENT = process.env.TWITCH_VOD_MANAGER_DEV === '1';
 const WINDOWS_APP_IDENTITY = getWindowsAppIdentity(IS_HOT_DEVELOPMENT);
 app.setName(WINDOWS_APP_IDENTITY.name);
+// Acquire the profile lock after setting the same name used for userData.
+// Other copies must not keep using this database during an application update.
+if (process.platform === 'darwin' && !app.requestSingleInstanceLock()) app.exit(0);
 if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_IDENTITY.appUserModelId);
 const WINDOWS_APP_ICON_PATH = process.platform === 'win32'
     ? resolveWindowsAppIconPath({
@@ -9008,6 +9011,12 @@ app.whenReady().then(() => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
         }
+    });
+    app.on('second-instance', () => {
+        if (!mainWindow) createWindow();
+        if (mainWindow?.isMinimized()) mainWindow.restore();
+        mainWindow?.show();
+        mainWindow?.focus();
     });
 });
 

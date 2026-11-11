@@ -123,7 +123,7 @@ jobs:
           path: artifacts/
 
   package:
-    needs: [prepare, verify]
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -165,7 +165,7 @@ jobs:
             release/Twitch-VOD-Manager-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.zip
 
   publish:
-    needs: [prepare, package]
+    needs: [prepare, verify, package]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Store the signing secret here. Environment protection can be configured separately.
