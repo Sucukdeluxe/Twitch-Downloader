@@ -66,7 +66,7 @@ function createEnvironment(name, config = {}) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), `twitch-release-${safeName}-`));
   const env = { rootDir, programDataDir: path.join(rootDir, 'programdata'), userDataDir: path.join(rootDir, 'userdata'),
     downloadsDir: path.join(rootDir, 'downloads'), mediaDir: path.join(rootDir, 'media'),
-    roamingDir: path.join(rootDir, 'roaming'), localAppDataDir: path.join(rootDir, 'local'),
+    roamingDir: path.join(rootDir, 'home', 'AppData', 'Roaming'), localAppDataDir: path.join(rootDir, 'home', 'AppData', 'Local'),
     tempDir: path.join(rootDir, 'temp'), homeDir: path.join(rootDir, 'home') };
   env.appDataDir = path.join(env.programDataDir, 'Twitch_Downloader');
   for (const directory of Object.values(env)) fs.mkdirSync(directory, { recursive: true });
