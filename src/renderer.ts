@@ -1739,10 +1739,24 @@ function refreshClipDetailsToggle(): void {
     const fields = byId('clipRangeFields');
     const inFooter = window.api.platform === 'darwin' && collapsed && !modal.classList.contains('is-omitting');
     const parent = byId(inFooter ? 'clipFooterFields' : 'clipCutPanel');
+    const focused = document.activeElement instanceof HTMLElement && fields.contains(document.activeElement) ? document.activeElement : null;
+    const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
+    let moved = false;
     if (fields.parentElement !== parent) {
-        const focused = document.activeElement instanceof HTMLElement && fields.contains(document.activeElement) ? document.activeElement : null;
-        const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
         parent.insertBefore(fields, inFooter ? null : byId('clipOmissionPanel'));
+        moved = true;
+    }
+    // Put Set here after the time entry in both visual and keyboard order.
+    for (const side of ['Start', 'End']) {
+        const mark = byId(`clipMark${side}`);
+        const row = mark.closest('.clip-modal-time-row');
+        const target = inFooter ? row : row?.querySelector('.vod-time-heading');
+        if (target && mark.parentElement !== target) {
+            target.appendChild(mark);
+            moved = true;
+        }
+    }
+    if (moved) {
         focused?.focus({ preventScroll: true });
         if (focused instanceof HTMLInputElement && selection) focused.setSelectionRange(selection[0], selection[1]);
     }

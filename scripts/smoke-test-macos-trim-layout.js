@@ -87,6 +87,11 @@ async function run() {
           && box.y >= footer.y - 1 && box.y + box.height <= footer.y + footer.height + 1, 'Footer controls must stay in bounds');
       }
       assert(await win.locator('.vod-cut-footer').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Footer must not overflow');
+      for (const side of ['Start', 'End']) {
+        const input = await win.locator(`#clip${side}Time`).boundingBox();
+        const setHere = await win.locator(`#clipMark${side} button`).boundingBox();
+        assert(setHere.x > input.x + input.width, 'Set here must sit to the right of the time entry');
+      }
       if ((await win.viewportSize()).width > 1200) {
         assert(footer.height <= 50, 'Desktop compact footer must stay one line high');
         for (const side of ['Start', 'End']) {
@@ -140,6 +145,7 @@ async function run() {
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     await toggle.click();
     assert(await fields.evaluate(element => element.parentElement.id === 'clipCutPanel' && element.nextElementSibling.id === 'clipOmissionPanel'));
+    assert.equal(await win.locator('.vod-time-heading > #clipMarkStart, .vod-time-heading > #clipMarkEnd').count(), 2, 'Expanded layout keeps its original heading buttons');
     checks.expanded = await geometry();
     assert(checks.compact.video.height > checks.expanded.video.height + 100);
     await screenshot('expanded');
@@ -161,6 +167,11 @@ async function run() {
       assert.equal(await win.locator(`#${input}`).inputValue(), expected);
     }
     assert.equal(await win.locator('#clipDurationTime').textContent(), '00:01:30');
+    for (const side of ['Start', 'End']) {
+      await win.locator(`#clip${side}Later`).focus();
+      await win.keyboard.press('Tab');
+      assert(await win.locator(`#clipMark${side} button`).evaluate(element => element === document.activeElement), 'Keyboard order must match the right-hand Set here button');
+    }
     const start = win.locator('.vod-selection .vod-range-handle.is-start');
     const end = win.locator('.vod-selection .vod-range-handle.is-end');
     await start.press('ArrowRight');
@@ -249,6 +260,10 @@ async function run() {
 
     // Reproduce the unmodified layout to record the gain at the same viewport.
     await win.evaluate(() => {
+      for (const side of ['Start', 'End']) {
+        const mark = document.getElementById(`clipMark${side}`);
+        mark.closest('.clip-modal-time-row').querySelector('.vod-time-heading').appendChild(mark);
+      }
       document.getElementById('clipCutPanel').insertBefore(document.getElementById('clipRangeFields'), document.getElementById('clipOmissionPanel'));
       document.getElementById('clipModal').classList.remove('is-mac', 'is-range-collapsed');
       document.getElementById('clipDetailsToggle').hidden = true;

@@ -357,9 +357,9 @@
 }
 @media(max-width:900px) {
   #clipFooterFields .vod-cut-fields { grid-template-columns:minmax(0,1fr) 104px minmax(0,1fr); gap:8px; }
-  #clipFooterFields .clip-modal-time-row { flex-direction:column; gap:4px; }
-  #clipFooterFields .vod-time-heading { display:flex; width:100%; gap:4px; flex-wrap:nowrap; min-height:24px; }
-  #clipFooterFields .vod-time-entry { flex:none; }
+  #clipFooterFields .clip-modal-time-row { display:grid; grid-template-columns:140px auto; gap:4px 6px; justify-content:space-between; }
+  #clipFooterFields .vod-time-heading { display:flex; grid-column:1 / -1; width:100%; min-height:24px; }
+  #clipFooterFields .vod-time-entry { flex:none; grid-column:1; }
   #clipFooterFields .clip-modal-duration { flex-direction:column; gap:2px; }
 }
 @media(max-width:800px) {
