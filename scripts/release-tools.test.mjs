@@ -4,7 +4,9 @@ import test from 'node:test';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { runtimeFiles, releaseFingerprint, verifyReceipt } from './release-tools.mjs';
+import { runtimeFiles, releaseFingerprint, verifyReceipt, validateWebkitReceipt } from './release-tools.mjs';
+
+import { webkitChecks } from './release-checks.mjs';
 
 const rendererAssets = ['app.js', 'player.js', 'app.css', 'player.css', 'workspace.css'];
 const runtime = ['dist/main.js', 'dist/preload.js', 'dist/main/domain/example.js',
@@ -148,4 +150,25 @@ test('verifyReceipt rejects formerly valid receipts after source, runtime or ins
         await put(root, name, `modified:${name}`);
         await assert.rejects(verifyReceipt(root), /missing or outdated/);
     }
+});
+
+function webkitReceipt() {
+    return { version: 1, platform: 'darwin', success: true, commit: 'a'.repeat(40), tree: 'b'.repeat(40),
+        runId: '12345', runAttempt: '1', checks: webkitChecks.map(([name]) => ({ name, success: true, milliseconds: 1 })) };
+}
+test('cross-platform receipt requires every WebKit result from the exact checkout and CI attempt', () => {
+    const receipt = webkitReceipt();
+    const identity = { commit: receipt.commit, tree: receipt.tree, runId: receipt.runId, runAttempt: receipt.runAttempt };
+    assert.equal(validateWebkitReceipt(receipt, identity), receipt);
+    for (const key of Object.keys(identity)) {
+        assert.throws(() => validateWebkitReceipt(receipt, { ...identity, [key]: identity[key] + '0' }), /stale/);
+    }
+    for (const changes of [{ success: false }, { platform: 'win32' }, { version: 0 }, { checks: [] },
+        { checks: receipt.checks.slice(1) }, { checks: [...receipt.checks, receipt.checks[0]] },
+        { checks: receipt.checks.map((item, i) => i === 0 ? { ...item, success: false } : item) },
+        { checks: receipt.checks.map((item, i) => i === 0 ? { ...item, name: '../wrong' } : item) },
+        { checks: receipt.checks.map((item, i) => i === 0 ? { ...item, milliseconds: NaN } : item) }]) {
+        assert.throws(() => validateWebkitReceipt({ ...receipt, ...changes }, identity), /incomplete|stale/);
+    }
+    assert.throws(() => validateWebkitReceipt(null, identity), /incomplete|stale/);
 });

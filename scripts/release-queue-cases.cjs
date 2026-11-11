@@ -137,19 +137,20 @@ async function queueStartup(s, options) {
   const accepted = await s.page.evaluate(item => window.api.addToQueueWithResult(item), item);
   assert.equal(accepted.accepted, true);
   await s.app.close();
-  s = await h.launchElectron(s.env, { packaged: options.packaged });
-  try {
-    const restored = await s.page.evaluate(() => window.api.getQueue());
-    assert.equal(restored.length, 1, 'Pending queue survives a real process restart');
-    assert.equal(restored[0].url, item.url);
-    assert.equal(restored[0].title, item.title);
-    assert.equal(restored[0].status, 'pending');
-    await s.page.evaluate(async () => window.api.saveConfig({ ...(await window.api.getConfig()), persist_queue_on_restart: false }));
-    await s.app.close();
-    const next = await h.launchElectron(s.env, { packaged: options.packaged });
-    try { assert.deepEqual(await next.page.evaluate(() => window.api.getQueue()), [], 'Disabling persistence clears the next startup queue'); }
-    finally { await next.app.close(); }
-  } finally { if (s.app.process().exitCode === null) await s.app.close(); }
+  // The environment owns all launched processes, including cleanup on assertions.
+  const reopened = await h.launchElectron(s.env, { packaged: options.packaged });
+  const restored = await reopened.page.evaluate(() => window.api.getQueue());
+  assert.equal(restored.length, 1, 'Pending queue survives a real process restart');
+  assert.equal(restored[0].url, item.url);
+  assert.equal(restored[0].title, item.title);
+  assert.equal(restored[0].status, 'pending');
+  await reopened.page.evaluate(async () => window.api.saveConfig({ ...(await window.api.getConfig()), persist_queue_on_restart: false }));
+  assert.deepEqual(reopened.errors, [], 'Restarted renderer has no errors');
+  await reopened.app.close();
+  const next = await h.launchElectron(s.env, { packaged: options.packaged });
+  assert.deepEqual(await next.page.evaluate(() => window.api.getQueue()), [], 'Disabling persistence clears the next startup queue');
+  assert.deepEqual(next.errors, [], 'Final restarted renderer has no errors');
+  await next.app.close();
 }
 async function queueMergeControls(s) {
   const rows = [vod('21'), vod('22'), vod('23')].map(({ id: _id, status: _status, progress: _progress, ...item }) => item);

@@ -29,6 +29,20 @@ for (const [, job] of buildEntries) {
   }
 }
 
+const webkit = release.jobs['verify-webkit'];
+assert.match(String(webkit?.['runs-on']), /^macos-/, 'WebKit media tests require the macOS runner');
+assert.match(commands(webkit), /node scripts\/release-gate\.mjs --webkit-only/);
+assert.ok(!webkit['continue-on-error']);
+for (const step of webkit.steps) assert.ok(!step['continue-on-error']);
+for (const [, job] of buildEntries) {
+  assert.ok([job.needs].flat().includes('verify-webkit'), 'Native release must depend on successful WebKit verification');
+  const download = job.steps.find(step => String(step.uses || '').startsWith('actions/download-artifact@'));
+  assert.equal(download?.with?.name, 'webkit-verification-${{ github.sha }}');
+  assert.equal(download?.with?.['run-id'], undefined, 'Cannot import results from another workflow run');
+  assert.ok(job.steps.some(step => /npm run release:build/.test(step.run || '')
+    && step.env?.RELEASE_WEBKIT_RECEIPT === 'release/webkit/webkit.json'));
+}
+
 const publishingEntries = Object.entries(release.jobs).filter(([, job]) => (job.steps || []).some(publishes));
 assert.ok(publishingEntries.length > 0, 'Release workflow must publish the checked installer');
 function ancestors(name, seen = new Set()) {

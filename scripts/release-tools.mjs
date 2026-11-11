@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { sourceFingerprint } from './build-state.mjs';
+import { webkitChecks } from './release-checks.mjs';
 
 export async function runtimeFiles(root) {
     const html = await readFile(resolve(root, 'dist/renderer/index.html'), 'utf8');
@@ -51,5 +52,22 @@ export async function verifyReceipt(root) {
         && checks.every(check => check && typeof check.name === 'string' && check.name.split('-').every(part => /^[a-z0-9]+$/i.test(part)) && check.success === true)
         && new Set(checks.map(check => check.name)).size === checks.length;
     if (receipt.fingerprint !== await releaseFingerprint(root) || receipt.success !== true || !(receipt.tests > 0) || !complete) throw new Error('Release checks are missing or outdated. Run npm run release:verify.');
+    return receipt;
+}
+
+// Transport is restricted to an artifact from this same GitHub Actions run.
+// Require every WebKit case and bind it to an unchanged source tree and attempt.
+export function validateWebkitReceipt(receipt, identity) {
+    const expected = webkitChecks.map(([name]) => name).sort();
+    const actual = receipt?.checks;
+    if (receipt?.version !== 1 || receipt.platform !== 'darwin' || receipt.success !== true
+        || !/^[a-f0-9]{40}$/.test(receipt.commit || '') || !/^[a-f0-9]{40}$/.test(receipt.tree || '')
+        || !/^\d+$/.test(receipt.runId || '') || !/^\d+$/.test(receipt.runAttempt || '')
+        || ['commit', 'tree', 'runId', 'runAttempt'].some(key => receipt[key] !== identity[key])
+        || !Array.isArray(actual) || actual.length !== expected.length
+        || actual.some(check => !check || check.success !== true || !Number.isFinite(check.milliseconds) || check.milliseconds < 0)
+        || JSON.stringify(actual.map(check => check.name).sort()) !== JSON.stringify(expected)) {
+        throw new Error('Missing, incomplete or stale macOS WebKit verification for this checkout and CI attempt');
+    }
     return receipt;
 }

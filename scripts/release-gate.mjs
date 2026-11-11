@@ -3,51 +3,25 @@ import { promisify } from 'node:util';
 import { access, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { releaseFingerprint } from './release-tools.mjs';
+import { releaseFingerprint, validateWebkitReceipt } from './release-tools.mjs';
+import { checks, webkitChecks } from './release-checks.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(root, 'release/verification');
 const execute = promisify(execFile);
-const checks = [
-    ['release-receipt', ['--test', 'scripts/release-tools.test.mjs']],
-    ['release-harness', ['--test', 'scripts/release-test-harness.test.cjs']],
-    ['security', ['scripts/security-check.js']],
-    ['release-contract', ['scripts/smoke-test-public-release-config.js']],
-    ['ci-contract', ['scripts/smoke-test-ci-contract.js']],
-    ['installer-contract', ['--test', 'scripts/smoke-test-installer.test.js']],
-    ['installer-process-scope', ['scripts/smoke-test-installer-process-scope.cjs']],
-    ['queue-startup', ['scripts/smoke-test-queue-startup.cjs']],
-    ['update-version', ['scripts/smoke-test-update-version-logic.js']],
-    ...['clips-queue', 'clips-workspace', 'clips-four-fixes', 'clips-empty-reset', 'cutter-v2-regression', 'cutter-compact-verified', 'cutter-zoom-stability', 'cutter-waveform', 'full-queue-audit', 'layout-consistency', 'insights-integrated', 'full-workspace-audit', 'audit-regressions', 'cutter-layout-regressions'].flatMap(name => ['chromium', 'webkit'].map(browser => [name + '-' + browser, ['scripts/smoke-test-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : []), ...(name === 'full-workspace-audit' ? ['--expect-refined'] : [])]])),
-    ['cutter-layout-native', ['scripts/smoke-test-cutter-v2-native.js']],
-    ['cutter-audio-sync', ['scripts/smoke-test-cutter-audio-sync-native.js']],
-    ['cutter-audio-many-cuts', ['scripts/smoke-test-cutter-audio-many-cuts.js']],
-    ['clips-empty-reset-native', ['scripts/smoke-test-clips-empty-reset-native.js']],
-    ['roadmap-projects', ['scripts/smoke-test-roadmap-projects.js']],
-    ['roadmap-library', ['scripts/smoke-test-roadmap-library.js']],
-    ['roadmap-audio', ['scripts/smoke-test-roadmap-audio.js']],
-    ['roadmap-hdr', ['scripts/smoke-test-roadmap-hdr.js']],
-    ['roadmap-index', ['scripts/smoke-test-roadmap-index.js']],
-    ['roadmap-cleanup', ['scripts/smoke-test-roadmap-cleanup.js']],
-    ['roadmap-cleanup-ui', ['scripts/smoke-test-roadmap-cleanup-ui.js']],
-    ['roadmap-native', ['scripts/smoke-test-roadmap-native.js']],
-    ...['archive', 'clips'].flatMap(name => ['chromium', 'webkit'].map(browser => ['roadmap-' + name + '-' + browser, ['scripts/smoke-test-roadmap-' + name + '.js', ...(browser === 'webkit' ? ['--webkit'] : [])]])),
-    ['sidebar-layout', ['scripts/smoke-test-sidebar-layout.cjs']],
-    ['queue-merge-controls', ['scripts/smoke-test-queue-merge-controls.cjs']],
-    ['trim-merge-workflow', ['scripts/smoke-test-trim-merge-repair.cjs']],
-    ['trim-merge-omissions', ['scripts/smoke-test-trim-merge-repair.cjs', '--two-omissions', '--de', '--light', '--parts']],
-    ['trim-merge-cancel', ['scripts/smoke-test-trim-merge-repair.cjs', '--two-omissions', '--cancel']],
-    ['vod-playback', ['scripts/smoke-test-full-vod-audit.js']],
-    ['player-seek-preference', ['scripts/smoke-test-player-seek-preference.cjs']],
-    ['vod-live-categories', ['scripts/smoke-test-live-categories.cjs']],
-    ['vod-loading-lifecycle', ['scripts/smoke-test-vod-loading-lifecycle.cjs']],
-    ['vod-opening-source', ['scripts/smoke-test-vod-opening-source.cjs']],
-    ['vod-read-timeout', ['scripts/smoke-test-vod-stall-production-timeout.js', 'ffmpeg']],
-    ['vod-stall-queue', ['scripts/smoke-test-vod-stall-native.js', 'ffmpeg', 'ffprobe']],
-    ['vod-healthy-ranges', ['scripts/smoke-test-vod-stall-healthy.js', 'ffmpeg', 'ffprobe']],
-];
+const webkitOnly = process.argv.slice(2).join(' ') === '--webkit-only';
+if (process.argv.length > 2 && !webkitOnly) throw new Error('Unknown release gate option');
+if (webkitOnly && process.platform !== 'darwin') throw new Error('WebKit shard requires macOS media codecs');
+async function checkoutIdentity() {
+    const git = async args => (await execute('git', args, { cwd: root, windowsHide: true })).stdout.trim();
+    if (await git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('Cross-platform verification requires an unchanged checkout');
+    if (!process.env.GITHUB_RUN_ID || !process.env.GITHUB_RUN_ATTEMPT) throw new Error('Cross-platform verification requires a GitHub Actions run identity');
+    return { commit: await git(['rev-parse', 'HEAD']), tree: await git(['rev-parse', 'HEAD^{tree}']),
+        runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT };
+}
+
 await mkdir(output, { recursive: true });
-await rm(resolve(output, 'receipt.json'), { force: true });
+await rm(resolve(output, webkitOnly ? 'webkit.json' : 'receipt.json'), { force: true });
 for (const [, args] of checks) for (const arg of args.filter(value => value.startsWith('scripts/'))) await access(resolve(root, arg));
 const results = [];
 async function run(name, args, attempt = 1) {
@@ -72,13 +46,24 @@ async function run(name, args, attempt = 1) {
 }
 await run('build', ['scripts/build.mjs']);
 const fingerprint = await releaseFingerprint(root);
-await run('lint', ['node_modules/eslint/bin/eslint.js', '.']);
-await run('unit', ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=2', '--reporter=json', '--outputFile=' + resolve(output, 'unit.json')]);
-const units = JSON.parse(await readFile(resolve(output, 'unit.json'), 'utf8'));
-if (!units.success || !(units.numTotalTests > 0) || units.numFailedTests > 0 || units.numPendingTests > 0) throw new Error('Unit test suite is incomplete');
-await run('electron-native-dependencies', ['node_modules/electron-builder/cli.js', 'install-app-deps']);
+let units;
+if (!webkitOnly) {
+    await run('lint', ['node_modules/eslint/bin/eslint.js', '.']);
+    await run('unit', ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=2', '--reporter=json', '--outputFile=' + resolve(output, 'unit.json')]);
+    units = JSON.parse(await readFile(resolve(output, 'unit.json'), 'utf8'));
+    if (!units.success || !(units.numTotalTests > 0) || units.numFailedTests > 0 || units.numPendingTests > 0) throw new Error('Unit test suite is incomplete');
+    await run('electron-native-dependencies', ['node_modules/electron-builder/cli.js', 'install-app-deps']);
+}
 const failures = [];
-for (const [name, args] of checks) {
+let importedWebkit;
+if (!webkitOnly && process.env.RELEASE_WEBKIT_RECEIPT) {
+    importedWebkit = JSON.parse(await readFile(resolve(process.env.RELEASE_WEBKIT_RECEIPT), 'utf8'));
+    validateWebkitReceipt(importedWebkit, await checkoutIdentity());
+    results.push(...importedWebkit.checks);
+    console.log('Verified ' + importedWebkit.checks.length + ' WebKit checks from macOS for this exact checkout and CI attempt');
+}
+const selectedChecks = webkitOnly ? webkitChecks : importedWebkit ? checks.filter(([name]) => !name.endsWith('-webkit')) : checks;
+for (const [name, args] of selectedChecks) {
     try { await run(name, args); }
     catch (error) {
         console.error(String(error.stdout || '') + String(error.stderr || '') + String(error));
@@ -88,6 +73,16 @@ for (const [name, args] of checks) {
 }
 if (failures.length) throw new AggregateError(failures, 'Release verification failed: ' + failures.length + ' required checks');
 if (fingerprint !== await releaseFingerprint(root)) throw new Error('Sources changed during verification');
-const commit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: root, windowsHide: true })).stdout.trim();
-await writeFile(resolve(output, 'receipt.json'), JSON.stringify({ version: 1, commit, fingerprint, tests: units.numTotalTests, success: true, completedAt: new Date().toISOString(), checks: results }, null, 2));
-console.log('Release verification passed: ' + units.numTotalTests + ' unit tests and ' + checks.length + ' checks');
+if (webkitOnly) {
+    const identity = await checkoutIdentity();
+    const receipt = { version: 1, ...identity, platform: process.platform, success: true,
+        completedAt: new Date().toISOString(), checks: results.filter(check => check.name !== 'build') };
+    validateWebkitReceipt(receipt, identity);
+    await writeFile(resolve(output, 'webkit.json'), JSON.stringify(receipt, null, 2));
+    console.log('WebKit verification passed: ' + webkitChecks.length + ' checks on macOS');
+} else {
+    if (importedWebkit) validateWebkitReceipt(importedWebkit, await checkoutIdentity());
+    const commit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: root, windowsHide: true })).stdout.trim();
+    await writeFile(resolve(output, 'receipt.json'), JSON.stringify({ version: 1, commit, fingerprint, tests: units.numTotalTests, success: true, completedAt: new Date().toISOString(), checks: results }, null, 2));
+    console.log('Release verification passed: ' + units.numTotalTests + ' unit tests and ' + checks.length + ' checks');
+}

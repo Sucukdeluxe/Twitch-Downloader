@@ -66,6 +66,7 @@
     "scripts/package-release.mjs",
     "scripts/public-release-files.json",
     "scripts/release-browser-fixtures.cjs",
+    "scripts/release-checks.mjs",
     "scripts/release-cutter-cases.cjs",
     "scripts/release-gate.mjs",
     "scripts/release-queue-cases.cjs",

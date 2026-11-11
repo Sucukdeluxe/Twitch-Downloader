@@ -15,7 +15,37 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  verify-webkit:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: brew install ffmpeg
+      - name: Verify WebKit with macOS media codecs
+        run: node scripts/release-gate.mjs --webkit-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webkit-verification-${{ github.sha }}
+          if-no-files-found: error
+          path: release/verification/webkit.json
+      - name: Upload WebKit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-diagnostics-${{ github.sha }}
+          if-no-files-found: ignore
+          path: release/verification/*.log
+
   verify-package:
+    needs: verify-webkit
     runs-on: windows-latest
     timeout-minutes: 180
     env:
@@ -32,8 +62,12 @@ jobs:
           node -e "const p=require('./package.json'); if(process.env.GITHUB_REF.startsWith('refs/tags/') && process.env.GITHUB_REF !== 'refs/tags/v'+p.version) throw Error('Tag/package version mismatch');"
       - run: npm ci
       - run: node node_modules/electron/install.js
-      - name: Provision Chromium and WebKit
-        run: npx playwright install --with-deps chromium webkit
+      - name: Provision Chromium
+        run: npx playwright install chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: webkit-verification-${{ github.sha }}
+          path: release/webkit
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -49,6 +83,8 @@ jobs:
           ffprobe -version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify and build production installer
+        env:
+          RELEASE_WEBKIT_RECEIPT: release/webkit/webkit.json
         run: npm run release:build
       - name: Upload verified installer
         uses: actions/upload-artifact@v4
