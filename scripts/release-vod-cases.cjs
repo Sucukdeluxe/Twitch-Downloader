@@ -76,12 +76,15 @@ async function media(env, options, duration = 16, native = false) {
     if (!/\.(m3u8|ts)$/.test(filename)) continue;
     routes[`/${filename}`] = { file: path.join(env.mediaDir, filename), headers: {
       'Content-Type': filename.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t',
+      // CDN files have a known length; chunked transfer can make FFmpeg's HLS
+      // demuxer report EIO at the final segment even after receiving all bytes.
+      'Content-Length': fs.statSync(path.join(env.mediaDir, filename)).size,
       'Access-Control-Allow-Origin': '*',
     } };
   }
   for (const [route, value] of Object.entries(routes)) routes[`/chunked${route}`] = value;
   const server = await harness.createHttpFixture(env, routes);
-  return { ...fixture, server, url: `${server.url}/index.m3u8` };
+  return { ...fixture, playlist, server, url: `${server.url}/index.m3u8` };
 }
 
 function metadata(duration, revision = 0, live = false) {
@@ -485,7 +488,7 @@ async function nativeContext(options, name) {
         return child;
       };
     }, { ffmpeg, ffprobe });
-    return { env, session, source, ffprobe, async close() { await harness.closeSession(session); } };
+    return { env, session, source, ffmpeg, ffprobe, async close() { await harness.closeSession(session); } };
   } catch (error) { await harness.closeSession(session || env); throw error; }
 }
 
@@ -545,31 +548,55 @@ async function nativeStall(options, recover) {
       await queueNative(ctx, `${ctx.source.server.url}/chunked/index.m3u8`, 'Recovered fixture', 4, 4, 'completed');
       const outputs = ownedFiles(ctx.env.downloadsDir).filter(file => file.endsWith('.mp4'));
       assert.equal(outputs.length, 1);
-      await assertDuration(ctx.ffprobe, outputs[0], 4);
+      await assertLosslessRange(ctx, outputs[0], 4, 4);
       await assertNativeClean(ctx);
     }
   } finally { await server?.close(); await ctx.close(); }
 }
 
-async function assertDuration(ffprobe, filename, expected) {
-  const raw = await production('media-process').runMediaProcess(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', filename]);
+async function videoHashes(ffmpeg, filename) {
+  const raw = await production('media-process').runMediaProcess(ffmpeg,
+    ['-v', 'error', '-i', filename, '-map', '0:v:0', '-f', 'framemd5', '-']);
+  const hashes = raw.split(/\r?\n/).filter(line => /^\d+,/.test(line)).map(line => line.split(',').at(-1).trim());
+  assert.ok(hashes.length > 0, 'No decoded video frames');
+  return hashes;
+}
+
+async function assertLosslessRange(ctx, filename, start, expected) {
+  const raw = await production('media-process').runMediaProcess(ctx.ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', filename]);
   const probe = JSON.parse(raw);
-  assert.ok(probe.streams.some(stream => stream.codec_type === 'video'));
-  assert.ok(probe.streams.some(stream => stream.codec_type === 'audio'));
-  assert.ok(Math.abs(Number(probe.format.duration) - expected) < .6, `Selected ${expected}s range produced ${probe.format.duration}s`);
+  const video = probe.streams.find(stream => stream.codec_type === 'video');
+  const audio = probe.streams.find(stream => stream.codec_type === 'audio');
+  assert.ok(video); assert.ok(audio);
+  assert.ok(Math.abs(Number(video.start_time) - Number(audio.start_time)) < .08, 'Audio/video start drift');
+  assert.ok(Math.abs(Number(video.duration) - Number(audio.duration)) < .08, 'Audio/video duration drift');
+  const duration = Number(probe.format.duration);
+  assert.ok(duration >= expected - .1 && duration <= expected + Math.min(start, 2) + .1,
+    `Selected ${expected}s range produced ${duration}s (maximum one 2s keyframe interval of pre-roll)`);
+  // Lossless source downloads may include the preceding keyframe. Compare EVERY
+  // decoded frame with the original HLS source, and require the requested end
+  // and complete selected range. A longer but wrong/repeated/frozen clip fails.
+  ctx.referenceHashes ||= await videoHashes(ctx.ffmpeg, ctx.source.playlist);
+  const actual = await videoHashes(ctx.ffmpeg, filename);
+  const first = ctx.referenceHashes.indexOf(actual[0]);
+  assert.ok(first >= 0, 'Export starts with content absent from the source');
+  assert.deepEqual(actual, ctx.referenceHashes.slice(first, first + actual.length), 'Export content differs from its source range');
+  const requestedFirst = Math.round(start * 30);
+  assert.ok(first <= requestedFirst && first >= requestedFirst - 60, 'Export omits the selected start or exceeds one keyframe interval');
+  assert.ok(Math.abs(first + actual.length - Math.round((start + expected) * 30)) <= 1, 'Export does not end at the selected frame');
 }
 
 async function healthy(options) {
   const ctx = await nativeContext(options, 'healthy-vod-ranges');
   try {
-    for (const [name, start, length] of [['middle', 4, 4], ['tail', 12, 4], ['full', 0, null]]) {
+    for (const [name, start, length] of [['middle', 4, 4], ['fractional', 4.5, 4], ['tail', 12, 4], ['full', 0, null]]) {
       const before = new Set(ownedFiles(ctx.env.downloadsDir));
       const item = await queueNative(ctx, `${ctx.source.server.url}/chunked/index.m3u8`, name, start, length, 'completed');
       assert.equal(item.completionRecorded, true);
       assert.ok(item.outputBytes > 0);
       const outputs = ownedFiles(ctx.env.downloadsDir).filter(file => file.endsWith('.mp4') && !before.has(file));
       assert.equal(outputs.length, 1, `Expected one real finalized ${name} export`);
-      await assertDuration(ctx.ffprobe, outputs[0], length || 16);
+      await assertLosslessRange(ctx, outputs[0], start, length || 16);
     }
     assert.ok(ctx.source.server.calls.some(call => call.path.endsWith('.ts')));
     await assertNativeClean(ctx);
@@ -593,4 +620,4 @@ async function run(name, argv = process.argv.slice(2)) {
   console.log(`PASS ${name} (reconstructed public release check)`);
 }
 function main(name) { run(name).catch(error => { console.error(`FAIL ${name}: ${error.stack || error}`); process.exitCode = 1; }); }
-module.exports = { run, main };
+module.exports = { run, main, assertLosslessRange };
