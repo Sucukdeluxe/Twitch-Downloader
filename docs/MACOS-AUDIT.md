@@ -84,3 +84,9 @@ invalidate the cache. Unit tests and a real binary-corruption recovery test
 cover those cases. Python still receives a runtime probe, because a launcher
 identity cannot detect damage to imported modules. The existing strict local
 waveform latency budget is unchanged.
+
+The native CI run also exposed a test timing assumption in the volume animation
+check: a snapshot 70 ms after sending hover could precede delivery of that event.
+The test now observes real intermediate animation frames and the fully opened/
+closed states. Geometry assertions and the animation itself are unchanged;
+reduced-motion emulation remains local to the test page.

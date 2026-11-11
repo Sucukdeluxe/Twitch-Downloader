@@ -1646,13 +1646,20 @@ async function run() {
       volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
       timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left
     }));
+    // Observe an actual intermediate animation frame. A fixed delay from
+    // sending hover can expire before a hosted Mac delivers that input event.
+    const sampleVolumeInMotion = async () => {
+      const sample = await win.waitForFunction(() => {
+        const volumeWidth = document.getElementById('cutterVolume').getBoundingClientRect().width;
+        if (volumeWidth <= 2 || volumeWidth >= 78) return false;
+        return { volumeWidth, timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left };
+      }, null, { polling: 'raf', timeout: 3000 });
+      return sample.jsonValue();
+    };
+    const expandingVolumeSample = sampleVolumeInMotion();
     await win.locator('#cutterMuteBtn').hover();
-    await win.waitForTimeout(70);
-    const expandingVolumeLayout = await win.evaluate(() => ({
-      volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
-      timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left
-    }));
-    await win.waitForTimeout(220);
+    const expandingVolumeLayout = await expandingVolumeSample;
+    await win.waitForFunction(() => document.getElementById('cutterVolume').getBoundingClientRect().width >= 79);
     await win.locator('#cutterVolume').click({ position: { x: 40, y: 5 } });
     const focusedVolumeAppearance = await win.evaluate(() => {
       const input = document.getElementById('cutterVolume');
@@ -1682,13 +1689,10 @@ async function run() {
         && expandingVolumeLayout.timeLeft < expandedVolumeLayout.timeLeft - 2,
       `Volume and timecode do not glide open together: ${JSON.stringify({ collapsedVolumeLayout, expandingVolumeLayout, expandedVolumeLayout })}`
     );
+    const collapsingVolumeSample = sampleVolumeInMotion();
     await win.mouse.move(4, 4);
-    await win.waitForTimeout(70);
-    const collapsingVolumeLayout = await win.evaluate(() => ({
-      volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
-      timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left
-    }));
-    await win.waitForTimeout(220);
+    const collapsingVolumeLayout = await collapsingVolumeSample;
+    await win.waitForFunction(() => document.getElementById('cutterVolume').getBoundingClientRect().width <= 1);
     const closedVolumeLayout = await win.evaluate(() => ({
       volumeWidth: document.getElementById('cutterVolume').getBoundingClientRect().width,
       timeLeft: document.querySelector('.cutter-player-time').getBoundingClientRect().left
