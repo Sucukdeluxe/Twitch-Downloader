@@ -1,0 +1,158 @@
+name: Windows verified release
+
+on:
+  pull_request:
+    branches: [public-v1]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  verify-webkit:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: brew install ffmpeg
+      - name: Verify WebKit with macOS media codecs
+        run: node scripts/release-gate.mjs --webkit-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webkit-verification-${{ github.sha }}
+          if-no-files-found: error
+          path: release/verification/webkit.json
+      - name: Upload WebKit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-diagnostics-${{ github.sha }}
+          if-no-files-found: ignore
+          path: release/verification/*.log
+
+  verify-package:
+    needs: verify-webkit
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          node -e "const p=require('./package.json'); if(process.env.GITHUB_REF.startsWith('refs/tags/') && process.env.GITHUB_REF !== 'refs/tags/v'+p.version) throw Error('Tag/package version mismatch');"
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Provision Chromium
+        run: npx playwright install chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: webkit-verification-${{ github.sha }}
+          path: release/webkit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Provision Streamlink
+        run: python -m pip install streamlink==8.6.3
+      - name: Provision media fixtures
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ffprobe -version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify and build production installer
+        env:
+          RELEASE_WEBKIT_RECEIPT: release/webkit/webkit.json
+        run: npm run release:build
+      - name: Upload verified installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release/Twitch-Downloader-Setup-*.exe
+            release/Twitch-Downloader-Setup-*.exe.blockmap
+            release/latest.yml
+            release/verification/receipt.json
+            release/verification/package.json
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-verification-${{ github.sha }}
+          if-no-files-found: ignore
+          path: |
+            release/verification/*.log
+            release/verification/unit.json
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release-${{ github.sha }}
+          path: release
+      - name: Verify provenance and public assets
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          const version = JSON.parse(fs.readFileSync('package.json')).version;
+          const proof = JSON.parse(fs.readFileSync('release/verification/package.json'));
+          const receipt = JSON.parse(fs.readFileSync('release/verification/receipt.json'));
+          const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          if (process.env.GITHUB_REF !== `refs/tags/v${version}` || proof.version !== version || proof.candidate !== false || !receipt.success || receipt.tests <= 0 || receipt.commit !== commit || proof.fingerprint !== receipt.fingerprint || receipt.checks.some(check => !check.success)) throw new Error('Unverified release provenance');
+          const expected = [`Twitch-Downloader-Setup-${version}.exe`, `Twitch-Downloader-Setup-${version}.exe.blockmap`, 'latest.yml'].sort();
+          if (JSON.stringify(proof.files.map(file => file.name).sort()) !== JSON.stringify(expected)) throw new Error('Unexpected asset set');
+          for (const file of proof.files) {
+            const bytes = fs.readFileSync(`release/${file.name}`);
+            if (bytes.length !== file.bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== file.sha256 || crypto.createHash('sha512').update(bytes).digest('base64') !== file.sha512) throw new Error(`Asset integrity mismatch: ${file.name}`);
+          }
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const section = changelog.split(`## ${version} - `)[1];
+          if (!section) throw new Error('Release notes missing');
+          fs.writeFileSync('release-notes.txt', section.slice(section.indexOf('\n') + 1).split('\n## ')[0].trim() + '\n');
+          NODE
+      - name: Publish verified Windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          gh release create "v$version" \
+            "release/Twitch-Downloader-Setup-$version.exe" \
+            "release/Twitch-Downloader-Setup-$version.exe.blockmap" \
+            release/latest.yml --verify-tag --latest \
+            --title "Twitch Downloader $version" --notes-file release-notes.txt
