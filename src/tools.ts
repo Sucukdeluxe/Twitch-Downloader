@@ -4,6 +4,7 @@ import { spawn, execSync, spawnSync } from 'child_process';
 import axios from 'axios';
 import { createManagedToolInstaller, type ManagedToolInstaller, type ManagedToolStatus } from './main/domain/managed-tools';
 import { APPLICATION_TOOL_MANIFEST } from './main/domain/tool-manifest';
+import { executableIdentity } from './main/infra/executable-identity';
 
 // ==========================================
 // CONSTANTS
@@ -135,12 +136,19 @@ export function isVerifiedStreamlinkCommand(command: string, args: string[]): bo
     return verifiedStreamlinkCommandKey === getCommandCacheKey(command, args);
 }
 
+function ffmpegVerificationKey(ffmpegCommand: string, ffprobeCommand: string): string | null {
+    if (process.platform !== 'darwin') return getCommandCacheKey(ffmpegCommand, [ffprobeCommand]);
+    const ffmpeg = executableIdentity(ffmpegCommand);
+    const ffprobe = executableIdentity(ffprobeCommand);
+    return ffmpeg && ffprobe ? JSON.stringify([ffmpeg, ffprobe]) : null;
+}
+
 export function cacheVerifiedFfmpegCommands(ffmpegCommand: string, ffprobeCommand: string): void {
-    verifiedFfmpegCommandKey = getCommandCacheKey(ffmpegCommand, [ffprobeCommand]);
+    verifiedFfmpegCommandKey = ffmpegVerificationKey(ffmpegCommand, ffprobeCommand);
 }
 
 export function isVerifiedFfmpegCommands(ffmpegCommand: string, ffprobeCommand: string): boolean {
-    return verifiedFfmpegCommandKey === getCommandCacheKey(ffmpegCommand, [ffprobeCommand]);
+    return verifiedFfmpegCommandKey !== null && verifiedFfmpegCommandKey === ffmpegVerificationKey(ffmpegCommand, ffprobeCommand);
 }
 
 export function invalidateVerifiedToolCaches(): void {
@@ -531,6 +539,10 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
 
 export async function ensureFfmpegInstalled(): Promise<boolean> {
     refreshBundledToolPaths();
+    // These self-contained Mac binaries have already passed hash and runtime
+    // verification. Avoid rehashing hundreds of MB for each editor load, while
+    // revalidating immediately after any file, target or permission change.
+    if (process.platform === 'darwin' && isVerifiedFfmpegCommands(getFFmpegPath(), getFFprobePath())) return true;
 
     const manifest = applicationToolManifest.ffmpeg;
     const managedStatus = await getManagedToolInstaller('ffmpeg').status(manifest);

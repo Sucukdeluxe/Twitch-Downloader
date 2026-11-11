@@ -54,6 +54,28 @@ async function run() {
       await execute(ffmpeg, ['-version']);
       return true;
     });
+    await check('same-size-ffmpeg-change-invalidates-verification', async () => {
+      const stat = fs.statSync(ffmpeg);
+      const descriptor = fs.openSync(ffmpeg, 'r+');
+      const byte = Buffer.alloc(1);
+      try {
+        fs.readSync(descriptor, byte, 0, 1, stat.size - 1);
+        byte[0] ^= 1;
+        fs.writeSync(descriptor, byte, 0, 1, stat.size - 1);
+      } finally { fs.closeSync(descriptor); }
+      fs.utimesSync(ffmpeg, stat.atime, stat.mtime);
+      const repaired = await app.evaluate(({ app: nativeApp }) => {
+        const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+        return appRequire('./dist/tools.js').ensureFfmpegInstalled();
+      });
+      assert.equal(repaired, true);
+      const restored = fs.openSync(ffmpeg, 'r');
+      const actual = Buffer.alloc(1);
+      try { fs.readSync(restored, actual, 0, 1, stat.size - 1); }
+      finally { fs.closeSync(restored); }
+      assert.equal(actual[0], byte[0] ^ 1, 'A changed binary reused stale verification');
+      return true;
+    });
     await win.evaluate(() => window.api.repairManagedTools());
     await check('damaged-python-module-auto-repair', async () => {
       const moduleFile = path.join(toolRoot, 'streamlink', 'python', 'lib', 'python3.13', 'site-packages', 'streamlink', '__main__.py');

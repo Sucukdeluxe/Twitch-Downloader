@@ -72,3 +72,15 @@ still required to make production Keychain identity stable across releases.
 This does not establish absence of every possible defect. Developer ID signing,
 notarization, a signed update installation and account-specific subscriber/live
 workflows remain separate acceptance checks.
+
+## Editor-load regression check
+
+Loading a 58-second clip repeatedly rehashed the large FFmpeg binaries; profiling
+measured 500–627 ms inside tool preparation alone. Mac FFmpeg verification now
+reuses a successful hash/runtime check only while both executable identities
+(resolved path, device, inode, size, mode, nanosecond mtime and ctime) match.
+Missing execute permission, replacement and same-size edits with restored mtime
+invalidate the cache. Unit tests and a real binary-corruption recovery test
+cover those cases. Python still receives a runtime probe, because a launcher
+identity cannot detect damage to imported modules. The existing strict local
+waveform latency budget is unchanged.

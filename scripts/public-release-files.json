@@ -125,6 +125,8 @@
     "src/main/infra/download-process.ts",
     "src/main/infra/duration.test.ts",
     "src/main/infra/duration.ts",
+    "src/main/infra/executable-identity.test.ts",
+    "src/main/infra/executable-identity.ts",
     "src/main/infra/format-helpers.test.ts",
     "src/main/infra/format-helpers.ts",
     "src/main/infra/fs-atomic.test.ts",
