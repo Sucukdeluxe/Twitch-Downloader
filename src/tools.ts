@@ -33,12 +33,15 @@ export function initToolDirs(streamlinkDir: string, ffmpegDir: string, getTempPa
     TOOLS_FFMPEG_DIR = ffmpegDir;
     _getTempPath = getTempPath;
     macosToolResources = resourceDirectory;
+    applicationToolManifest = APPLICATION_TOOL_MANIFEST;
     if (process.platform === 'darwin') {
         const manifestPath = path.join(resourceDirectory, 'manifest.json');
         // Development may run before tools are prepared; never download Windows tools on a Mac.
         if (fs.existsSync(manifestPath)) applicationToolManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     }
     managedToolInstallers.clear();
+    invalidateVerifiedToolCaches();
+    refreshBundledToolPaths(true);
 }
 
 // ==========================================
@@ -95,7 +98,7 @@ function getCommandCacheKey(command: string, args: string[]): string {
 
 export function canExecute(cmd: string): boolean {
     try {
-        execSync(cmd, { stdio: 'ignore', windowsHide: true });
+        execSync(cmd, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
         return true;
     } catch {
         return false;
@@ -104,11 +107,21 @@ export function canExecute(cmd: string): boolean {
 
 export function canExecuteCommand(command: string, args: string[]): boolean {
     try {
-        const result = spawnSync(command, args, { stdio: 'ignore', windowsHide: true });
+        const result = spawnSync(command, args, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
         return result.status === 0;
     } catch {
         return false;
     }
+}
+
+// A cold private Python runtime or macOS security scan can take seconds. Keep
+// the main event loop responsive while checking it, and bound a stuck probe.
+export function canExecuteCommandAsync(command: string, args: string[]): Promise<boolean> {
+    return new Promise((resolve) => {
+        const child = spawn(command, args, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
+        child.once('error', () => resolve(false));
+        child.once('close', (code) => resolve(code === 0));
+    });
 }
 
 // ==========================================
@@ -441,6 +454,7 @@ export async function getManagedToolStatuses(): Promise<ManagedToolStatuses> {
 }
 
 export async function repairManagedTools(): Promise<{ success: boolean; statuses: ManagedToolStatuses }> {
+    invalidateVerifiedToolCaches();
     const [streamlink, ffmpeg] = await Promise.all([
         getManagedToolInstaller('streamlink').repair(applicationToolManifest.streamlink),
         getManagedToolInstaller('ffmpeg').repair(applicationToolManifest.ffmpeg)
@@ -475,11 +489,11 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
     const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledStreamlinkPath)) && !managedStatus.verified;
     const current = getStreamlinkCommand();
     const versionArgs = [...current.prefixArgs, '--version'];
-    if (!requiresManagedRepair && isVerifiedStreamlinkCommand(current.command, versionArgs)) {
+    if (process.platform !== 'darwin' && !requiresManagedRepair && isVerifiedStreamlinkCommand(current.command, versionArgs)) {
         return true;
     }
 
-    if (!requiresManagedRepair && canExecuteCommand(current.command, versionArgs)) {
+    if (!requiresManagedRepair && await canExecuteCommandAsync(current.command, versionArgs)) {
         cacheVerifiedStreamlinkCommand(current.command, versionArgs);
         return true;
     }
@@ -490,7 +504,9 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
 
     _appendDebugLog('streamlink-install-start');
     try {
-        const result = await getManagedToolInstaller('streamlink').install(manifest);
+        // A matching archive hash does not prove that permissions, Python
+        // modules or dylibs still work. A failed launch must force extraction.
+        const result = await getManagedToolInstaller('streamlink').repair(manifest);
         if (!result.success) {
             _appendDebugLog('streamlink-install-failed', { error: result.error, status: result.status });
             return false;
@@ -501,7 +517,7 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
 
         const cmd = getStreamlinkCommand();
         const installedVersionArgs = [...cmd.prefixArgs, '--version'];
-        const works = canExecuteCommand(cmd.command, installedVersionArgs);
+        const works = await canExecuteCommandAsync(cmd.command, installedVersionArgs);
         if (works) {
             cacheVerifiedStreamlinkCommand(cmd.command, installedVersionArgs);
         }
@@ -521,11 +537,11 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
     const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledFFmpegPath || bundledFFprobePath)) && !managedStatus.verified;
     const ffmpegPath = getFFmpegPath();
     const ffprobePath = getFFprobePath();
-    if (!requiresManagedRepair && isVerifiedFfmpegCommands(ffmpegPath, ffprobePath)) {
+    if (process.platform !== 'darwin' && !requiresManagedRepair && isVerifiedFfmpegCommands(ffmpegPath, ffprobePath)) {
         return true;
     }
 
-    if (!requiresManagedRepair && canExecuteCommand(ffmpegPath, ['-version']) && canExecuteCommand(ffprobePath, ['-version'])) {
+    if (!requiresManagedRepair && await canExecuteCommandAsync(ffmpegPath, ['-version']) && await canExecuteCommandAsync(ffprobePath, ['-version'])) {
         cacheVerifiedFfmpegCommands(ffmpegPath, ffprobePath);
         return true;
     }
@@ -536,7 +552,7 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
 
     _appendDebugLog('ffmpeg-install-start');
     try {
-        const result = await getManagedToolInstaller('ffmpeg').install(manifest);
+        const result = await getManagedToolInstaller('ffmpeg').repair(manifest);
         if (!result.success) {
             _appendDebugLog('ffmpeg-install-failed', { error: result.error, status: result.status });
             return false;
@@ -546,7 +562,7 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
 
         const newFfmpegPath = getFFmpegPath();
         const newFfprobePath = getFFprobePath();
-        const works = canExecuteCommand(newFfmpegPath, ['-version']) && canExecuteCommand(newFfprobePath, ['-version']);
+        const works = await canExecuteCommandAsync(newFfmpegPath, ['-version']) && await canExecuteCommandAsync(newFfprobePath, ['-version']);
         if (works) {
             cacheVerifiedFfmpegCommands(newFfmpegPath, newFfprobePath);
         }

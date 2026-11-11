@@ -189,6 +189,18 @@ contextBridge.exposeInMainWorld('api', {
     },
 
     // Video Cutter
+    onNativeEditCommand: (callback: (action: 'undo' | 'redo') => void) => {
+        ipcRenderer.on('native-edit-command', (_, action) => callback(action));
+    },
+    performNativeEdit: (action: 'undo' | 'redo') => ipcRenderer.send('native-edit-default', action),
+    onPrepareWindowClose: (callback: () => Promise<boolean>) => {
+        ipcRenderer.on('prepare-window-close', (_, requestId: number) => {
+            void callback().then(
+                (saved) => ipcRenderer.send('window-close-ready', requestId, saved),
+                () => ipcRenderer.send('window-close-ready', requestId, false),
+            );
+        });
+    },
     getVideoInfo: (capability: string): Promise<VideoInfo | null> => ipcRenderer.invoke('get-video-info', capability),
     extractFrame: (capability: string, timeSeconds: number): Promise<string | null> => ipcRenderer.invoke('extract-frame', capability, timeSeconds),
     prepareVideoEditorMedia: (capability: string): Promise<VideoEditorMedia | null> => ipcRenderer.invoke('prepare-video-editor-media', capability),

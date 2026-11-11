@@ -66,6 +66,8 @@ let cutterExportEncoder: 'software' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | '
 let cutterAudioStreamIndex = 0;
 let cutterPendingProject: CutterProject | null = null;
 let cutterAutosaveTimer: number | null = null;
+let cutterSaveRevision = 0;
+let cutterSavedRevision = 0;
 let cutterExportOptions: CutterExportOptions | null = null;
 let cutterRecoveryDecisionPending = false;
 const cutterMaximumCuts = 64;
@@ -160,17 +162,20 @@ function getCutterProjectPayload(): Omit<CutterProject, 'source' | 'duration' | 
 
 async function persistCutterProject(showResult: boolean): Promise<boolean> {
     const file = cutterFile;
+    const revision = cutterSaveRevision;
     const project = getCutterProjectPayload();
     if (!file || !project) return false;
     let saved = false;
     try {
         saved = await window.api.saveCutterProject(file.token, project);
     } catch { }
+    if (saved && cutterFile === file) cutterSavedRevision = Math.max(cutterSavedRevision, revision);
     if (showResult) showAppToast(saved ? 'Projekt gespeichert' : 'Projekt konnte nicht gespeichert werden', saved ? 'info' : 'warn');
     return saved;
 }
 
 function scheduleCutterAutosave(): void {
+    cutterSaveRevision += 1;
     if (cutterAutosaveTimer !== null) window.clearTimeout(cutterAutosaveTimer);
     const file = cutterFile;
     cutterAutosaveTimer = window.setTimeout(() => {
@@ -178,6 +183,30 @@ function scheduleCutterAutosave(): void {
         if (!file || cutterFile !== file || cutterRecoveryDecisionPending) return;
         void persistCutterProject(false);
     }, 500);
+}
+
+function initNativeCutterCommands(): void {
+    // Native macOS menu accelerators are consumed before DOM keydown. Route
+    // them to editor history only when focus is outside a text editing control.
+    window.api.onNativeEditCommand?.((action) => {
+        const target = document.activeElement as HTMLElement | null;
+        const editingText = target?.matches('input:not([type="range"]):not([type="checkbox"]), textarea, [contenteditable="true"]');
+        if (byId('cutterTab').classList.contains('active') && cutterEditorState && !editingText) {
+            if (action === 'undo') undoCutterEdit();
+            else if (action === 'redo') redoCutterEdit();
+        } else {
+            window.api.performNativeEdit(action);
+        }
+    });
+
+    window.api.onPrepareWindowClose?.(async () => {
+        if (cutterAutosaveTimer !== null) window.clearTimeout(cutterAutosaveTimer);
+        cutterAutosaveTimer = null;
+        if (!cutterFile || !cutterEditorState || cutterRecoveryDecisionPending || cutterSaveRevision === cutterSavedRevision) return true;
+        const saved = await persistCutterProject(false);
+        if (!saved) showAppToast('Projekt konnte nicht gespeichert werden', 'warn');
+        return saved;
+    });
 }
 
 function renderCutterProjectRecovery(project: CutterProject | null): void {
@@ -1071,6 +1100,7 @@ async function loadCutterFromPath(file: FileCapabilityReference): Promise<void> 
     cutterHistoryFuture = [];
     cutterActiveCutId = null;
     cutterExportProfile = 'balanced';
+    cutterSavedRevision = cutterSaveRevision;
     cutterExportEncoder = 'software';
     cutterAudioStreamIndex = media.info.audioStreams[0]?.index ?? 0;
     cutterRecoveryDecisionPending = true;
@@ -1721,6 +1751,7 @@ function scheduleCutterPlaybackFrameSync(): void {
 function initCutterEditor(): void {
     if (cutterEditorInitialized) return;
     cutterEditorInitialized = true;
+    initNativeCutterCommands();
     const video = getCutterVideo();
     setCutterControlsEnabled(Boolean(cutterEditorState));
     updateCutterPlayUi();

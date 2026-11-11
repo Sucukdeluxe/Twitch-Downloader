@@ -52,6 +52,7 @@ describe('cutter production paths', () => {
         const file = { token: 'source-capability' };
         const api = evaluate(sourceFragment('function scheduleCutterAutosave', 'function renderCutterProjectRecovery'), {
             cutterAutosaveTimer: null,
+            cutterSaveRevision: 0,
             cutterRecoveryDecisionPending: true,
             cutterFile: file,
             persistCutterProject: async () => { saves += 1; return true; },
@@ -103,6 +104,8 @@ describe('cutter production paths', () => {
             cutterVideoInfo: null,
             cutterHistoryPast: [],
             cutterHistoryFuture: [],
+            cutterSaveRevision: 0,
+            cutterSavedRevision: 0,
             cutterActiveCutId: null,
             cutterExportProfile: 'balanced',
             cutterExportEncoder: 'software',

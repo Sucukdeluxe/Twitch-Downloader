@@ -205,6 +205,10 @@ function applyLanguageToStaticUI(): void {
     setAriaLabel('cutterFullscreenBtn', UI_TEXT.cutter.fullscreen);
     setAriaLabel('cutterUndoBtn', UI_TEXT.cutter.undo);
     setAriaLabel('cutterRedoBtn', UI_TEXT.cutter.redo);
+    if (window.api.platform === 'darwin') {
+        setTitle('cutterUndoBtn', `${UI_TEXT.cutter.undo} (⌘Z)`);
+        setTitle('cutterRedoBtn', `${UI_TEXT.cutter.redo} (⇧⌘Z)`);
+    }
     setAriaLabel('cutterZoomOutBtn', UI_TEXT.cutter.zoomOut);
     setAriaLabel('cutterZoomInBtn', UI_TEXT.cutter.zoomIn);
     setAriaLabel('cutterZoom', UI_TEXT.cutter.zoom);

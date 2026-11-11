@@ -489,6 +489,9 @@ interface ApiBridge {
     cancelVideoEditorAssets(jobId: number): Promise<boolean>;
     getCutterProjectRecovery(capability: string): Promise<CutterProject | null>;
     saveCutterProject(capability: string, project: Omit<CutterProject, 'source' | 'duration' | 'fps'>): Promise<boolean>;
+    onNativeEditCommand(callback: (action: 'undo' | 'redo') => void): void;
+    performNativeEdit(action: 'undo' | 'redo'): void;
+    onPrepareWindowClose(callback: () => Promise<boolean>): void;
     discardCutterProject(capability: string): Promise<boolean>;
     openCutterProject(capability: string): Promise<CutterProject | null>;
     getCutterExportOptions(): Promise<CutterExportOptions | null>;

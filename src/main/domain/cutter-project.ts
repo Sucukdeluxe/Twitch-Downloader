@@ -73,7 +73,7 @@ function isProject(value: unknown): value is CutterProject {
             && typeof (cut as Record<string, unknown>).end === 'number'
             && Number.isFinite((cut as Record<string, unknown>).end))
         && (project.profile === 'quality' || project.profile === 'balanced' || project.profile === 'fast' || project.profile === 'archive')
-        && (project.encoder === 'software' || project.encoder === 'h264_nvenc' || project.encoder === 'h264_qsv' || project.encoder === 'h264_amf')
+        && (project.encoder === 'software' || project.encoder === 'h264_nvenc' || project.encoder === 'h264_qsv' || project.encoder === 'h264_amf' || project.encoder === 'h264_videotoolbox')
         && typeof project.audioStreamIndex === 'number'
         && Number.isInteger(project.audioStreamIndex)
         && project.audioStreamIndex >= 0;

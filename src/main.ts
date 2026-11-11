@@ -74,12 +74,13 @@ import { createSecretStore, type SecretStore } from './main/domain/secret-store'
 import { migrateJsonToSqlite } from './main/domain/migrator';
 import { createElectronSecureStorage } from './main/infra/secure-storage';
 import { readChatFile } from './main/domain/chat-reader';
+import { spawnDownloadProcess, killDownloadProcess } from './main/infra/download-process';
 import {
     setDebugLogFn, initToolDirs,
     getStreamlinkPath, getStreamlinkCommand, getFFmpegPath, getFFprobePath,
     refreshBundledToolPaths, ensureStreamlinkInstalled, ensureFfmpegInstalled,
     getManagedToolStatuses, repairManagedTools, resetManagedTools,
-    canExecute, canExecuteCommand,
+    canExecute, canExecuteCommand, canExecuteCommandAsync,
     cacheVerifiedStreamlinkCommand, isVerifiedStreamlinkCommand,
     cacheVerifiedFfmpegCommands, isVerifiedFfmpegCommands,
     invalidateVerifiedToolCaches
@@ -945,15 +946,15 @@ async function runPreflight(autoFix = false): Promise<PreflightResult> {
     }
 
     const streamlinkCmd = getStreamlinkCommand();
-    checks.streamlink = canExecuteCommand(streamlinkCmd.command, [...streamlinkCmd.prefixArgs, '--version']);
+    checks.streamlink = await canExecuteCommandAsync(streamlinkCmd.command, [...streamlinkCmd.prefixArgs, '--version']);
     if (checks.streamlink) {
         cacheVerifiedStreamlinkCommand(streamlinkCmd.command, [...streamlinkCmd.prefixArgs, '--version']);
     }
 
     const ffmpegPath = getFFmpegPath();
     const ffprobePath = getFFprobePath();
-    checks.ffmpeg = canExecuteCommand(ffmpegPath, ['-version']);
-    checks.ffprobe = canExecuteCommand(ffprobePath, ['-version']);
+    checks.ffmpeg = await canExecuteCommandAsync(ffmpegPath, ['-version']);
+    checks.ffprobe = await canExecuteCommandAsync(ffprobePath, ['-version']);
     if (checks.ffmpeg && checks.ffprobe) {
         cacheVerifiedFfmpegCommands(ffmpegPath, ffprobePath);
     }
@@ -1810,8 +1811,9 @@ function probeMediaFile(filePath: string): { durationSeconds: number; hasVideo: 
 function validateDownloadedFileIntegrity(filePath: string, expectedDurationSeconds: number | null): DownloadResult {
     const probed = probeMediaFile(filePath);
     if (!probed) {
-        appendDebugLog('integrity-probe-skipped', { filePath });
-        return { success: true };
+        runtimeMetrics.integrityFailures += 1;
+        appendDebugLog('integrity-probe-failed', { filePath });
+        return { success: false, error: tBackend('integrityFailedGeneric') };
     }
 
     if (!probed.hasVideo) {
@@ -4040,6 +4042,7 @@ function downloadVODPart(
     return new Promise((resolve) => {
         const streamlinkCmd = getStreamlinkCommand();
         const args = [...streamlinkCmd.prefixArgs, url, getStreamlinkStreamArg(), '--stdout'];
+        args.push('--ffmpeg-ffmpeg', getFFmpegPath());
         if (config.streamlink_disable_ads !== false) {
             // Skips Twitch mid-roll ads which would otherwise be embedded
             // in the VOD output. Off only if the user explicitly disabled it.
@@ -4073,7 +4076,7 @@ function downloadVODPart(
         appendDebugLog('download-part-start', { itemId, command: streamlinkCmd.command, filename, args });
 
         const partialFilename = partialDownloadRegistry.begin(filename);
-        const proc = spawn(streamlinkCmd.command, args, { windowsHide: true });
+        const proc = spawnDownloadProcess(streamlinkCmd.command, args);
         const outputStream = fs.createWriteStream(partialFilename, { flags: 'w' });
         if (!proc.stdout) {
             outputStream.destroy();
@@ -4088,7 +4091,7 @@ function downloadVODPart(
         );
         const outputFinished = output.finished.then(() => null, (error) => error);
         const processRegistration = queueProcessRegistry.register(itemId, 'streamlink', {
-            kill: () => proc.kill(),
+            kill: () => killDownloadProcess(proc),
             wait: () => waitForChildProcessExit(proc),
             pause: () => output.pause(),
             resume: () => output.resume(),
@@ -7096,6 +7099,46 @@ async function processQueue(manualOverride = false): Promise<void> {
 // ==========================================
 // WINDOW CREATION
 // ==========================================
+let startupQueueResumeHandled = false;
+let windowCloseRequestId = 0;
+const pendingWindowClose = new Map<number, { id: number; promise: Promise<boolean>; finish: (saved: boolean) => void }>();
+
+function prepareWindowClose(window: BrowserWindow): Promise<boolean> {
+    if (window.isDestroyed() || window.webContents.isCrashed() || window.webContents.isLoadingMainFrame()) return Promise.resolve(true);
+    const contents = window.webContents;
+    const ownerId = contents.id;
+    const existing = pendingWindowClose.get(ownerId);
+    if (existing) return existing.promise;
+    const id = ++windowCloseRequestId;
+    let finish!: (saved: boolean) => void;
+    const promise = new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+            appendDebugLog('window-close-save-timeout');
+            finish(false);
+        }, 5000);
+        finish = (saved) => {
+            clearTimeout(timer);
+            pendingWindowClose.delete(ownerId);
+            resolve(saved);
+        };
+    });
+    pendingWindowClose.set(ownerId, { id, promise, finish });
+    contents.send('prepare-window-close', id);
+    return promise;
+}
+
+ipcMain.on('window-close-ready', (event, id: number, saved: boolean) => {
+    if (!isTrustedRendererEvent(event)) return;
+    const request = pendingWindowClose.get(event.sender.id);
+    if (request?.id === id) request.finish(saved === true);
+});
+
+ipcMain.on('native-edit-default', (event, action: unknown) => {
+    if (!isTrustedRendererEvent(event)) return;
+    if (action === 'undo') event.sender.undo();
+    else if (action === 'redo') event.sender.redo();
+});
+
 function createWindow(): void {
     nativeTheme.themeSource = config.theme === 'light' ? 'light' : 'dark';
     const windowIconPath = WINDOWS_APP_ICON_PATH ?? path.join(__dirname, '../build/icon.png');
@@ -7154,7 +7197,9 @@ function createWindow(): void {
         // Auto-resume: if the user opted in AND the persisted queue has
         // pending entries, kick off processing after a short delay so the
         // UI has time to render and the user can still pause if they want.
-        if (config.auto_resume_queue_on_startup && !isDownloading) {
+        const isFirstLoad = !startupQueueResumeHandled;
+        startupQueueResumeHandled = true;
+        if (isFirstLoad && config.auto_resume_queue_on_startup && !isDownloading) {
             const hasPending = downloadQueue.some((it) => it.status === 'pending');
             if (hasPending) {
                 appendDebugLog('auto-resume-queue-scheduled', { pending: downloadQueue.filter((it) => it.status === 'pending').length });
@@ -7168,7 +7213,20 @@ function createWindow(): void {
         }
     });
 
+    const createdWindow = mainWindow;
+    const createdContentsId = createdWindow.webContents.id;
+    let closeApproved = false;
+    createdWindow.on('close', (event) => {
+        if (process.platform !== 'darwin' || quitAfterCleanup || closeApproved) return;
+        event.preventDefault();
+        void prepareWindowClose(createdWindow).then((saved) => {
+            if (!saved || createdWindow.isDestroyed()) return;
+            closeApproved = true;
+            createdWindow.close();
+        });
+    });
     mainWindow.on('closed', () => {
+        pendingWindowClose.get(createdContentsId)?.finish(true);
         mainWindow = null;
     });
 
@@ -7973,6 +8031,7 @@ ipcMain.handle('cancel-download', async (event) => {
     const activeItemIds = queueProcessRegistry.activeItemIds();
     for (const id of activeItemIds) cancelledItemIds.add(id);
     await queueProcessRegistry.cancelAll();
+    await cancelActiveClipDownloads();
     return true;
 });
 
@@ -8179,6 +8238,16 @@ interface ActiveClipDownloadTracking {
 }
 const activeClipProcesses = new Map<string, ActiveClipDownloadTracking>();
 
+async function cancelActiveClipDownloads(): Promise<void> {
+    await Promise.all([...activeClipProcesses.values()].map(async (tracking) => {
+        try { killDownloadProcess(tracking.process); } catch { }
+        try { await tracking.output.cancel(); } catch { }
+        await waitForChildProcessExit(tracking.process);
+        partialDownloadRegistry.discard(tracking.partialFilename);
+    }));
+    activeClipProcesses.clear();
+}
+
 registerTrustedIpcHandler(ipcMain, 'download-clip', isTrustedRendererEvent, () => Promise.resolve({ success: false, error: 'File access denied' }), async (_, clipUrl: string) => {
     let clipId = '';
     const match1 = clipUrl.match(/clips\.twitch\.tv\/([A-Za-z0-9_-]+)/);
@@ -8190,6 +8259,10 @@ registerTrustedIpcHandler(ipcMain, 'download-clip', isTrustedRendererEvent, () =
 
     const clipInfo = await getClipInfo(clipId);
     if (!clipInfo) return { success: false, error: tBackend('clipNotFound') };
+
+    if (!await ensureStreamlinkInstalled()) return { success: false, error: tBackend('streamlinkAutoInstallFailed') };
+    if (!await ensureFfmpegInstalled()) return { success: false, error: tBackend('ffmpegMissing') };
+    if (appShutdownStarted) return { success: false, error: tBackend('unknownDownloadError') };
 
     // Sanitize broadcaster_name for path safety — Twitch returns the display
     // name which can contain unicode, spaces, or punctuation that breaks
@@ -8216,12 +8289,12 @@ registerTrustedIpcHandler(ipcMain, 'download-clip', isTrustedRendererEvent, () =
     return new Promise<{ success: boolean; error?: string; filename?: string }>((resolve) => {
         const streamlinkCmd = getStreamlinkCommand();
         const partialFilename = partialDownloadRegistry.begin(filename);
-        const proc = spawn(streamlinkCmd.command, [
+        const proc = spawnDownloadProcess(streamlinkCmd.command, [
             ...streamlinkCmd.prefixArgs,
             `https://clips.twitch.tv/${clipId}`,
             getStreamlinkStreamArg(),
-            '--stdout'
-        ], { windowsHide: true });
+            '--stdout', '--ffmpeg-ffmpeg', getFFmpegPath()
+        ]);
         if (!proc.stdout) {
             partialDownloadRegistry.discard(partialFilename);
             releaseClaimedFilenamesForItem(clipId);
@@ -8555,7 +8628,7 @@ ipcMain.handle('import-config', async (event) => {
     }
 });
 
-function isTrustedRendererEvent(event: IpcMainInvokeEvent): boolean {
+function isTrustedRendererEvent(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): boolean {
     if (!mainWindow) return false;
     const rendererUrl = pathToFileURL(path.join(__dirname, '../src/index.html')).href;
     const senderUrl = event.senderFrame?.url || event.sender.getURL();
@@ -8800,7 +8873,13 @@ app.whenReady().then(() => {
     if (process.platform === 'darwin') {
         Menu.setApplicationMenu(Menu.buildFromTemplate([
             { role: 'appMenu' },
-            { role: 'editMenu' },
+            { role: 'editMenu', submenu: [
+                { id: 'editor-undo', label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => mainWindow?.webContents.send('native-edit-command', 'undo') },
+                { id: 'editor-redo', label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => mainWindow?.webContents.send('native-edit-command', 'redo') },
+                { type: 'separator' },
+                { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'pasteAndMatchStyle' }, { role: 'delete' },
+                { type: 'separator' }, { role: 'selectAll' },
+            ] },
             { role: 'viewMenu' },
             { role: 'windowMenu' },
         ]));
@@ -8835,8 +8914,18 @@ app.whenReady().then(() => {
         downloadQueue = config.persist_queue_on_restart === false ? [] : loadQueue();
         if (config.persist_queue_on_restart === false) appStateStore.saveQueue([]);
         lastPersistedQueueSnapshot = cloneQueue(downloadQueue);
-        twitchClientSecret = appSecretStore.get('twitch_client_secret') ?? '';
-        discordWebhookUrl = appSecretStore.get('discord_webhook_url') ?? '';
+        // Keychain access can be denied, or ciphertext can belong to an older
+        // signing identity. Keep the database, preferences and queue available;
+        // never erase the stored secret just because it cannot be read now.
+        for (const key of ['twitch_client_secret', 'discord_webhook_url'] as const) {
+            try {
+                const value = appSecretStore.get(key) ?? '';
+                if (key === 'twitch_client_secret') twitchClientSecret = value;
+                else discordWebhookUrl = value;
+            } catch {
+                appendDebugLog('secret-read-failed', { key });
+            }
+        }
     } catch (e) {
         appendDebugLog('sqlite-open-failed', {
             error: e instanceof Error ? e.message : String(e),
@@ -8915,12 +9004,7 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
     );
     activeDownloads.clear();
 
-    await Promise.all([...activeClipProcesses.values()].map(async (tracking) => {
-        try { tracking.process.kill(); } catch { }
-        try { await tracking.output.cancel(); } catch { }
-        try { partialDownloadRegistry.discard(tracking.partialFilename); } catch { }
-    }));
-    activeClipProcesses.clear();
+    await cancelActiveClipDownloads();
 
     if (currentEditorProcess) {
         const editorProcess = currentEditorProcess;
@@ -8973,8 +9057,15 @@ app.on('before-quit', (event) => {
     if (quitAfterCleanup) return;
     event.preventDefault();
     if (shutdownPromise) return;
-    shutdownPromise = shutdownCleanup('before-quit').finally(() => {
-        quitAfterCleanup = true;
-        app.quit();
-    });
+    shutdownPromise = (async () => {
+        if (process.platform === 'darwin' && mainWindow && !await prepareWindowClose(mainWindow)) {
+            shutdownPromise = null;
+            return;
+        }
+        try { await shutdownCleanup('before-quit'); }
+        finally {
+            quitAfterCleanup = true;
+            app.quit();
+        }
+    })();
 });

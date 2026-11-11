@@ -1,8 +1,13 @@
 import type { ChildProcess } from 'node:child_process';
+import { waitForDownloadProcessExit } from '../infra/download-process';
 
 export type QueueProcessPhase = 'streamlink' | 'merge' | 'split' | 'post-processing';
 
 export function waitForChildProcessExit(process: ChildProcess | null, forceKillAfterMs = 5000): Promise<void> {
+    if (process) {
+        const groupExit = waitForDownloadProcessExit(process, forceKillAfterMs);
+        if (groupExit) return groupExit;
+    }
     if (!process || process.exitCode !== null || process.signalCode !== null) return Promise.resolve();
     return new Promise((resolve) => {
         const finish = (): void => {
