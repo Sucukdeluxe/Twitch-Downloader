@@ -6,7 +6,7 @@ import { createTwitchChannelSearch, requestTwitchChannelSearch } from './main/tw
 import { resolveArchiveFilePaths } from './main/domain/archive-path-access';
 import { ArchiveThumbnailService } from './main/domain/archive-thumbnail';
 import { DownloadStallTracker, MediaDownloadProgress, aggregateDownloadProgress } from './main/domain/download-progress';
-import { buildVodSourceDownloadArgs, isVodSourceReadTimeout } from './main/domain/vod-source-download';
+import { buildVodSourceDownloadArgs, isVodSourceReadTimeout, resolveVodTrimSource } from './main/domain/vod-source-download';
 import { buildVodSnapshotDownloadArgs, buildVodSnapshotPlaylist, fetchHlsMediaPlaylist, parseClockSeconds, waitForLiveVodRange, type HlsMediaPlaylist } from './main/domain/vod-live-snapshot';
 import { VodQualityService, normalizeVodQuality, resolveVodQualitySource, resolveVodPlaybackSource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './main/domain/vod-quality';
 import { createIndexedArchiveReader } from './main/domain/archive-index';
@@ -4311,7 +4311,34 @@ async function downloadVODPart(
     const requestedQuality = quality ?? config.streamlink_quality;
     const liveSnapshot = await prepareLiveVodSnapshot(url, requestedQuality, startTime, endTime, expectedTotalSec, itemId, partNum, totalParts, onProgress);
     if (liveSnapshot && 'error' in liveSnapshot) return { success: false, error: liveSnapshot.error };
-    const directSource = liveSnapshot ? null : await resolveVodQualitySource(url, requestedQuality);
+    let directSource: string | null = null;
+    if (!liveSnapshot && (startTime !== null || endTime !== null)) {
+        const controller = new AbortController();
+        const stopped = (): boolean => appShutdownStarted || cancelledItemIds.has(itemId) || queueProcessRegistry.isCancelled(itemId);
+        const watcher = setInterval(() => { if (stopped()) controller.abort(); }, 100);
+        try {
+            if (stopped()) controller.abort();
+            directSource = await resolveVodTrimSource({
+                url, quality: requestedQuality, signal: controller.signal,
+                streamlink: async () => {
+                    if (!(await ensureStreamlinkInstalled())) throw new Error('Streamlink unavailable');
+                    return getStreamlinkCommand();
+                },
+                onProcess: process => {
+                    const registration = queueProcessRegistry.register(itemId, 'post-processing', createPhaseBoundaryProcessResource(
+                        process, () => waitForChildProcessExit(process),
+                    ));
+                    return () => registration.release();
+                },
+            });
+        } catch {
+            return { success: false, error: tBackend(stopped() ? 'downloadCancelled' : 'vodTrimSourceUnavailable') };
+        } finally {
+            clearInterval(watcher);
+        }
+    } else if (!liveSnapshot) {
+        directSource = await resolveVodQualitySource(url, requestedQuality);
+    }
     const ffmpegInput = Boolean(directSource || liveSnapshot);
     let streamlinkCmd: { command: string; prefixArgs: string[] };
     let ffmpegPath: string | null;

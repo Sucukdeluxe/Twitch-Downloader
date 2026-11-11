@@ -347,6 +347,9 @@
 @media(min-width:801px) {
   #clipModal.is-mac .vod-cut-layout { grid-template-rows:minmax(230px,1fr) 278px; grid-template-columns:minmax(0,1fr) clamp(260px,23vw,330px); padding:8px 12px; gap:8px; }
   #clipModal.is-mac #clipCutPanel { padding:6px 10px; }
+  /* Keep filename settings in the scrollable details panel. A floating
+     sheet covers Hide details and the selection controls on MacBooks. */
+  #clipModal.is-mac .vod-filename-options[open] { position:static; max-height:none; overflow:visible; padding:9px 0 0; border:0; border-top:1px solid var(--border-soft); border-radius:0; box-shadow:none; }
   #clipModal.is-mac .vod-selection-track { height:32px; }
   #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-layout { grid-template-rows:minmax(230px,1fr) auto; }
   #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-heading h3 { display:none; }
