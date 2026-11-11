@@ -139,6 +139,9 @@ export function invalidateVerifiedToolCaches(): void {
 // TOOL PATH DISCOVERY
 // ==========================================
 export function getStreamlinkPath(): string {
+    // The Mac app owns its runtime. Probing /usr/bin/python3 before the first
+    // install can launch Apple's Command Line Tools installer on a clean Mac.
+    if (process.platform === 'darwin') return path.join(TOOLS_STREAMLINK_DIR, 'streamlink');
     if (streamlinkPathCache) {
         if (streamlinkPathCache === 'streamlink' || fs.existsSync(streamlinkPathCache)) {
             return streamlinkPathCache;
@@ -221,6 +224,7 @@ export function getStreamlinkCommand(): { command: string; prefixArgs: string[] 
 }
 
 export function getFFmpegPath(): string {
+    if (process.platform === 'darwin') return path.join(TOOLS_FFMPEG_DIR, 'ffmpeg');
     if (ffmpegPathCache) {
         if (ffmpegPathCache === 'ffmpeg' || fs.existsSync(ffmpegPathCache)) {
             return ffmpegPathCache;
@@ -266,6 +270,7 @@ export function getFFmpegPath(): string {
 }
 
 export function getFFprobePath(): string {
+    if (process.platform === 'darwin') return path.join(TOOLS_FFMPEG_DIR, 'ffprobe');
     if (ffprobePathCache) {
         if (ffprobePathCache === 'ffprobe' || ffprobePathCache === 'ffprobe.exe' || fs.existsSync(ffprobePathCache)) {
             return ffprobePathCache;

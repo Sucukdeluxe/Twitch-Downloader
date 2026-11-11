@@ -39,10 +39,12 @@ jobs:
       - run: npm run test:security && npm run test:lint-config && npm run test:ci-contract
       - run: npm run tools:mac -- ${{ matrix.arch }}
       - run: npm run test:mac
+        timeout-minutes: 10
       - run: PATH="$PWD/.cache/macos-tools/stage-${{ matrix.arch }}/ffmpeg:$PATH" npm run test:e2e:release
       - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
       - name: Test the actual application bundle
         run: npm run test:mac
+        timeout-minutes: 10
         env:
           PACKAGED_APP_PATH: release/${{ matrix.folder }}/Twitch VOD Manager.app/Contents/MacOS/Twitch VOD Manager
       - uses: actions/upload-artifact@v4

@@ -41,16 +41,25 @@ async function run() {
   const checks = {};
   try {
     const options = getElectronLaunchOptions(environment);
-    options.env.PATH = '/usr/bin:/bin';
+    const hostTools = path.join(environment.rootDir, 'host-tools');
+    const hostToolCalls = path.join(environment.rootDir, 'host-tool-calls');
+    fs.mkdirSync(hostTools);
+    for (const name of ['python3', 'python', 'streamlink', 'ffmpeg', 'ffprobe']) {
+      fs.writeFileSync(path.join(hostTools, name), '#!/bin/sh\nprintf "%s\\n" "$0" >> "$MAC_HOST_TOOL_CALLS"\nexit 1\n', { mode: 0o755 });
+    }
+    options.env.PATH = `${hostTools}:/usr/bin:/bin`;
+    options.env.MAC_HOST_TOOL_CALLS = hostToolCalls;
     if (process.env.PACKAGED_APP_PATH) {
       options.executablePath = path.resolve(process.env.PACKAGED_APP_PATH);
       options.args = options.args.filter((arg) => arg !== '.');
     }
+    console.log('[macos] Launching isolated app');
     app = await electron.launch(options);
     let win = await app.firstWindow();
     await verifyE2eIsolation(app, win, environment);
     checks.initialTools = await win.evaluate(() => window.api.getManagedToolStatus());
     assert.equal(checks.initialTools.streamlink.state, 'missing');
+    console.log('[macos] Installing private runtime');
     checks.preflight = await win.evaluate(() => window.api.runPreflight(true));
     for (const name of ['streamlink', 'ffmpeg', 'ffprobe', 'downloadPathWritable']) {
       assert.equal(checks.preflight.checks[name], true, `${name} unavailable in clean macOS install`);
@@ -67,6 +76,7 @@ async function run() {
     assert(checks.desktop.menuRoles.includes('editmenu'));
     assert(checks.desktop.menuRoles.includes('appmenu'));
     assert(fs.existsSync(path.join(environment.appDataDir, 'app.db')), 'SQLite store was not created');
+    console.log('[macos] Downloading local HLS fixture');
 
     const toolRoot = path.join(environment.appDataDir, 'tools');
     const ffmpeg = path.join(toolRoot, 'ffmpeg', 'ffmpeg');
@@ -101,6 +111,7 @@ async function run() {
     });
     assert.equal(checks.cut.success, true);
     assert(fs.statSync(path.join(environment.mediaDir, checks.cut.outputName)).size > 0);
+    console.log('[macos] Checking timestamp normalization and export');
 
     const fragment = path.join(environment.mediaDir, 'Twitch excerpt.mp4');
     const fragmentExport = path.join(environment.mediaDir, 'Excerpt edit.mp4');
@@ -130,6 +141,7 @@ async function run() {
     checks.fragment.exportDuration = Number(exportedProbe.stdout.trim());
     assert(Math.abs(checks.fragment.exportDuration - 1.5) < 0.12);
     delete checks.fragment.token;
+    console.log('[macos] Repairing and reinstalling private runtime');
 
     // Verify repair replaces corrupted executables using only the offline bundle.
     fs.appendFileSync(ffmpeg, 'corruption');
@@ -144,6 +156,7 @@ async function run() {
     checks.reinstall = await win.evaluate(() => window.api.runPreflight(true));
     assert.equal(checks.reinstall.checks.ffmpeg, true);
     assert.equal(checks.reinstall.checks.streamlink, true);
+    console.log('[macos] Checking empty update feed and window lifecycle');
 
     // A public repository containing only previews has no /latest release.
     // That must mean "no stable update", not a startup error or a broken feed.
@@ -191,6 +204,9 @@ async function run() {
     assert.equal(config.theme, 'light');
     assert.equal(config.language, 'en');
     checks.reopen = true;
+    assert.equal(fs.existsSync(hostToolCalls), false, 'The Mac app probed a system Python or external media tool');
+    checks.privateRuntimeOnly = true;
+    console.log('[macos] Closing isolated app');
     await app.close();
     app = null;
     console.log(JSON.stringify({ failures: [], checks }, null, 2));

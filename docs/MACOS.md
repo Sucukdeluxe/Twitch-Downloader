@@ -55,6 +55,8 @@ FFmpeg/FFprobe remains at 8.1.2, as on Windows. The Mac bundle uses Streamlink 8
 for current urllib3 compatibility and upstream security fixes; the Windows manifest is unchanged.
 Every tool archive is bundled and SHA-256 verified before first use. Repair/reset works
 offline. Python, dependencies, upstream archives and checksums are pinned in `scripts/`.
+The Mac app only resolves tools inside its own managed directory, including before the
+first install; it never probes a system Python or triggers the developer-tools installer.
 
 ## Validation and release boundary
 
