@@ -6,6 +6,7 @@
 - Keep the editable start/end times, Set here actions and video length together in a slim footer, with Close on the left and Add to queue on the right.
 - Preserve the selected range, playback, focus and omission controls when switching between compact and expanded details.
 - Adapt the footer to smaller windows and keep the time values aligned.
+- Keep the cutter zoom anchored correctly when reduced motion is enabled.
 
 ## macOS 1.1.20
 
