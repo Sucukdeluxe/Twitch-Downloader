@@ -59,7 +59,14 @@ async function run() {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     await app.evaluate(({ app: nativeApp, ipcMain }, fixture) => {
       const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
-      appRequire('./dist/main/domain/vod-quality.js').resolveVodQualitySource = async () => fixture.playlist;
+      const mediaUrl = 'https://fixture.ttvnw.net/index.m3u8';
+      // Ordinary Twitch renditions used to bypass FFmpeg seeking and use
+      // Streamlink's segment-rounded offsets instead.
+      appRequire('./dist/main/domain/vod-quality.js').resolveVodQualitySource = async () => null;
+      appRequire('./dist/main/domain/vod-quality.js').resolveVodPlaybackSource = async () => mediaUrl;
+      appRequire('./dist/main/domain/vod-live-snapshot.js').fetchHlsMediaPlaylist = async () => ({ ended: true });
+      const childProcess = appRequire('node:child_process'), spawn = childProcess.spawn;
+      childProcess.spawn = (command, args, options) => spawn(command, args.map(arg => arg === mediaUrl ? fixture.playlist : arg), options);
       const handle = (name, callback) => { ipcMain.removeHandler(name); ipcMain.handle(name, callback); };
       handle('open-vod-playback', (_event, request) => ({ id: request.id, sourceUrl: fixture.preview, quality: 'source' }));
       handle('close-vod-playback', () => {});

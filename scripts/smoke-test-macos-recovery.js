@@ -207,7 +207,15 @@ async function run() {
       const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
       const axios = appRequire('axios').default;
       const childProcess = appRequire('node:child_process');
-      const original = { get: axios.get, post: axios.post, spawn: childProcess.spawn };
+      const quality = appRequire('./dist/main/domain/vod-quality.js');
+      const snapshot = appRequire('./dist/main/domain/vod-live-snapshot.js');
+      const mediaUrl = 'https://fixture.ttvnw.net/index.m3u8';
+      const original = { get: axios.get, post: axios.post, spawn: childProcess.spawn,
+        source: quality.resolveVodPlaybackSource, playlist: snapshot.fetchHlsMediaPlaylist };
+      quality.resolveVodPlaybackSource = (url, ...args) => url === 'https://www.twitch.tv/videos/2222222'
+        ? Promise.resolve(mediaUrl) : original.source(url, ...args);
+      snapshot.fetchHlsMediaPlaylist = (url, ...args) => url === mediaUrl
+        ? Promise.resolve({ ended: true }) : original.playlist(url, ...args);
       axios.post = async (url, ...args) => {
         if (String(url).includes('/oauth2/token')) return { data: { access_token: 'audit-fixture-token' } };
         if (String(url) === 'https://gql.twitch.tv/gql' && String(args[0]?.query).includes('clip(slug:')) {
@@ -218,6 +226,10 @@ async function run() {
       axios.get = async (url, ...args) => String(url).includes('/helix/clips')
         ? { data: { data: [{ broadcaster_name: 'audit', title: 'Local fixture' }] } } : original.get.call(axios, url, ...args);
       childProcess.spawn = (command, args, spawnOptions) => {
+        if (args.includes(mediaUrl)) {
+          args = args.map(arg => arg === mediaUrl ? `http://localhost:${port}/index.m3u8` : arg);
+          spawnOptions = { ...spawnOptions, env: { ...process.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
+        }
         const isFixture = (arg) => String(arg).startsWith('https://clips.twitch.tv/') || arg === 'https://www.twitch.tv/videos/2222222';
         if (args.some(isFixture)) {
           args = args.map((arg) => isFixture(arg) ? `hls://http://localhost:${port}/${String(arg).endsWith('AuditSlow') ? 'slow' : String(arg).endsWith('AuditInvalid') ? 'invalid' : String(arg).endsWith('AuditMuxed') ? 'muxed' : 'index'}.m3u8` : arg);
@@ -227,6 +239,7 @@ async function run() {
       };
       globalThis.__restoreAudit = () => {
         axios.get = original.get; axios.post = original.post; childProcess.spawn = original.spawn;
+        quality.resolveVodPlaybackSource = original.source; snapshot.fetchHlsMediaPlaylist = original.playlist;
       };
     }, server.address().port);
     await win.evaluate(async () => {
