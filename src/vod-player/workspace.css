@@ -318,6 +318,7 @@
 #clipFooterFields .vod-time-heading { display:contents; }
 #clipFooterFields .vod-time-heading label { gap:6px; font-size:12px; min-height:24px; }
 #clipFooterFields .vod-time-heading label::before { flex-basis:20px; height:20px; font-size:11px; }
+#clipFooterFields #clipDialogEndTimeLabel { flex-direction:row-reverse; }
 #clipFooterFields #clipMarkStart, #clipFooterFields #clipMarkEnd { display:flex; align-items:center; flex:none; }
 #clipFooterFields .vod-set-boundary { min-height:24px; padding:3px 7px; font-size:11px; }
 #clipFooterFields .vod-time-entry { flex:0 0 140px; width:140px; height:32px; }
@@ -358,8 +359,12 @@
 @media(max-width:900px) {
   #clipFooterFields .vod-cut-fields { grid-template-columns:minmax(0,1fr) 104px minmax(0,1fr); gap:8px; }
   #clipFooterFields .clip-modal-time-row { display:grid; grid-template-columns:140px auto; gap:4px 6px; justify-content:space-between; }
-  #clipFooterFields .vod-time-heading { display:flex; grid-column:1 / -1; width:100%; min-height:24px; }
-  #clipFooterFields .vod-time-entry { flex:none; grid-column:1; }
+  #clipFooterFields .vod-time-heading { display:flex; grid-column:1 / -1; grid-row:1; width:100%; min-height:24px; }
+  #clipFooterFields .vod-time-entry { flex:none; grid-column:1; grid-row:2; }
+  #clipFooterFields #clipMarkStart, #clipFooterFields #clipMarkEnd { grid-row:2; }
+  #clipFooterFields .clip-modal-time-row:has(#clipEndTime) { grid-template-columns:auto 140px; }
+  #clipFooterFields .clip-modal-time-row:has(#clipEndTime) .vod-time-heading { justify-content:flex-end; }
+  #clipFooterFields .clip-modal-time-row:has(#clipEndTime) .vod-time-entry { grid-column:2; }
   #clipFooterFields .clip-modal-duration { flex-direction:column; gap:2px; }
 }
 @media(max-width:800px) {

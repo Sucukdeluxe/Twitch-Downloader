@@ -90,7 +90,8 @@ async function run() {
       for (const side of ['Start', 'End']) {
         const input = await win.locator(`#clip${side}Time`).boundingBox();
         const setHere = await win.locator(`#clipMark${side} button`).boundingBox();
-        assert(setHere.x > input.x + input.width, 'Set here must sit to the right of the time entry');
+        assert(side === 'Start' ? setHere.x > input.x + input.width : setHere.x + setHere.width < input.x,
+          'Set here buttons must sit between the start/end entries');
       }
       if ((await win.viewportSize()).width > 1200) {
         assert(footer.height <= 50, 'Desktop compact footer must stay one line high');
@@ -167,10 +168,10 @@ async function run() {
       assert.equal(await win.locator(`#${input}`).inputValue(), expected);
     }
     assert.equal(await win.locator('#clipDurationTime').textContent(), '00:01:30');
-    for (const side of ['Start', 'End']) {
-      await win.locator(`#clip${side}Later`).focus();
+    for (const [from, to] of [['#clipStartLater', '#clipMarkStart button'], ['#clipMarkEnd button', '#clipEndEarlier']]) {
+      await win.locator(from).focus();
       await win.keyboard.press('Tab');
-      assert(await win.locator(`#clipMark${side} button`).evaluate(element => element === document.activeElement), 'Keyboard order must match the right-hand Set here button');
+      assert(await win.locator(to).evaluate(element => element === document.activeElement), 'Keyboard order must match the mirrored Set here buttons');
     }
     const start = win.locator('.vod-selection .vod-range-handle.is-start');
     const end = win.locator('.vod-selection .vod-range-handle.is-end');
@@ -263,7 +264,10 @@ async function run() {
       document.querySelector('.vod-cut-footer').insertBefore(document.getElementById('clipCancelBtn'), document.getElementById('clipDialogConfirmBtn'));
       for (const side of ['Start', 'End']) {
         const mark = document.getElementById(`clipMark${side}`);
-        mark.closest('.clip-modal-time-row').querySelector('.vod-time-heading').appendChild(mark);
+        const row = mark.closest('.clip-modal-time-row');
+        const heading = row.querySelector('.vod-time-heading');
+        heading.appendChild(mark);
+        row.prepend(heading);
       }
       document.getElementById('clipCutPanel').insertBefore(document.getElementById('clipRangeFields'), document.getElementById('clipOmissionPanel'));
       document.getElementById('clipModal').classList.remove('is-mac', 'is-range-collapsed');

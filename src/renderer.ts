@@ -1746,15 +1746,24 @@ function refreshClipDetailsToggle(): void {
         parent.insertBefore(fields, inFooter ? null : byId('clipOmissionPanel'));
         moved = true;
     }
-    // Put Set here after the time entry in both visual and keyboard order.
+    // Mirror the end boundary while keeping visual and keyboard order aligned.
     for (const side of ['Start', 'End']) {
         const mark = byId(`clipMark${side}`);
         const row = mark.closest('.clip-modal-time-row');
-        const target = inFooter ? row : row?.querySelector('.vod-time-heading');
-        if (target && mark.parentElement !== target) {
-            target.appendChild(mark);
+        const heading = row?.querySelector('.vod-time-heading');
+        const entry = row?.querySelector('.vod-time-entry');
+        if (!row || !heading || !entry) continue;
+        if (!inFooter && mark.parentElement !== heading) {
+            heading.appendChild(mark);
             moved = true;
         }
+        const order = !inFooter ? [heading, entry] : side === 'End' ? [mark, entry, heading] : [heading, entry, mark];
+        order.forEach((element, index) => {
+            if (row.children[index] !== element) {
+                row.insertBefore(element, row.children[index] ?? null);
+                moved = true;
+            }
+        });
     }
     if (moved) {
         focused?.focus({ preventScroll: true });
