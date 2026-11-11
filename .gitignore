@@ -14,3 +14,7 @@ tmp_*/
 
 .cache/
 artifacts/
+
+# Generated native update helpers
+build/macos-updater-arm64
+build/macos-updater-x64

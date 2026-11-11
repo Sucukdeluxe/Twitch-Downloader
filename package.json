@@ -1,6 +1,6 @@
 {
   "name": "twitch-vod-manager",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Twitch VOD Manager - Download Twitch VODs easily",
   "main": "dist/main.js",
   "author": "Sucukdeluxe",
@@ -42,7 +42,8 @@
     "tools:mac": "python3 scripts/prepare-macos-tools.py",
     "pack:mac": "npm run build && electron-builder --mac --dir",
     "dist:mac": "npm run build && electron-builder --mac dmg zip",
-    "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js"
+    "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js",
+    "test:mac-update": "npm run build && node --test scripts/test-macos-update-manifest.js && node scripts/test-macos-updater.js"
   },
   "dependencies": {
     "axios": "^1.21.1",
@@ -121,6 +122,14 @@
             "*.zip",
             "manifest.json"
           ]
+        },
+        {
+          "from": "build/macos-updater-${arch}",
+          "to": "macos-updater"
+        },
+        {
+          "from": "build/mac-update-public-key.pem",
+          "to": "mac-update-public-key.pem"
         }
       ],
       "publish": {
@@ -142,6 +151,7 @@
           "path": "/Applications"
         }
       ]
-    }
+    },
+    "beforePack": "scripts/before-pack-macos.js"
   }
 }

@@ -448,7 +448,7 @@ function confirmUpdateModal(): void {
     dismissUpdateModal();
 
     if (updateReady) {
-        void window.api.installUpdate();
+        void installReadyUpdate();
         return;
     }
 
@@ -586,7 +586,7 @@ async function checkUpdate(): Promise<void> {
 function downloadUpdate(): void {
     if (updateReady) {
         dismissUpdateModal();
-        void window.api.installUpdate();
+        void installReadyUpdate();
         return;
     }
 
@@ -627,6 +627,19 @@ function downloadUpdate(): void {
         notifyUpdate(UI_TEXT.updates.downloadFailed, 'warn');
     });
 }
+
+let updateInstallInProgress = false;
+async function installReadyUpdate(): Promise<void> {
+    if (updateInstallInProgress) return;
+    updateInstallInProgress = true;
+    try {
+        const result = await window.api.installUpdate();
+        if (result?.error) notifyUpdate(`${UI_TEXT.updates.installFailed}${result.message ? ` ${result.message}` : ''}`, 'warn');
+    } catch { notifyUpdate(UI_TEXT.updates.installFailed, 'warn'); }
+    finally { updateInstallInProgress = false; }
+}
+
+window.api.onUpdateInstallError(() => notifyUpdate(UI_TEXT.updates.installFailed, 'warn'));
 
 window.api.onUpdateChecking(() => {
     updateCheckInProgress = true;
@@ -714,17 +727,20 @@ window.api.onUpdateDownloaded((info: UpdateInfo) => {
 window.api.onUpdateError(() => {
     updateCheckInProgress = false;
     const wasDownloading = updateDownloadInProgress;
+    const wasManual = manualUpdateCheckPending;
     updateDownloadInProgress = false;
     manualUpdateCheckPending = false;
     manualUpdateOutcomeHandled = true;
     shouldOpenUpdateModalOnAvailable = false;
     setCheckButtonCheckingState(false);
 
-    if (!updateReady && latestUpdateInfo) {
+    if (!updateReady && latestUpdateInfo && wasDownloading) {
         setUpdateBannerAvailableUi(latestUpdateInfo);
     }
 
-    notifyUpdate(wasDownloading ? UI_TEXT.updates.downloadFailed : UI_TEXT.updates.checkFailed, 'warn');
+    if (wasManual || wasDownloading) {
+        notifyUpdate(wasDownloading ? UI_TEXT.updates.downloadFailed : UI_TEXT.updates.checkFailed, 'warn');
+    }
 });
 
 document.addEventListener('keydown', (event) => {

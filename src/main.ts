@@ -8,7 +8,9 @@ import type { Transform } from 'node:stream';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 import { compareUpdateVersions, isNewerUpdateVersion, normalizeUpdateVersion } from './main/domain/update-version-utils';
+import { EventEmitter } from 'node:events';
 import { createUpdateCheckCoordinator } from './main/domain/update-check-operation';
+import { MacUpdater } from './main/infra/mac-updater';
 import { writeFileAtomicSync } from './main/infra/fs-atomic';
 import { parseDuration, formatDuration, formatDurationDashed } from './main/infra/duration';
 import {
@@ -886,6 +888,9 @@ const runtimeMetrics: RuntimeMetrics = {
 let debugLogFlushTimer: NodeJS.Timeout | null = null;
 let pendingDebugLogLines: string[] = [];
 let autoUpdaterInitialized = false;
+let macUpdater: MacUpdater | null = null;
+let macUpdateInstallRequested = false;
+let macUpdateInstallPreparing = false;
 let autoUpdateCheckTimer: NodeJS.Timeout | null = null;
 let autoUpdateStartupTimer: NodeJS.Timeout | null = null;
 let autoUpdateCheckInProgress = false;
@@ -7247,6 +7252,23 @@ function createWindow(): void {
 // ==========================================
 // AUTO-UPDATER (electron-updater)
 // ==========================================
+function getUpdateService(): typeof autoUpdater | MacUpdater {
+    if (process.platform !== 'darwin') return autoUpdater;
+    if (!macUpdater) {
+        const resources = app.isPackaged ? process.resourcesPath : path.resolve(__dirname, '..', 'build');
+        macUpdater = new MacUpdater({
+            version: APP_VERSION,
+            arch: process.arch === 'arm64' ? 'arm64' : 'x64',
+            publicKey: fs.readFileSync(path.join(resources, 'mac-update-public-key.pem'), 'utf8'),
+            cacheDirectory: path.join(app.getPath('userData'), 'mac-updates'),
+            targetApp: path.dirname(path.dirname(path.dirname(process.execPath))),
+            helperPath: path.join(resources, app.isPackaged ? 'macos-updater' : `macos-updater-${process.arch}`),
+            log: appendDebugLog,
+        });
+    }
+    return macUpdater;
+}
+
 function hasNewerKnownUpdateThanDownloaded(): boolean {
     if (!latestKnownUpdateVersion || !downloadedUpdateVersion) {
         return false;
@@ -7326,6 +7348,10 @@ async function requestUpdateCheck(source: UpdateCheckSource, force = false): Pro
         lastAutoUpdateCheckAt = now;
         appendDebugLog('update-check-start', { source });
         try {
+            if (process.platform === 'darwin') {
+                await getUpdateService().checkForUpdates();
+                return;
+            }
             try {
                 const githubReleaseResponse = await axios.get(GITHUB_RELEASES_API_LATEST_URL, {
                     timeout: 5000,
@@ -7344,13 +7370,6 @@ async function requestUpdateCheck(source: UpdateCheckSource, force = false): Pro
                     appendDebugLog('github-feed-url-set', { tagName, owner: GITHUB_REPO_OWNER, repo: GITHUB_REPO_NAME });
                 }
             } catch (apiErr) {
-                if (process.platform === 'darwin' && axios.isAxiosError(apiErr) && apiErr.response?.status === 404) {
-                    // GitHub has no /latest release while this new repository
-                    // contains previews only. There is no stable update yet.
-                    appendDebugLog('github-no-stable-release');
-                    mainWindow?.webContents.send('update-not-available');
-                    return;
-                }
                 appendDebugLog('github-api-failed', String(apiErr));
             }
             await autoUpdater.checkForUpdates();
@@ -7388,7 +7407,7 @@ async function requestUpdateDownload(source: UpdateDownloadSource): Promise<{ st
     appendDebugLog('update-download-start', { source });
 
     try {
-        await autoUpdater.downloadUpdate();
+        await getUpdateService().downloadUpdate();
         return { started: true };
     } catch (err) {
         appendDebugLog('update-download-failed', { source, error: String(err) });
@@ -7438,16 +7457,20 @@ function setupAutoUpdater() {
     }
 
     autoUpdaterInitialized = true;
-    autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.autoRunAppAfterInstall = true;
+    const updater: EventEmitter = getUpdateService();
+    if (process.platform !== 'darwin') {
+        autoUpdater.autoDownload = false;
+        autoUpdater.autoInstallOnAppQuit = true;
+        autoUpdater.autoRunAppAfterInstall = true;
+    }
 
-    autoUpdater.on('checking-for-update', () => {
+    updater.on('checking-for-update', () => {
         appendDebugLog('auto-updater-checking');
         mainWindow?.webContents.send('update-checking');
     });
 
-    autoUpdater.on('update-available', (info) => {
+    updater.on('update-available', (info) => {
+        if (process.platform === 'darwin') latestReleaseUpdateInfo = { version: info.version, releaseDate: info.releaseDate, releaseNotes: info.releaseNotes };
         const incomingVersion = normalizeUpdateVersion(info.version);
         const displayVersion = incomingVersion || info.version;
 
@@ -7490,12 +7513,12 @@ function setupAutoUpdater() {
         }
     });
 
-    autoUpdater.on('update-not-available', () => {
+    updater.on('update-not-available', () => {
         appendDebugLog('auto-updater-update-not-available');
         mainWindow?.webContents.send('update-not-available');
     });
 
-    autoUpdater.on('download-progress', (progress) => {
+    updater.on('download-progress', (progress) => {
         // No per-tick stdout — the autoUpdater fires this ~10x/sec during
         // an in-flight download. The renderer banner is the user-visible
         // surface; appendDebugLog already captures phase transitions.
@@ -7509,7 +7532,8 @@ function setupAutoUpdater() {
         }
     });
 
-    autoUpdater.on('update-downloaded', (info) => {
+    updater.on('update-downloaded', (info) => {
+        if (process.platform === 'darwin') latestReleaseUpdateInfo = { version: info.version, releaseDate: info.releaseDate, releaseNotes: info.releaseNotes };
         const downloadedVersion = normalizeUpdateVersion(info.version) || info.version;
         appendDebugLog('auto-updater-update-downloaded', { version: downloadedVersion });
         autoUpdateReadyToInstall = true;
@@ -7523,13 +7547,17 @@ function setupAutoUpdater() {
         }
     });
 
-    autoUpdater.on('error', (err) => {
+    updater.on('error', (err) => {
         autoUpdateDownloadInProgress = false;
         const message = String(err);
         appendDebugLog('auto-updater-error', message);
         mainWindow?.webContents.send('update-error', { message });
         console.error('Auto-updater error:', err);
     });
+
+    if (process.platform === 'darwin' && macUpdater?.takeInstallOutcome()) {
+        mainWindow?.webContents.send('update-install-error');
+    }
 
     startAutoUpdatePolling();
 }
@@ -8213,9 +8241,27 @@ ipcMain.handle('download-update', async (event) => {
     }
 });
 
-ipcMain.handle('install-update', (event) => {
-    if (!isTrustedRendererEvent(event)) return;
-    autoUpdater.quitAndInstall(true, true);
+ipcMain.handle('install-update', async (event) => {
+    if (!isTrustedRendererEvent(event)) return { error: true };
+    if (process.platform !== 'darwin') { autoUpdater.quitAndInstall(true, true); return; }
+    if (macUpdateInstallPreparing || macUpdateInstallRequested) return { skipped: 'in-progress' };
+    if (!app.isPackaged || !autoUpdateReadyToInstall) return { error: true, message: 'No installed update is ready.' };
+    macUpdateInstallPreparing = true;
+    try {
+        await (getUpdateService() as MacUpdater).prepareInstall();
+        macUpdateInstallRequested = true;
+        app.quit();
+        return { installing: true };
+    } catch (error) {
+        appendDebugLog('mac-update-install-failed', String(error));
+        return { error: true, message: error instanceof Error ? error.message : String(error) };
+    } finally { macUpdateInstallPreparing = false; }
+});
+
+ipcMain.on('renderer-ready', (event) => {
+    if (!isTrustedRendererEvent(event) || process.platform !== 'darwin' || !app.isPackaged) return;
+    try { (getUpdateService() as MacUpdater).acknowledgeStartup(process.argv, Boolean(appDb && appStateStore)); }
+    catch (error) { appendDebugLog('mac-update-health-failed', String(error)); }
 });
 
 ipcMain.handle('open-external', async (event, url: string) => {
@@ -9067,10 +9113,24 @@ app.on('before-quit', (event) => {
     if (shutdownPromise) return;
     shutdownPromise = (async () => {
         if (process.platform === 'darwin' && mainWindow && !await prepareWindowClose(mainWindow)) {
+            if (macUpdateInstallRequested) {
+                macUpdateInstallRequested = false;
+                await macUpdater?.cancelInstall();
+                mainWindow.webContents.send('update-install-error');
+            }
             shutdownPromise = null;
             return;
         }
-        try { await shutdownCleanup('before-quit'); }
+        try {
+            await shutdownCleanup('before-quit');
+            if (macUpdateInstallRequested) await macUpdater?.armInstall();
+        } catch (error) {
+            if (macUpdateInstallRequested) {
+                await macUpdater?.cancelInstall();
+                macUpdateInstallRequested = false;
+            }
+            console.error('Orderly shutdown failed:', error);
+        }
         finally {
             quitAfterCleanup = true;
             app.quit();

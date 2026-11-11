@@ -38,6 +38,8 @@ jobs:
       - run: npm run security:check
       - run: npm run test:security && npm run test:lint-config && npm run test:ci-contract
       - run: npm run tools:mac -- ${{ matrix.arch }}
+      - run: npm run test:mac-update
+        timeout-minutes: 10
       - run: npm run test:mac
         timeout-minutes: 10
       - run: PATH="$PWD/.cache/macos-tools/stage-${{ matrix.arch }}/ffmpeg:$PATH" npm run test:e2e:release
@@ -78,6 +80,9 @@ jobs:
         timeout-minutes: 10
         env:
           PACKAGED_APP_PATH: release/${{ matrix.folder }}/Twitch VOD Manager.app/Contents/MacOS/Twitch VOD Manager
+      - name: Verify actual old-to-new application update
+        run: node scripts/smoke-test-macos-update.js
+        timeout-minutes: 10
       - uses: actions/upload-artifact@v4
         if: success()
         with:

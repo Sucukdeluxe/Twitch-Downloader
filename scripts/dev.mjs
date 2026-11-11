@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
-import { watch } from 'node:fs';
+import { watch, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -94,7 +94,7 @@ if (process.platform === 'win32') {
         sourcePath: electronSourceExecutable,
         destinationPath: resolve(rootDirectory, 'node_modules', 'electron', 'dist', 'Twitch VOD Manager.exe'),
         iconPath: resolve(rootDirectory, 'build', 'icon.ico'),
-        version: '1.0.9',
+        version: JSON.parse(readFileSync(resolve(rootDirectory, 'package.json'), 'utf8')).version,
     });
 }
 

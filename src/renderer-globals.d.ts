@@ -502,7 +502,9 @@ interface ApiBridge {
     getVersion(): Promise<string>;
     checkUpdate(): Promise<{ checking?: boolean; error?: boolean; skipped?: 'ready-to-install' | 'in-progress' | 'throttled' | 'timed-out' | 'error' | string }>;
     downloadUpdate(): Promise<{ downloading?: boolean; error?: boolean; skipped?: 'ready-to-install' | 'in-progress' | 'error' | string }>;
-    installUpdate(): Promise<void>;
+    installUpdate(): Promise<{ error?: boolean; message?: string; skipped?: string; installing?: boolean } | void>;
+    rendererReady(): void;
+    onUpdateInstallError(callback: () => void): void;
     openExternal(url: string): Promise<void>;
     runPreflight(autoFix: boolean): Promise<PreflightResult>;
     getManagedToolStatus(): Promise<ManagedToolStatuses | null>;

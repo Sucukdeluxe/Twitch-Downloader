@@ -10,7 +10,7 @@ Download the DMG from [Releases](https://github.com/Sucukdeluxe/Twitch-Downloade
 choose `arm64` for Apple Silicon (M1 and newer) or `x64` for Intel, and drag the app to Applications.
 The preview is ad-hoc signed, without Apple Developer ID signing or notarization.
 If macOS blocks its first launch, follow [Apple's instructions for a trusted app](https://support.apple.com/en-us/102445).
-No system-wide security settings need to be disabled. The preview is not offered as a stable automatic update.
+No system-wide security settings need to be disabled. Updates from version 1.0.10 onward use the authenticated Mac updater described in [MACOS-UPDATES.md](MACOS-UPDATES.md). Older previews need this bootstrap version installed once.
 Switching between development and differently signed preview builds can also cause
 a Keychain permission prompt; [Electron documents why a consistent signature is needed](https://www.electronjs.org/docs/latest/api/safe-storage).
 
@@ -80,10 +80,10 @@ delivery, playback resumption and asynchronous focus restoration awaited explici
 
 A preview is not a declaration that every Twitch account-specific scenario is accepted.
 Subscriber-only Twitch access and long-running live recording require an eligible
-account/live stream. Final distribution also requires Developer ID signing and Apple
-notarization. No valid Developer ID identity was present during initial local setup.
-The normal updater uses this public repository and architecture-specific Mac ZIPs plus
-`latest-mac.yml`. Never label an unsigned preview as a signed, updater-validated release.
+account/live stream. Developer ID signing and Apple notarization remain optional distribution improvements;
+the free update path authenticates releases with a separately pinned Ed25519 key.
+It uses this public repository, architecture-specific ZIPs and `mac-update.json`.
+This is release authentication, not Apple notarization. See [MACOS-UPDATES.md](MACOS-UPDATES.md).
 
 Before merging upstream: run Windows and both Mac jobs from the same commit, test the
-signed update from an older installed version, and confirm authenticated Twitch workflows.
+authenticated update from an older installed version, and confirm authenticated Twitch workflows.

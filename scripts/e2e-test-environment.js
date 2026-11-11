@@ -204,6 +204,14 @@ async function installOfflineFixtures(app) {
     if (!guardsActive) {
       throw new Error(`Offline bootstrap verification failed: ${JSON.stringify(offlineState || null)}`);
     }
+    // Background polling calls the backend directly, bypassing check-update IPC.
+    // UI fixtures drive updater events explicitly and must not receive a real
+    // offline network failure while inspecting a synthetic release state.
+    const appRequire = process.getBuiltinModule('module').createRequire(`${electronApp.getAppPath()}/package.json`);
+    const updater = process.platform === 'darwin'
+      ? appRequire('./dist/main/infra/mac-updater.js').MacUpdater.prototype
+      : appRequire('electron-updater').autoUpdater;
+    updater.checkForUpdates = async () => null;
     const vods = [{
       id: '999999999999999',
       title: 'Offline fixture VOD',

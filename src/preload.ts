@@ -226,6 +226,8 @@ contextBridge.exposeInMainWorld('api', {
     checkUpdate: () => ipcRenderer.invoke('check-update'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
     installUpdate: () => ipcRenderer.invoke('install-update'),
+    rendererReady: () => ipcRenderer.send('renderer-ready'),
+    onUpdateInstallError: (callback: () => void) => { ipcRenderer.on('update-install-error', () => callback()); },
     openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
     runPreflight: (autoFix: boolean) => ipcRenderer.invoke('run-preflight', autoFix),
     getManagedToolStatus: () => ipcRenderer.invoke('get-managed-tool-status'),

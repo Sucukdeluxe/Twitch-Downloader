@@ -2064,4 +2064,4 @@ async function startMerging(): Promise<void> {
     alert(UI_TEXT.merge.failed);
 }
 
-void init();
+void init().then(() => window.api.rendererReady());

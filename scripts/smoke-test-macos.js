@@ -168,7 +168,7 @@ async function run() {
       const originalCheck = updater.checkForUpdates;
       globalThis.__emptyReleaseFallbackCalls = 0;
       axios.get = async (url, ...args) => {
-        if (String(url).endsWith('/releases/latest')) {
+        if ((String(url).endsWith('/releases/latest') || String(url).endsWith('/mac-update.json'))) {
           throw Object.assign(new Error('No stable release'), { isAxiosError: true, response: { status: 404 } });
         }
         return originalGet.call(axios, url, ...args);

@@ -605,6 +605,7 @@ const UI_TEXT_DE = {
         downloading: 'Wird heruntergeladen...',
         downloadInProgress: 'Update-Download lauft bereits.',
         downloadFailed: 'Update-Download fehlgeschlagen.',
+        installFailed: 'Update konnte nicht installiert werden. Die bisherige Version bleibt erhalten.',
         available: 'verfügbar!',
         downloadNow: 'Jetzt herunterladen',
         downloadLabel: 'Download',

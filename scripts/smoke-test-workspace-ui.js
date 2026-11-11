@@ -599,7 +599,56 @@ async function run() {
         check(dismissState.visibility === 'hidden' && dismissState.pointerEvents === 'none' && Number(dismissState.opacity) === 0, 'Close action leaves the update popover visibly interactive');
         check(dismissState.ariaExpanded === 'false', 'Close action leaves aria-expanded=true on a hidden popover');
       }
-      await win.evaluate(() => window.hideUpdateBanner());
+      await win.evaluate(() => {
+        window.__workspaceOriginalUpdateToast = window.showAppToast;
+        window.__workspaceUpdateErrorToasts = [];
+        window.__workspaceUpdateErrorCount = 0;
+        window.showAppToast = (...args) => window.__workspaceUpdateErrorToasts.push(args);
+        window.api.onUpdateError(() => { window.__workspaceUpdateErrorCount += 1; });
+      });
+      const updateErrors = {};
+      try {
+        for (const [index, scenario] of ['dismissed', 'skipped', 'available', 'downloading', 'manual'].entries()) {
+          await win.evaluate((state) => {
+            clearSkippedUpdateVersion();
+            window.setUpdateBannerAvailableUi({ version: '9.9.9' });
+            updateCheckInProgress = true;
+            manualUpdateCheckPending = state === 'manual';
+            updateDownloadInProgress = state === 'downloading';
+            if (state === 'skipped') skipUpdateVersion();
+            else if (state === 'dismissed' || state === 'manual') window.hideUpdateBanner();
+            else if (state === 'downloading') window.setDownloadPendingUi();
+          }, scenario);
+          await app.evaluate(({ BrowserWindow }) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('update-error', { message: 'Explicit offline error fixture' });
+          });
+          await win.waitForFunction((expected) => window.__workspaceUpdateErrorCount === expected, index + 1);
+          updateErrors[scenario] = await win.evaluate(() => ({
+            state: updateBannerState,
+            hidden: document.getElementById('updateBanner').hidden,
+            checking: updateCheckInProgress,
+            downloading: updateDownloadInProgress,
+            skipped: getSkippedUpdateVersion(),
+            toasts: window.__workspaceUpdateErrorToasts.length,
+          }));
+        }
+      } finally {
+        await win.evaluate(() => {
+          window.showAppToast = window.__workspaceOriginalUpdateToast;
+          clearSkippedUpdateVersion();
+          window.hideUpdateBanner();
+        });
+      }
+      checks.updateErrors = updateErrors;
+      for (const scenario of ['dismissed', 'skipped', 'manual']) {
+        check(updateErrors[scenario].state === 'idle' && updateErrors[scenario].hidden, `An update error resurrects the ${scenario} update banner`);
+      }
+      check(updateErrors.skipped.skipped === '9.9.9', 'Background update failure clears the skipped release');
+      check(updateErrors.available.state === 'available' && !updateErrors.available.hidden, 'Background failure hides an available update');
+      check(updateErrors.downloading.state === 'available' && !updateErrors.downloading.hidden && !updateErrors.downloading.downloading, 'Failed update download is not retryable');
+      check(updateErrors.available.toasts === 0, 'Background update failures display unsolicited warnings');
+      check(updateErrors.downloading.toasts === 1 && updateErrors.manual.toasts === 2, 'Explicit update actions do not report their failures');
+      check(Object.values(updateErrors).every((state) => !state.checking), 'Failed update checks leave the renderer checking state active');
     }
 
     await win.evaluate(() => window.showTab('clips'));
