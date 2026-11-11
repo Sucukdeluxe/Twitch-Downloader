@@ -19,6 +19,16 @@ Do not disable Gatekeeper globally. Developer ID/notarization remains an optiona
 future distribution improvement requiring the appropriate
 [Apple Developer account capabilities](https://developer.apple.com/help/account/basics/about-your-developer-account).
 
+## Release baseline and upgrade compatibility
+
+Mac 1.1.20 follows the published Windows `v1.1.20` source tag and requires
+macOS 13 or later because Electron 44 has that native minimum. The bundle ID,
+`Twitch VOD Manager.app` bundle name, public update key and existing Mac data
+directory stay stable. The update smoke test can use `MAC_UPDATE_FROM_APP` to
+start the actual previously released 1.0.10 application (with an isolated test
+key), install the new ZIP, and check persisted settings and database state.
+Both native architecture jobs exercise this original-release path.
+
 ## User behavior
 
 Install the first version containing this updater manually from the DMG and move

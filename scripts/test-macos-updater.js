@@ -155,8 +155,7 @@ function createScenario(behavior = 'healthy') {
     await waitMarker('armed');
   };
   const versionAt = (location) => {
-    const plist = fs.readFileSync(path.join(location, 'Contents/Info.plist'), 'utf8');
-    return plist.match(/<key>CFBundleShortVersionString<\/key><string>(.*?)<\/string>/)[1];
+    return execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', path.join(location, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
   };
   return { directory, state, token, target, stage, parent, plan, marker, launch, arm, waitMarker, waitExit, versionAt };
 }
@@ -327,4 +326,28 @@ test('an independent launch during the health window prevents rollback and retai
   assert.equal(scenario.versionAt(scenario.stage), '1.0.0');
   assert.doesNotThrow(() => process.kill(independent.pid, 0));
   assert.equal(fs.existsSync(path.join(scenario.directory, 'launched-1.0.0.json')), false);
+});
+
+test('a staged app requiring a future macOS fails before readiness and preserves the original', { skip: !enabled }, async () => {
+  const scenario = createScenario();
+  run('/usr/bin/plutil', ['-insert', 'LSMinimumSystemVersion', '-string', '999.0', path.join(scenario.stage, 'Contents/Info.plist')]);
+  run('/usr/bin/codesign', ['--force', '--sign', '-', scenario.stage]);
+  scenario.launch();
+  assert.equal(await scenario.waitExit(), 1);
+  assert.equal(fs.existsSync(scenario.marker('ready')), false);
+  assert.equal(scenario.versionAt(scenario.target), '1.0.0');
+  assert.equal(scenario.versionAt(scenario.stage), '2.0.0');
+  assert.equal(scenario.parent.exitCode, null);
+  stop(scenario.parent);
+});
+
+test('a staged app with a compatible explicit macOS minimum installs', { skip: !enabled }, async () => {
+  const scenario = createScenario();
+  run('/usr/bin/plutil', ['-insert', 'LSMinimumSystemVersion', '-string', '12.0', path.join(scenario.stage, 'Contents/Info.plist')]);
+  run('/usr/bin/codesign', ['--force', '--sign', '-', scenario.stage]);
+  scenario.launch();
+  await scenario.arm();
+  stop(scenario.parent);
+  assert.equal(await scenario.waitExit(), 0);
+  assert.equal(scenario.versionAt(scenario.target), '2.0.0');
 });

@@ -35,14 +35,39 @@ async function checksum(file: string): Promise<string> {
     return hash.digest('hex');
 }
 
+export function assertMacOSVersionSupported(minimumVersion: unknown, currentVersion: string): void {
+    // Older signed app bundles did not declare a minimum. Continue accepting
+    // those while refusing malformed or unsupported requirements when present.
+    if (minimumVersion === undefined) return;
+    const parse = (value: unknown): number[] => {
+        if (typeof value !== 'string' || value.length > 32) throw new Error('Invalid macOS system version');
+        const components = value.split('.');
+        if (components.length > 3 || components.some(part => !/^\d+$/.test(part))) throw new Error('Invalid macOS system version');
+        const parts = components.map(Number);
+        if (parts[0] <= 0 || parts.some(part => !Number.isSafeInteger(part))) throw new Error('Invalid macOS system version');
+        return [parts[0], parts[1] ?? 0, parts[2] ?? 0];
+    };
+    const minimum = parse(minimumVersion), current = parse(currentVersion);
+    for (let index = 0; index < 3; index++) {
+        if (current[index] > minimum[index]) return;
+        if (current[index] < minimum[index]) throw new Error(`Update requires macOS ${minimumVersion} or later (this Mac has ${currentVersion})`);
+    }
+}
+
 async function assertBundle(bundle: string, version: string, arch: MacUpdateArch): Promise<void> {
     const stat = await fs.promises.lstat(bundle);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid update application');
     const plist = path.join(bundle, 'Contents', 'Info.plist');
-    const read = async (key: string) => (await execute('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', plist])).stdout.trim();
-    if (await read('CFBundleIdentifier') !== MAC_UPDATE_BUNDLE_ID || await read('CFBundleShortVersionString') !== version) throw new Error('Update application identity does not match');
-    const executable = await read('CFBundleExecutable');
-    if (!executable || path.basename(executable) !== executable || executable === '.' || executable === '..') throw new Error('Invalid update executable');
+    const info: unknown = JSON.parse((await execute('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist])).stdout);
+    if (!info || typeof info !== 'object' || Array.isArray(info)) throw new Error('Invalid update application metadata');
+    const metadata = info as Record<string, unknown>;
+    if (metadata.CFBundleIdentifier !== MAC_UPDATE_BUNDLE_ID || metadata.CFBundleShortVersionString !== version) throw new Error('Update application identity does not match');
+    if (metadata.LSMinimumSystemVersion !== undefined) {
+        const hostVersion = (await execute('/usr/bin/sw_vers', ['-productVersion'], { timeout: 5000 })).stdout.trim();
+        assertMacOSVersionSupported(metadata.LSMinimumSystemVersion, hostVersion);
+    }
+    const executable = metadata.CFBundleExecutable;
+    if (typeof executable !== 'string' || !executable || executable.includes('\0') || path.basename(executable) !== executable || executable === '.' || executable === '..') throw new Error('Invalid update executable');
     const binary = path.join(bundle, 'Contents', 'MacOS', executable);
     const architectures = (await execute('/usr/bin/lipo', ['-archs', binary])).stdout.trim().split(/\s+/);
     if (!architectures.includes(arch === 'x64' ? 'x86_64' : 'arm64')) throw new Error('Update is for a different Mac processor');

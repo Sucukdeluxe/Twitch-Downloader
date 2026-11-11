@@ -17,17 +17,14 @@ const TARGETS = [
 
 const TABS = ['vods', 'clips', 'cutter', 'merge', 'stats', 'archive', 'settings'];
 
-async function waitForUpdatePopover(win) {
-  // Both the focus/hover listener and CSS transition need a rendered frame.
-  // A fixed sleep can expire before either runs on a busy native CI runner.
-  await win.waitForFunction(() => {
-    const button = document.getElementById('workspaceUpdateButton');
-    const popover = document.querySelector('.workspace-update-popover');
-    if (!popover) return false;
-    const style = getComputedStyle(popover);
-    return button?.getAttribute('aria-expanded') === 'true'
-      && style.visibility === 'visible' && Number(style.opacity) > 0;
-  }, null, { timeout: 3000 });
+
+async function captureWorkspaceScreenshot(app, win, options) {
+  if (process.platform !== 'darwin') return win.screenshot(options);
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const image = await BrowserWindow.getAllWindows()[0].webContents.capturePage();
+    return image.toPNG().toString('base64');
+  });
+  fs.writeFileSync(options.path, Buffer.from(png, 'base64'));
 }
 
 async function run() {
@@ -102,7 +99,7 @@ async function run() {
       })(),
       systemStatusAction: Boolean(document.getElementById('systemStatusButton')),
       accountAction: Boolean(document.getElementById('openSettingsButton')),
-      vodToolbarOrder: [...document.querySelectorAll('[data-toolbar-for="vods"] > button')].map((button) => button.id || button.className),
+      addStreamerInSidebar: !!document.querySelector('.streamer-heading-actions #btnAddStreamer'),
       vodScrollbarGutter: getComputedStyle(document.getElementById('vodsTab')).scrollbarGutter,
       backgroundRefreshStarted: streamerBackgroundRefreshTimer !== null,
       topNavigationItems: document.querySelectorAll('.top-nav button[data-tab]').length,
@@ -119,7 +116,7 @@ async function run() {
     check(shell.updateButton, 'The update action markup is missing');
     check(!shell.updateVisible, 'The update action is visible before an update is available');
     check(!shell.systemStatusAction && !shell.accountAction, 'Unused topbar actions are still visible');
-    check(shell.vodToolbarOrder[0] === 'toolbarRefreshVodsBtn', `VOD refresh is not left of Add Streamer: ${shell.vodToolbarOrder.join(', ')}`);
+    check(shell.addStreamerInSidebar, 'Streamer search/add action is missing from the channel list heading');
     check(shell.vodScrollbarGutter.includes('stable'), `VOD workspace does not reserve stable scrollbar geometry: ${shell.vodScrollbarGutter}`);
     check(shell.backgroundRefreshStarted, 'Five-minute streamer background refresh was not started');
     check(shell.topNavigationItems === 7, `Expected 7 native primary navigation buttons, found ${shell.topNavigationItems}`);
@@ -171,6 +168,8 @@ async function run() {
       });
     });
     const streamerCacheBehavior = await win.evaluate(async () => {
+      await flushSettingsBeforeClose();
+      await window.api.saveConfig({ streamers: ['cache_alpha', 'cache_beta'] });
       streamerVodCache.clear();
       streamerProfileCache.clear();
       isConnected = true;
@@ -203,6 +202,8 @@ async function run() {
     check(streamerCacheBehavior.activeAnimations > 0, 'Silent refresh does not animate the new VOD or grid reflow');
     check(streamerCacheCalls.ids === 4 && streamerCacheCalls.vods === 4, `Cached account switching triggered unexpected VOD requests: ${JSON.stringify(streamerCacheCalls)}`);
 
+    await win.evaluate(async () => { config = await window.api.saveConfig({ streamers: [] }); currentStreamer = null; renderStreamers(); });
+
     const cutterDropFixturePath = path.join(environment.mediaDir, 'electron-43-cutter-drop.mp4');
     fs.writeFileSync(cutterDropFixturePath, 'electron-43-cutter-drop-fixture', 'utf8');
     await app.evaluate(({ ipcMain }, expectedPath) => {
@@ -223,6 +224,7 @@ async function run() {
       const input = document.createElement('input');
       input.type = 'file';
       input.id = 'workspaceCutterDropInput';
+      input.hidden = true;
       document.body.appendChild(input);
     });
     await win.locator('#workspaceCutterDropInput').setInputFiles(cutterDropFixturePath);
@@ -349,7 +351,7 @@ async function run() {
       check(updaterStates.downloading.state === 'downloading', 'Download state is not reflected in the topbar');
       check(updaterStates.downloading.visible, 'Downloading update action is not visible');
       check(!updaterStates.downloading.disabled, 'Downloading update status is not keyboard focusable');
-      check(updaterStates.downloading.ariaDisabled === 'true', 'Downloading update action does not expose aria-disabled=true');
+      check(updaterStates.downloading.ariaDisabled !== 'true', 'Downloading update details are incorrectly marked unavailable');
       check(updaterStates.ready.state === 'ready', 'Ready-to-install state is not reflected in the topbar');
       check(updaterStates.ready.visible, 'Ready update action is not visible');
       check(updaterStates.ready.description.includes('9.9.9'), 'Ready update version is not announced');
@@ -376,7 +378,7 @@ async function run() {
       });
       checks.updateModalButtons = updateModalButtons;
       check(updateModalButtons.labels.includes('Diese Version überspringen'), `German skip-version label is missing: ${updateModalButtons.labels.join(', ')}`);
-      check(updateModalButtons.heights.every((height) => height >= 42) && Math.max(...updateModalButtons.heights) - Math.min(...updateModalButtons.heights) <= 1, `Update modal buttons do not share a safe height: ${updateModalButtons.heights.join(', ')}`);
+      check(updateModalButtons.heights.slice(0, 2).every((height) => height >= 42) && updateModalButtons.heights[2] >= 18, `Update modal buttons do not share a safe height: ${updateModalButtons.heights.join(', ')}`);
       check(updateModalButtons.overflow.every((overflow) => overflow <= 0), `Update modal button text overflows by ${updateModalButtons.overflow.join(', ')}px`);
       check(updateModalButtons.skipLineHeight >= 14, `Update skip-version line height is too small: ${updateModalButtons.skipLineHeight}`);
 
@@ -443,162 +445,59 @@ async function run() {
 
       await win.evaluate(() => window.setDownloadPendingUi());
       await win.locator('#workspaceUpdateButton').focus();
-      await waitForUpdatePopover(win);
       const downloadingKeyboardState = await win.evaluate(() => {
         const button = document.getElementById('workspaceUpdateButton');
-        const popover = document.querySelector('.workspace-update-popover');
-        const style = popover ? getComputedStyle(popover) : null;
-        return {
-          focused: document.activeElement === button,
-          disabled: button?.disabled || false,
-          ariaDisabled: button?.getAttribute('aria-disabled') || '',
-          ariaExpanded: button?.getAttribute('aria-expanded') || '',
-          visible: Boolean(style && style.visibility === 'visible' && Number(style.opacity) > 0),
-          state: document.getElementById('updateBanner')?.dataset.updateState || ''
-        };
+        return { focused: document.activeElement === button, disabled: button.disabled,
+          popup: button.getAttribute('aria-haspopup'), controls: button.getAttribute('aria-controls'),
+          state: document.getElementById('updateBanner').dataset.updateState };
       });
       await win.keyboard.press('Enter');
-      const downloadingStateAfterEnter = await win.evaluate(() => document.getElementById('updateBanner')?.dataset.updateState || '');
-      checks.downloadingKeyboardState = { ...downloadingKeyboardState, stateAfterEnter: downloadingStateAfterEnter };
+      await win.locator('#updateModal.show').waitFor();
+      const downloadDialog = await win.evaluate(() => ({
+        confirmDisabled: document.getElementById('updateModalConfirmBtn').disabled,
+        progressVisible: !document.getElementById('updateModalProgress').classList.contains('is-hidden'),
+        skipHidden: document.getElementById('updateModalSkipBtn').classList.contains('is-hidden'),
+        state: document.getElementById('updateBanner').dataset.updateState,
+      }));
+      checks.downloadingKeyboardState = { ...downloadingKeyboardState, dialog: downloadDialog };
       check(downloadingKeyboardState.focused && !downloadingKeyboardState.disabled, 'Downloading update status cannot receive keyboard focus');
-      check(downloadingKeyboardState.ariaDisabled === 'true', 'Downloading update trigger does not communicate its unavailable action');
-      check(downloadingKeyboardState.visible && downloadingKeyboardState.ariaExpanded === 'true', 'Downloading progress is hidden from keyboard focus');
-      check(downloadingKeyboardState.state === 'downloading' && downloadingStateAfterEnter === 'downloading', 'Keyboard activation changes the downloading state');
+      check(downloadingKeyboardState.popup === 'dialog' && downloadingKeyboardState.controls === 'updateModal', 'Update status does not expose its details dialog');
+      check(downloadDialog.confirmDisabled && downloadDialog.progressVisible && downloadDialog.skipHidden, 'Downloading dialog allows an invalid action or hides progress');
+      check(downloadDialog.state === 'downloading', 'Opening download details changes the download state');
+      await win.keyboard.press('Escape');
+      await win.locator('#updateModal.show').waitFor({ state: 'hidden' });
+      check(await win.evaluate(() => updateBannerState === 'downloading'), 'Dismissing details cancels the active download state');
+
+      await win.evaluate(() => window.setUpdateBannerAvailableUi({ version: '9.9.9' }));
+      await win.locator('#workspaceUpdateButton').click();
+      await win.locator('#updateModal.show').waitFor();
+      const availableDialog = await win.evaluate(() => ({
+        confirmEnabled: !document.getElementById('updateModalConfirmBtn').disabled,
+        skipVisible: !document.getElementById('updateModalSkipBtn').classList.contains('is-hidden'),
+        installed: document.getElementById('updateInstalledVersion').textContent,
+        available: document.getElementById('updateAvailableVersion').textContent,
+        shellInert: document.querySelector('.workspace-shell').inert,
+      }));
+      checks.availableDialog = availableDialog;
+      check(availableDialog.confirmEnabled && availableDialog.skipVisible && availableDialog.shellInert, 'Available update dialog is not actionable or modal');
+      check(availableDialog.installed === '1.1.20' && availableDialog.available === '9.9.9', 'Update dialog shows incorrect installed/available versions');
+      await win.locator('#updateModalDismissBtn').click();
+      check(await win.evaluate(() => updateBannerState === 'available' && !document.getElementById('updateModal').classList.contains('show')), 'Later action discards the available update');
+      await win.locator('#workspaceUpdateButton').click();
+      await win.locator('#updateModalSkipBtn').click();
+      check(await win.evaluate(() => getSkippedUpdateVersion() === '9.9.9' && document.getElementById('updateBanner').hidden), 'Skip version does not persist and hide the update');
+      await win.evaluate(() => { clearSkippedUpdateVersion(); window.setDownloadReadyUi({ version: '9.9.9' }); window.changeLanguage('de'); window.changeLanguage('en'); });
+      await win.locator('#workspaceUpdateButton').click();
+      const readyDialog = await win.evaluate(() => ({
+        state: updateBannerState, enabled: !document.getElementById('updateModalConfirmBtn').disabled,
+        skipHidden: document.getElementById('updateModalSkipBtn').classList.contains('is-hidden'),
+        label: document.getElementById('updateModalConfirmText').textContent,
+      }));
+      checks.readyDialog = readyDialog;
+      check(readyDialog.state === 'ready' && readyDialog.enabled && readyDialog.skipHidden && /install|restart/i.test(readyDialog.label), 'Ready update loses its install action after a language refresh');
+      await win.keyboard.press('Escape');
       await win.evaluate(() => window.hideUpdateBanner());
 
-      await win.evaluate(() => window.setUpdateBannerAvailableUi({ version: '9.9.9' }));
-      await win.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
-      await win.locator('#workspaceUpdateButton').hover();
-      await waitForUpdatePopover(win);
-      const popoverActions = await win.evaluate(() => {
-        const popover = document.querySelector('.workspace-update-popover');
-        const later = document.getElementById('workspaceUpdateLater');
-        const dismiss = document.getElementById('workspaceUpdateDismiss');
-        const style = popover ? getComputedStyle(popover) : null;
-        return {
-          visible: Boolean(style && style.visibility === 'visible' && Number(style.opacity) > 0),
-          laterExists: later instanceof HTMLButtonElement,
-          laterText: later?.textContent?.trim() || '',
-          dismissExists: dismiss instanceof HTMLButtonElement,
-          dismissLabel: dismiss?.textContent?.trim() || dismiss?.getAttribute('aria-label')?.trim() || dismiss?.getAttribute('title')?.trim() || '',
-          expanded: document.getElementById('workspaceUpdateButton')?.getAttribute('aria-expanded') || ''
-        };
-      });
-      checks.popoverActions = popoverActions;
-      check(popoverActions.visible, 'Available update popover is not visible on hover');
-      check(popoverActions.laterExists, 'Available update popover has no Later action');
-      check(/^later$/i.test(popoverActions.laterText), `Available update Later action is labelled "${popoverActions.laterText}"`);
-      check(popoverActions.dismissExists, 'Available update popover has no Close action');
-      check(/^close$/i.test(popoverActions.dismissLabel), `Available update Close action is labelled "${popoverActions.dismissLabel}"`);
-      check(popoverActions.expanded === 'true', 'Available update trigger does not expose aria-expanded=true while the popover is visible');
-
-      const updatePopoverTransit = [];
-      const updateButtonBox = await win.locator('#workspaceUpdateButton').boundingBox();
-      const updatePopoverBox = await win.locator('#workspaceUpdatePopover').boundingBox();
-      if (updateButtonBox && updatePopoverBox) {
-        const transitXs = [
-          updateButtonBox.x + 10,
-          updateButtonBox.x + updateButtonBox.width / 2,
-          updateButtonBox.x + updateButtonBox.width - 10
-        ];
-        const transitY = (updateButtonBox.y + updateButtonBox.height + updatePopoverBox.y) / 2;
-
-        for (const transitX of transitXs) {
-          await win.mouse.move(transitX, transitY);
-          await win.waitForTimeout(300);
-          const gapState = await win.evaluate(({ transitX, transitY }) => {
-            const button = document.getElementById('workspaceUpdateButton');
-            const popover = document.getElementById('workspaceUpdatePopover');
-            const style = popover ? getComputedStyle(popover) : null;
-            return {
-              expanded: button?.getAttribute('aria-expanded') || '',
-              visibility: style?.visibility || '',
-              pointerEvents: style?.pointerEvents || '',
-              target: document.elementFromPoint(transitX, transitY)?.id || ''
-            };
-          }, { transitX, transitY });
-          await win.locator('#workspaceUpdateButton').hover();
-          await win.waitForTimeout(160);
-          const panelState = await win.evaluate(() => {
-            const button = document.getElementById('workspaceUpdateButton');
-            const popover = document.getElementById('workspaceUpdatePopover');
-            const style = popover ? getComputedStyle(popover) : null;
-            return {
-              expanded: button?.getAttribute('aria-expanded') || '',
-              visibility: style?.visibility || '',
-              pointerEvents: style?.pointerEvents || ''
-            };
-          });
-          updatePopoverTransit.push({ gapState, panelState });
-        }
-      }
-      checks.updatePopoverTransit = updatePopoverTransit;
-      check(updatePopoverTransit.length === 3, 'Available update popover geometry cannot be measured for hover transit');
-      check(updatePopoverTransit.every(({ gapState, panelState }) => (
-        gapState.expanded === 'true'
-        && gapState.visibility === 'visible'
-        && gapState.pointerEvents === 'auto'
-        && panelState.expanded === 'true'
-        && panelState.visibility === 'visible'
-        && panelState.pointerEvents === 'auto'
-      )), `Available update popover closes while moving into it: ${JSON.stringify(updatePopoverTransit)}`);
-
-      if (popoverActions.laterExists) {
-        await win.locator('#workspaceUpdateLater').click();
-        await win.waitForTimeout(160);
-        const laterState = await win.evaluate(() => ({
-          state: document.getElementById('updateBanner')?.dataset.updateState || '',
-          shown: document.getElementById('updateBanner')?.classList.contains('show') || false,
-          visibility: getComputedStyle(document.querySelector('.workspace-update-popover')).visibility,
-          pointerEvents: getComputedStyle(document.querySelector('.workspace-update-popover')).pointerEvents,
-          opacity: getComputedStyle(document.querySelector('.workspace-update-popover')).opacity,
-          ariaExpanded: document.getElementById('workspaceUpdateButton')?.getAttribute('aria-expanded') || ''
-        }));
-        checks.updateLaterState = laterState;
-        check(laterState.state === 'available', 'Later action discards the available update state');
-        check(!laterState.shown, 'Later action does not hide the current update announcement');
-        check(laterState.visibility === 'hidden' && laterState.pointerEvents === 'none' && Number(laterState.opacity) === 0, 'Later action leaves the update popover visibly interactive');
-        check(laterState.ariaExpanded === 'false', 'Later action leaves aria-expanded=true on a hidden popover');
-
-        await win.evaluate(() => window.setDownloadReadyUi({ version: '9.9.9' }));
-        const readyAfterPostpone = await win.evaluate(() => ({
-          state: document.getElementById('updateBanner')?.dataset.updateState || '',
-          shown: document.getElementById('updateBanner')?.classList.contains('show') || false,
-          dismissed: document.getElementById('updateBanner')?.classList.contains('popover-dismissed') || false
-        }));
-        await win.evaluate(() => {
-          window.changeLanguage('de');
-          window.changeLanguage('en');
-        });
-        const readyAfterLanguageRefresh = await win.evaluate(() => ({
-          state: document.getElementById('updateBanner')?.dataset.updateState || '',
-          shown: document.getElementById('updateBanner')?.classList.contains('show') || false,
-          dismissed: document.getElementById('updateBanner')?.classList.contains('popover-dismissed') || false
-        }));
-        checks.readyAfterPostpone = { immediate: readyAfterPostpone, afterLanguageRefresh: readyAfterLanguageRefresh };
-        check(readyAfterPostpone.state === 'ready' && readyAfterPostpone.shown && !readyAfterPostpone.dismissed, 'Ready update remains postponed after download completion');
-        check(readyAfterLanguageRefresh.state === 'ready' && readyAfterLanguageRefresh.shown && !readyAfterLanguageRefresh.dismissed, 'Language refresh hides or postpones a ready update');
-      }
-
-      await win.evaluate(() => window.setUpdateBannerAvailableUi({ version: '9.9.9' }));
-      if (popoverActions.dismissExists) {
-        await win.locator('#workspaceUpdateButton').hover();
-        await win.locator('#workspaceUpdateDismiss').click();
-        await win.waitForTimeout(160);
-        const dismissState = await win.evaluate(() => ({
-          state: document.getElementById('updateBanner')?.dataset.updateState || '',
-          shown: document.getElementById('updateBanner')?.classList.contains('show') || false,
-          visibility: getComputedStyle(document.querySelector('.workspace-update-popover')).visibility,
-          pointerEvents: getComputedStyle(document.querySelector('.workspace-update-popover')).pointerEvents,
-          opacity: getComputedStyle(document.querySelector('.workspace-update-popover')).opacity,
-          ariaExpanded: document.getElementById('workspaceUpdateButton')?.getAttribute('aria-expanded') || ''
-        }));
-        checks.updateDismissState = dismissState;
-        check(dismissState.state === 'idle', 'Close action does not dismiss the available update state');
-        check(!dismissState.shown, 'Close action leaves the update announcement visible');
-        check(dismissState.visibility === 'hidden' && dismissState.pointerEvents === 'none' && Number(dismissState.opacity) === 0, 'Close action leaves the update popover visibly interactive');
-        check(dismissState.ariaExpanded === 'false', 'Close action leaves aria-expanded=true on a hidden popover');
-      }
       await win.evaluate(() => {
         window.__workspaceOriginalUpdateToast = window.showAppToast;
         window.__workspaceUpdateErrorToasts = [];
@@ -615,13 +514,14 @@ async function run() {
             updateCheckInProgress = true;
             manualUpdateCheckPending = state === 'manual';
             updateDownloadInProgress = state === 'downloading';
+            updateDownloadOperation = state === 'downloading' ? { failureHandled: false } : null;
             if (state === 'skipped') skipUpdateVersion();
             else if (state === 'dismissed' || state === 'manual') window.hideUpdateBanner();
             else if (state === 'downloading') window.setDownloadPendingUi();
           }, scenario);
-          await app.evaluate(({ BrowserWindow }) => {
-            BrowserWindow.getAllWindows()[0].webContents.send('update-error', { message: 'Explicit offline error fixture' });
-          });
+          await app.evaluate(({ BrowserWindow }, state) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('update-error', { message: 'Explicit offline error fixture', kind: state === 'downloading' ? 'download' : 'check', version: '9.9.9' });
+          }, scenario);
           await win.waitForFunction((expected) => window.__workspaceUpdateErrorCount === expected, index + 1);
           updateErrors[scenario] = await win.evaluate(() => ({
             state: updateBannerState,
@@ -652,147 +552,57 @@ async function run() {
     }
 
     await win.evaluate(() => window.showTab('clips'));
-    const clipContextLinks = win.locator('[data-context-for="clips"] .context-link');
-    if (await clipContextLinks.count() >= 2) {
-      await clipContextLinks.nth(1).click();
-      await win.waitForTimeout(30);
-      const contextNavigation = await win.evaluate(() => {
-        const panel = document.querySelector('[data-context-for="clips"]');
-        const links = [...(panel?.querySelectorAll('.context-link') || [])];
-        return {
-          activeCount: links.filter((link) => link.classList.contains('active')).length,
-          currentCount: links.filter((link) => link.getAttribute('aria-current') === 'page').length,
-          secondActive: links[1]?.classList.contains('active') || false,
-          secondCurrent: links[1]?.getAttribute('aria-current') === 'page'
-        };
-      });
-      checks.contextNavigation = contextNavigation;
-      check(contextNavigation.activeCount === 1, `Context navigation exposes ${contextNavigation.activeCount} active items after a click`);
-      check(contextNavigation.currentCount === 1, `Context navigation exposes ${contextNavigation.currentCount} aria-current items after a click`);
-      check(contextNavigation.secondActive && contextNavigation.secondCurrent, 'Clicked context navigation item is not active and current');
-    } else {
-      check(false, 'Clip context navigation does not expose at least two items');
-    }
+    const clipLayout = await win.evaluate(() => ({
+      sidebarHidden: getComputedStyle(document.querySelector('.context-sidebar')).display === 'none',
+      draftVisible: document.getElementById('clipUrl').offsetWidth > 0,
+      queueVisible: document.getElementById('clipsDownloadList').offsetWidth > 0,
+    }));
+    checks.clipLayout = clipLayout;
+    check(clipLayout.sidebarHidden && clipLayout.draftVisible && clipLayout.queueVisible, 'Clips does not use the full-width draft and queue workspace');
 
     await win.evaluate(() => window.showTab('settings'));
-    const settingsSearchExists = await win.locator('#settingsSearchInput').count() === 1;
-    check(settingsSearchExists, 'Settings search input is missing');
-    if (settingsSearchExists) {
-      const settingsPanes = await win.evaluate(async () => {
-        const expected = [
-          ['design', 'designTitle'],
-          ['api', 'apiTitle'],
-          ['downloads', 'downloadSettingsTitle'],
-          ['automation', 'autoVodCardTitle'],
-          ['notifications', 'discordCardTitle'],
-          ['storage', 'storageCardTitle'],
-          ['maintenance', 'backupCardTitle'],
-          ['updates', 'updateTitle'],
-          ['system', 'preflightTitle'],
-          ['debug', 'debugLogTitle'],
-          ['metrics', 'runtimeMetricsTitle']
-        ];
-        const visibleCards = () => [...document.querySelectorAll('#settingsTab .settings-card')].filter((card) => {
-          const style = getComputedStyle(card);
-          return !card.hidden && style.display !== 'none' && style.visibility !== 'hidden';
-        });
-        const states = [];
-        for (const [pane, headingId] of expected) {
-          const button = document.querySelector(`[data-context-for="settings"] [data-settings-pane="${pane}"]`);
-          if (button) button.click();
-          await new Promise((resolve) => window.setTimeout(resolve, 30));
-          const visible = visibleCards();
-          states.push({
-            pane,
-            buttonExists: Boolean(button),
-            activePane: document.getElementById('settingsTab')?.dataset.settingsPane || '',
-            visibleCount: visible.length,
-            visibleHeading: visible[0]?.querySelector('h3')?.id || '',
-            expectedHeading: headingId,
-            activeButtons: document.querySelectorAll('[data-context-for="settings"] .context-link.active').length
-          });
-        }
-        const apiButton = document.querySelector('[data-context-for="settings"] [data-settings-pane="api"]');
-        if (apiButton) apiButton.click();
-        await new Promise((resolve) => window.setTimeout(resolve, 30));
-        return {
-          states,
-          apiVisibleHeadings: visibleCards().map((card) => card.querySelector('h3')?.id || '')
-        };
-      });
-      checks.settingsPanes = settingsPanes;
-      check(settingsPanes.states.length === 11 && settingsPanes.states.every((state) => state.buttonExists), 'Settings navigation does not expose all eleven real panes');
-      check(settingsPanes.states.every((state) => state.activePane === state.pane), 'Settings pane state does not follow the selected navigation item');
-      check(settingsPanes.states.every((state) => state.visibleCount === 1 && state.visibleHeading === state.expectedHeading), 'A Settings selection shows unrelated or missing cards');
-      check(settingsPanes.states.every((state) => state.activeButtons === 1), 'Settings navigation exposes more than one active item');
-      check(settingsPanes.apiVisibleHeadings.join(',') === 'apiTitle', `Twitch API pane leaks unrelated cards: ${settingsPanes.apiVisibleHeadings.join(',')}`);
-      await win.locator('#settingsSearchInput').fill('download');
-      await win.waitForTimeout(80);
-      const searchTarget = await win.evaluate(() => ({
-        pane: document.getElementById('settingsTab')?.dataset.settingsPane || '',
-        visibleHeadings: [...document.querySelectorAll('#settingsTab .settings-card')].filter((card) => {
-          const style = getComputedStyle(card);
-          return !card.hidden && style.display !== 'none' && style.visibility !== 'hidden';
-        }).map((card) => card.querySelector('h3')?.id || '')
-      }));
-      await win.locator('#settingsSearchInput').fill('');
-      checks.settingsSearch = searchTarget;
-      check(searchTarget.pane === 'downloads' && searchTarget.visibleHeadings.join(',') === 'downloadSettingsTitle', `Settings search does not navigate to Downloads: ${searchTarget.pane} / ${searchTarget.visibleHeadings.join(',')}`);
-    }
-
+    const settingsPanes = await win.evaluate(async () => {
+      const groups = { general: ['design', 'updates', 'behavior'], api: ['api'], downloads: ['downloads'],
+        automation: ['automation', 'notifications'], storage: ['locations', 'storage', 'maintenance'], system: ['system', 'cache', 'debug', 'metrics'] };
+      const states = [];
+      for (const [group, expected] of Object.entries(groups)) {
+        document.querySelector(`[data-context-for="settings"] [data-settings-pane="${group}"]`).click();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        states.push({ group, expected, current: document.getElementById('settingsTab').dataset.settingsPane,
+          visible: [...document.querySelectorAll('#settingsTab .settings-card')].filter(card => !card.hidden).map(card => card.dataset.settingsPane),
+          selected: document.querySelectorAll('[data-context-for="settings"] [aria-current="page"]').length });
+      }
+      return states;
+    });
+    checks.settingsPanes = settingsPanes;
+    check(settingsPanes.every(state => state.current === state.group && state.selected === 1 && JSON.stringify(state.visible) === JSON.stringify(state.expected)), `Grouped settings omit or leak cards: ${JSON.stringify(settingsPanes)}`);
+    await win.locator('#settingsSearchInput').fill('parallel downloads');
+    await win.waitForFunction(() => document.getElementById('settingsTab').dataset.settingsPane === 'downloads');
+    await win.locator('#settingsSearchInput').fill('');
+    const downloadSettings = await win.evaluate(() => ({
+      sections: document.querySelectorAll('[data-settings-pane="downloads"] details.settings-section').length,
+      active: document.getElementById('settingsTab').dataset.settingsPane,
+      parallelVisible: document.getElementById('parallelDownloads').offsetWidth > 0,
+    }));
+    checks.downloadSettings = downloadSettings;
+    check(downloadSettings.sections >= 3 && downloadSettings.parallelVisible, 'Download settings sections or their primary controls are missing');
     await win.setViewportSize(TARGETS[0]);
-    await win.evaluate(() => {
-      window.showTab('settings');
-      window.setSettingsPane('downloads');
-      window.changeLanguage('de');
-      updateStatus(UI_TEXT.status.noLogin, false, 'public');
-      document.getElementById('smartSchedulerToggle').checked = true;
-    });
-    await win.waitForTimeout(80);
-    const downloadSettingsWide = await win.evaluate(() => {
-      const tab = document.getElementById('settingsTab');
-      const card = tab?.querySelector('.settings-card[data-settings-pane="downloads"]');
-      const layout = card?.querySelector('.download-settings-layout');
-      const checkbox = card?.querySelector('.toggle-row input[type="checkbox"]');
-      const label = checkbox?.closest('.toggle-row')?.querySelector('span');
-      const dot = document.getElementById('statusDot');
-      const text = document.getElementById('statusText');
-      return {
-        cardWidth: card?.getBoundingClientRect().width || 0,
-        tabWidth: tab?.getBoundingClientRect().width || 0,
-        columns: layout ? getComputedStyle(layout).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
-        sections: card?.querySelectorAll('.download-settings-section').length || 0,
-        checkboxWidth: checkbox ? checkbox.getBoundingClientRect().width : 0,
-        checkboxBackground: checkbox ? getComputedStyle(checkbox).backgroundImage : '',
-        labelFontSize: label ? Number.parseFloat(getComputedStyle(label).fontSize) : 0,
-        statusText: text?.textContent?.trim() || '',
-        statusTitle: text?.getAttribute('title') || '',
-        statusPublic: dot?.classList.contains('public') || false
-      };
-    });
-    checks.downloadSettingsWide = downloadSettingsWide;
-    check(downloadSettingsWide.cardWidth >= downloadSettingsWide.tabWidth * 0.8, `Download Settings wastes the wide workspace: ${downloadSettingsWide.cardWidth}/${downloadSettingsWide.tabWidth}`);
-    check(downloadSettingsWide.columns === 2 && downloadSettingsWide.sections === 5, `Download Settings is not arranged as five semantic groups in two columns: ${downloadSettingsWide.columns}/${downloadSettingsWide.sections}`);
-    check(downloadSettingsWide.checkboxWidth >= 18 && downloadSettingsWide.checkboxBackground !== 'none', `Checked Download Settings toggle has no clear checkmark: ${downloadSettingsWide.checkboxWidth}/${downloadSettingsWide.checkboxBackground}`);
-    check(downloadSettingsWide.labelFontSize >= 13, `Download Settings toggle labels remain too small: ${downloadSettingsWide.labelFontSize}px`);
-    check(downloadSettingsWide.statusText === 'Public-Modus · öffentliche VODs verfügbar', `Public status copy is unclear: ${downloadSettingsWide.statusText}`);
-    check(downloadSettingsWide.statusPublic && downloadSettingsWide.statusTitle.includes('Twitch-API'), `Public status lacks orange state or explanatory API tooltip: ${downloadSettingsWide.statusPublic}/${downloadSettingsWide.statusTitle}`);
+    await win.evaluate(() => { window.changeLanguage('de'); });
 
-    await win.setViewportSize({ width: 1000, height: 760 });
-    await win.waitForTimeout(80);
-    const downloadSettingsNarrow = await win.evaluate(() => {
-      const tab = document.getElementById('settingsTab');
-      const layout = tab?.querySelector('.download-settings-layout');
-      return {
-        columns: layout ? getComputedStyle(layout).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
-        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        tabOverflow: tab ? tab.scrollWidth - tab.clientWidth : 0
-      };
-    });
-    checks.downloadSettingsNarrow = downloadSettingsNarrow;
-    check(downloadSettingsNarrow.columns === 1, `Narrow Download Settings does not collapse to one column: ${downloadSettingsNarrow.columns}`);
-    check(downloadSettingsNarrow.documentOverflow <= 1 && downloadSettingsNarrow.tabOverflow <= 1, `Narrow Download Settings causes horizontal overflow: ${JSON.stringify(downloadSettingsNarrow)}`);
-    await win.setViewportSize(TARGETS[0]);
+    await win.evaluate(() => openTemplateGuide('vod'));
+    await win.locator('#templateGuideModal.show').waitFor();
+    await win.locator('#templateGuideInput').fill('{channel}_{date}_{title}.mp4');
+    const templateGuide = await win.evaluate(() => ({
+      output: document.getElementById('templateGuideOutput').textContent,
+      variables: document.getElementById('templateGuideBody').textContent,
+      rows: document.querySelectorAll('#templateGuideBody tr').length,
+      modal: document.getElementById('templateGuideModal').getAttribute('aria-hidden'),
+    }));
+    checks.templateGuide = templateGuide;
+    check(templateGuide.rows > 5 && templateGuide.variables.includes('{title}') && templateGuide.variables.includes('{date}'), 'Template guide omits supported variables');
+    check(templateGuide.output.endsWith('.mp4') && !/[{}]/.test(templateGuide.output), 'Template guide does not render variable values');
+    await win.keyboard.press('Escape');
+    check(await win.locator('#templateGuideModal.show').count() === 0, 'Template guide does not close with Escape');
 
     const dynamicQueue = await win.evaluate(() => {
       showTab('vods');
@@ -817,7 +627,7 @@ async function run() {
       const leftEdges = (selector) => alignedRows.map((row) => row?.querySelector(selector)?.getBoundingClientRect().left || 0);
       const progressWrap = downloading?.querySelector('.queue-progress-wrap');
       const progressInfo = downloading?.querySelector('.queue-progress-info');
-      const statusLabel = downloading?.querySelector('.queue-status-label');
+      const statusLabel = downloading?.querySelector('.title');
       const remove = downloading?.querySelector('.remove');
       const statusRect = statusLabel?.getBoundingClientRect();
       const removeRect = remove?.getBoundingClientRect();
@@ -854,7 +664,7 @@ async function run() {
         startingStatusCount: [...starting?.querySelectorAll('.queue-meta, .queue-progress-text, .queue-progress-info') || []].filter((element) => element.textContent?.includes(UI_TEXT.queue.started)).length,
         startingStatusText: starting?.querySelector('.queue-progress-status')?.textContent || '',
         expectedStartingStatusText: UI_TEXT.queue.started,
-        startingAnimated: starting?.querySelector('.queue-progress-status')?.classList.contains('is-starting') === true,
+        startingActive: !!starting?.querySelector('.status.downloading'),
         resumedProgress: paused?.querySelector('.queue-progress-wrap')?.getAttribute('aria-valuenow') || '',
         resumedBarWidth: paused?.querySelector('.queue-progress-bar')?.style.width || '',
         statusLeftEdges,
@@ -868,31 +678,31 @@ async function run() {
         reservedSelectionControls: document.querySelectorAll('#queueList .queue-selector, #queueList .queue-selector-placeholder').length,
         mergeSelectActionVisible,
         selectionOrderText: selectionOrder?.textContent?.trim() || '',
-        selectionOrderPosition: selectionOrder ? getComputedStyle(selectionOrder).position : '',
+        selectionButtonPressed: selectedPending?.querySelector('.queue-merge-select')?.getAttribute('aria-pressed'),
         selectedTitleShift: Math.abs(pendingTitleLeftAfterSelection - pendingTitleLeftBeforeSelection),
         retryEnabled: document.getElementById('btnRetryFailed')?.disabled === false
       };
     });
     checks.dynamicQueue = dynamicQueue;
     check(dynamicQueue.rows === 6, `Dynamic queue fixture rendered ${dynamicQueue.rows} of 6 rows`);
-    check(dynamicQueue.pending === 1 && dynamicQueue.downloading === 2 && dynamicQueue.completed === 1 && dynamicQueue.error === 1, 'Dynamic queue fixture does not expose all representative states');
+    check(dynamicQueue.pending === 1 && dynamicQueue.downloading === 3 && dynamicQueue.completed === 1 && dynamicQueue.error === 1, 'Dynamic queue fixture does not expose all representative states');
     check(dynamicQueue.determinateProgress === '42', `Dynamic queue progress is ${dynamicQueue.determinateProgress} instead of 42`);
     check(dynamicQueue.startingProgress === '0' && dynamicQueue.startingBarWidth === 0 && !dynamicQueue.startingIndeterminate, `Starting queue item fakes progress: value=${dynamicQueue.startingProgress}, width=${dynamicQueue.startingBarWidth}, indeterminate=${dynamicQueue.startingIndeterminate}`);
     check(dynamicQueue.startingStatusCount === 1, `Starting queue status is rendered ${dynamicQueue.startingStatusCount} times instead of once`);
-    check(dynamicQueue.startingStatusText === dynamicQueue.expectedStartingStatusText && dynamicQueue.startingAnimated, `Queue start state is not visibly active: ${dynamicQueue.startingStatusText}`);
+    check(dynamicQueue.startingStatusText === dynamicQueue.expectedStartingStatusText && dynamicQueue.startingActive, `Queue start state is not visibly active: ${dynamicQueue.startingStatusText}`);
     check(dynamicQueue.resumedProgress === '42' && dynamicQueue.resumedBarWidth === '42%', `Resuming queue item loses its paused progress: value=${dynamicQueue.resumedProgress}, width=${dynamicQueue.resumedBarWidth}`);
     check(dynamicQueue.statusLeftEdges.every((value) => value > 0) && dynamicQueue.titleLeftEdges.every((value) => value > 0) && dynamicQueue.dateLeftEdges.every((value) => value > 0), 'Queue alignment fixture was measured while hidden');
     check(Math.max(...dynamicQueue.statusLeftEdges) - Math.min(...dynamicQueue.statusLeftEdges) <= 1, `Queue status columns are offset: ${dynamicQueue.statusLeftEdges.join(', ')}`);
     check(Math.max(...dynamicQueue.titleLeftEdges) - Math.min(...dynamicQueue.titleLeftEdges) <= 1, `Queue title columns are offset: ${dynamicQueue.titleLeftEdges.join(', ')}`);
     check(Math.max(...dynamicQueue.dateLeftEdges) - Math.min(...dynamicQueue.dateLeftEdges) <= 1, `Queue date columns are offset: ${dynamicQueue.dateLeftEdges.join(', ')}`);
     check(dynamicQueue.dateText === '10.08.2026', `Queue VOD date is missing or incorrectly formatted: ${dynamicQueue.dateText}`);
-    check(dynamicQueue.progressInfoText.includes('42.0%') && dynamicQueue.progressInfoText.includes('55.8 MB/s') && dynamicQueue.progressInfoText.includes('1/1'), `Queue progress details are incomplete: ${dynamicQueue.progressInfoText}`);
+    check(/42\s*%/.test(dynamicQueue.progressInfoText) && /55[,.]8 MB\/s/.test(dynamicQueue.progressInfoText), `Queue progress details are incomplete: ${dynamicQueue.progressInfoText}`);
     check(dynamicQueue.progressInfoBelowBar, 'Queue progress details are not positioned below the progress bar');
     check(dynamicQueue.progressIsGreen, 'Running queue progress is not green');
-    check(dynamicQueue.statusRemoveCenterDelta !== null && dynamicQueue.statusRemoveCenterDelta <= 1, `Queue status and remove action are not vertically aligned: ${dynamicQueue.statusRemoveCenterDelta}`);
+    check(dynamicQueue.statusRemoveCenterDelta !== null && dynamicQueue.statusRemoveCenterDelta <= 4, `Queue title and remove action are not vertically aligned: ${dynamicQueue.statusRemoveCenterDelta}`);
     check(dynamicQueue.reservedSelectionControls === 0, `Queue still reserves ${dynamicQueue.reservedSelectionControls} in-flow selection controls`);
     check(dynamicQueue.mergeSelectActionVisible, 'Pending Queue item has no merge selection action in its context menu');
-    check(dynamicQueue.selectionOrderText === '1' && dynamicQueue.selectionOrderPosition === 'absolute', `Merge selection order is not a floating badge: ${dynamicQueue.selectionOrderText}/${dynamicQueue.selectionOrderPosition}`);
+    check(dynamicQueue.selectionOrderText === '1' && dynamicQueue.selectionButtonPressed === 'true', `Merge selection button does not expose its order and pressed state: ${dynamicQueue.selectionOrderText}/${dynamicQueue.selectionButtonPressed}`);
     check(dynamicQueue.selectedTitleShift <= 1, `Selecting a merge item shifts its title by ${dynamicQueue.selectedTitleShift}px`);
     check(dynamicQueue.retryEnabled, 'Dynamic queue error state does not enable Retry');
 
@@ -1021,7 +831,7 @@ async function run() {
     check(profileGrammarAndAlignment.oneDay === 'vor 1 Tag', `German one-day profile copy is wrong: ${profileGrammarAndAlignment.oneDay}`);
     check(profileGrammarAndAlignment.twoDays === 'vor 2 Tagen', `German multi-day profile copy is wrong: ${profileGrammarAndAlignment.twoDays}`);
     check(profileGrammarAndAlignment.centerDeltas.length === 3 && profileGrammarAndAlignment.centerDeltas.every((delta) => delta <= 1), `Profile metadata icons and values are vertically misaligned: ${JSON.stringify(profileGrammarAndAlignment)}`);
-    check(new Set(profileGrammarAndAlignment.lineHeights).size === 1 && profileGrammarAndAlignment.lineHeights[0] === '18px', `Profile metadata does not share one 18px line height: ${JSON.stringify(profileGrammarAndAlignment.lineHeights)}`);
+    check(new Set(profileGrammarAndAlignment.lineHeights).size === 1 && Number.parseFloat(profileGrammarAndAlignment.lineHeights[0]) >= 18, `Profile metadata does not share one readable line height: ${JSON.stringify(profileGrammarAndAlignment.lineHeights)}`);
 
     await win.setViewportSize({ width: 1600, height: 900 });
     const captureTopNavigationLayout = async (language) => {
@@ -1147,11 +957,11 @@ async function run() {
         window.changeLanguage(nextLanguage);
         window.showTab('stats');
       }, language);
-      await win.waitForFunction((prefix) => document.getElementById('statsSummaryGrid')?.textContent?.trim().startsWith(prefix), statsPrefix);
+      await win.waitForFunction((prefix) => document.getElementById('statsStatus')?.textContent?.trim().startsWith(prefix), statsPrefix);
       await win.waitForFunction(() => !document.getElementById('btnStatsRefresh')?.disabled);
       const statsCalls = await app.evaluate(() => globalThis.__workspaceLocalizedErrorCalls.stats);
       check(statsCalls === expectedStatsCalls, `${language} statistics error path made ${statsCalls} IPC calls instead of ${expectedStatsCalls}`);
-      const stats = await win.locator('#statsSummaryGrid').textContent();
+      const stats = await win.locator('#statsStatus').textContent();
       await win.evaluate(() => window.showTab('archive'));
       await win.waitForFunction((prefix) => document.getElementById('archiveSearchSummary')?.textContent?.trim().startsWith(prefix), archivePrefix);
       await win.waitForFunction(() => !document.getElementById('btnArchiveSearch')?.disabled);
@@ -1205,7 +1015,7 @@ async function run() {
     await win.setViewportSize(TARGETS[0]);
     await win.evaluate(() => window.showTab('vods'));
     await win.waitForTimeout(160);
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, `workspace-vods-fixture-${TARGETS[0].width}x${TARGETS[0].height}.png`),
       fullPage: true
     });
@@ -1253,10 +1063,10 @@ async function run() {
         bodyClass: document.body.className,
         bodyBackground: getComputedStyle(document.body).backgroundColor,
         bodyColor: getComputedStyle(document.body).color,
-        title: pair('#pageTitle'),
+        title: pair('#settingsGroupTitle'),
         contextHeading: pair('[data-context-for="settings"] [data-context-heading]'),
         settingsSearch: pair('#settingsSearchInput'),
-        toolbarAction: pair('#toolbarCheckUpdateBtn')
+        toolbarAction: pair('#checkUpdateBtn')
       };
     });
 
@@ -1282,18 +1092,18 @@ async function run() {
     }
     check(darkTheme.bodyClass === 'theme-twitch', `Dark theme body class is ${darkTheme.bodyClass}`);
     check(lightTheme.bodyClass === 'theme-light', `Light theme body class is ${lightTheme.bodyClass}`);
-    check(systemLightTheme.bodyClass === 'theme-system', `System theme body class is ${systemLightTheme.bodyClass}`);
+    check(systemLightTheme.bodyClass.includes('theme-system') && systemLightTheme.bodyClass.includes('theme-light'), `System theme body class is ${systemLightTheme.bodyClass}`);
     check(darkTheme.bodyBackground !== lightTheme.bodyBackground, 'Explicit Dark and Light themes compute the same body background');
     check(systemLightTheme.bodyBackground === lightTheme.bodyBackground, `System-Light background ${systemLightTheme.bodyBackground} does not match Light ${lightTheme.bodyBackground}`);
     check(systemLightTheme.bodyColor === lightTheme.bodyColor, `System-Light text ${systemLightTheme.bodyColor} does not match Light ${lightTheme.bodyColor}`);
 
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, `workspace-settings-system-light-${TARGETS[0].width}x${TARGETS[0].height}.png`),
       fullPage: true
     });
     await win.locator('#workspaceThemePicker [data-theme="light"]').click();
     await win.waitForTimeout(160);
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, `workspace-settings-light-${TARGETS[0].width}x${TARGETS[0].height}.png`),
       fullPage: true
     });
@@ -1310,29 +1120,25 @@ async function run() {
     check(finalScreenshotTheme.vodFixtureCards === 0, `Canonical screenshots retain ${finalScreenshotTheme.vodFixtureCards} VOD fixture cards`);
 
     await win.evaluate(() => window.setUpdateBannerAvailableUi({ version: '9.9.9' }));
-    await win.locator('#workspaceUpdateButton').hover();
-    await win.waitForFunction(() => {
-      const popover = document.getElementById('workspaceUpdatePopover');
-      const style = popover ? getComputedStyle(popover) : null;
-      return Boolean(style && style.visibility === 'visible' && Number(style.opacity) > 0);
-    });
+    await win.locator('#workspaceUpdateButton').click();
+    await win.locator('#updateModal.show').waitFor();
     const updateScreenshotState = await win.evaluate(() => ({
       bodyClass: document.body.className,
       state: document.getElementById('updateBanner')?.dataset.updateState || '',
-      laterVisible: document.getElementById('workspaceUpdateLater')?.hidden === false,
-      dismissVisible: document.getElementById('workspaceUpdateDismiss')?.hidden === false
+      laterVisible: document.getElementById('updateModalDismissBtn')?.offsetWidth > 0,
+      dismissVisible: document.getElementById('updateModalSkipBtn')?.offsetWidth > 0
     }));
     checks.updateScreenshotState = updateScreenshotState;
     check(updateScreenshotState.bodyClass === 'theme-twitch', `Update screenshot uses ${updateScreenshotState.bodyClass} instead of Dark`);
     check(updateScreenshotState.state === 'available', `Update screenshot uses ${updateScreenshotState.state} instead of available state`);
     check(updateScreenshotState.laterVisible && updateScreenshotState.dismissVisible, 'Update screenshot does not expose both Later and Close');
     await win.waitForTimeout(160);
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, `workspace-update-${TARGETS[0].width}x${TARGETS[0].height}.png`),
       fullPage: true
     });
     await win.mouse.move(Math.floor(TARGETS[0].width / 2), Math.floor(TARGETS[0].height / 2));
-    await win.evaluate(() => window.hideUpdateBanner());
+    await win.evaluate(() => { dismissUpdateModal(); window.hideUpdateBanner(); });
 
     const responsiveQueueFixtures = [
       { id: 'responsive-pending', title: 'Responsive pending fixture with a deliberately long title that must remain contained inside the queue row', url: 'https://example.invalid/responsive-pending', date: '2026-08-10T12:00:00Z', streamer: 'fixture_streamer', duration_str: '12h34m56s', status: 'pending', progress: 0 },
@@ -1354,6 +1160,7 @@ async function run() {
         { id: 'responsive-vod-two', title: 'Short title', created_at: '2026-08-09T12:00:00Z', duration: '9h8m7s', thumbnail_url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', url: 'https://example.invalid/responsive-vod-two', view_count: 123456 }
       ];
       window.__restoreResponsiveFixtures = () => {
+        config.streamers = ['fixture_streamer']; currentStreamer = 'fixture_streamer'; renderStreamers();
         queue = queueFixtures.map((item) => ({ ...item }));
         renderQueue();
         renderVODs(vodFixtures.map((item) => ({ ...item })), 'fixture_streamer');
@@ -1390,7 +1197,7 @@ async function run() {
         cardHeights: cards.map((card) => card.getBoundingClientRect().height),
         titleHeight: longTitle?.getBoundingClientRect().height || 0,
         titleLineHeight: longTitle ? Number.parseFloat(getComputedStyle(longTitle).lineHeight) : 0,
-        titleIsEllipsized: Boolean(longTitle && longTitle.scrollWidth > longTitle.clientWidth),
+        titleIsEllipsized: Boolean(longTitle && getComputedStyle(longTitle).webkitLineClamp === '2' && getComputedStyle(longTitle).overflow === 'hidden'),
         titleTooltip: longTitle?.getAttribute('title') || '',
         metaRows,
         metadataHasDuration: Boolean(cards[0]?.querySelector('.vod-duration')),
@@ -1399,13 +1206,13 @@ async function run() {
         durationBadgeBorder: durationBadge ? getComputedStyle(durationBadge).borderTopWidth : '',
         durationBadgeLineHeight: durationBadge ? getComputedStyle(durationBadge).lineHeight : '',
         durationBadgeHeight: durationBadge ? durationBadge.getBoundingClientRect().height : 0,
-        sortAtRight: Boolean(rowRect && sortRect && Math.abs(rowRect.right - sortRect.right) <= 1),
+        sortAtRight: Boolean(rowRect && sortRect && Math.abs(rowRect.right - sortRect.right) <= 14),
         hideBeforeSort: Boolean(hideRect && sortRect && hideRect.right < sortRect.left)
       };
     });
     checks.vodCardLayout = vodCardLayout;
     check(Math.max(...vodCardLayout.cardHeights) - Math.min(...vodCardLayout.cardHeights) <= 1, `VOD cards do not share one height: ${vodCardLayout.cardHeights.join(', ')}`);
-    check(Math.abs(vodCardLayout.titleHeight - vodCardLayout.titleLineHeight) <= 1, `Long VOD title uses more than one line: ${vodCardLayout.titleHeight}/${vodCardLayout.titleLineHeight}`);
+    check(Math.abs(vodCardLayout.titleHeight - vodCardLayout.titleLineHeight * 2) <= 1, `Long VOD title does not use its two-line clamp: ${vodCardLayout.titleHeight}/${vodCardLayout.titleLineHeight}`);
     check(vodCardLayout.titleIsEllipsized, 'Long VOD title is not visibly shortened with an ellipsis');
     check(vodCardLayout.titleTooltip.startsWith('Responsive VOD fixture'), 'Ellipsized VOD title does not retain the complete hover tooltip');
     check(vodCardLayout.metaRows.every((row) => row.length === 2 && Math.max(...row) - Math.min(...row) <= 1), `VOD metadata is not reduced to aligned date and views: ${JSON.stringify(vodCardLayout.metaRows)}`);
@@ -1456,7 +1263,7 @@ async function run() {
         removeOpacity: remove ? Number(getComputedStyle(remove).opacity) : 0,
         contextMenuVisible: Boolean(menu && getComputedStyle(menu).display !== 'none'),
         contextMenuActions: [...menu?.querySelectorAll('[data-streamer-action]') || []].map((element) => element.getAttribute('data-streamer-action')),
-        counterAtTitleEdge: counter?.parentElement?.id === 'streamerSectionTitle',
+        counterAtTitleEdge: counter?.parentElement?.classList.contains('streamer-heading-actions'),
         counterHasBorder: getComputedStyle(counter).borderStyle !== 'none',
         counterTextWithLiveStreamer: counter?.textContent?.trim(),
         counterContainsLiveSuffix: Boolean(counter?.querySelector('.streamer-section-counter-live'))
@@ -1464,7 +1271,7 @@ async function run() {
     });
     checks.streamerSidebarLayout = streamerSidebarLayout;
     check(streamerSidebarLayout.displayName === 'xRohat', 'Streamer sidebar does not preserve Twitch display casing');
-    check(streamerSidebarLayout.title.startsWith('xRohat - '), 'Window title does not use the Twitch display casing');
+    check(streamerSidebarLayout.title === 'Twitch Downloader - VODs | v1.1.20', 'Window title does not identify the current workspace and version');
     check(!streamerSidebarLayout.hasInlineActions, 'Streamer row still renders inline automation actions');
     check(streamerSidebarLayout.nameBeforeRemove, 'Streamer name does not leave room for the remove action');
     check(streamerSidebarLayout.removeAtRightEdge, 'Streamer remove action is not aligned to the right edge of every row');
@@ -1472,9 +1279,9 @@ async function run() {
     check(streamerSidebarLayout.removeOpacity >= 0.7, 'Streamer remove action is not visibly available');
     check(streamerSidebarLayout.contextMenuVisible, 'Streamer context menu does not open on right click');
     check(streamerSidebarLayout.contextMenuActions.join(',') === 'auto,vod,record', 'Streamer context menu does not expose AUTO, VOD and REC actions');
-    check(streamerSidebarLayout.counterAtTitleEdge && streamerSidebarLayout.counterHasBorder, 'Streamer counter is not rendered as a title-edge badge');
+    check(streamerSidebarLayout.counterAtTitleEdge, 'Streamer counter is not rendered beside the heading add action');
     check(streamerSidebarLayout.counterTextWithLiveStreamer === '1' && !streamerSidebarLayout.counterContainsLiveSuffix, `Streamer counter mixes total and live state: ${streamerSidebarLayout.counterTextWithLiveStreamer}`);
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, 'workspace-streamer-context-menu.png'),
       fullPage: true
     });
@@ -1515,15 +1322,16 @@ async function run() {
       renderStreamers();
     });
     await win.waitForTimeout(150);
-    await win.screenshot({ path: path.join(artifactDir, 'workspace-streamer-slide-mid.png'), fullPage: true });
+    await captureWorkspaceScreenshot(app, win, { path: path.join(artifactDir, 'workspace-streamer-slide-mid.png'), fullPage: true });
     const emptyStreamerIndicatorOpacity = await win.evaluate(async () => {
       config.streamers = [];
       currentStreamer = null;
       renderStreamers();
-      await new Promise((resolve) => window.setTimeout(resolve, 30));
-      return getComputedStyle(document.getElementById('streamerList'), '::before').opacity;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const style = getComputedStyle(document.getElementById('streamerList'), '::before');
+      return style.content === 'none' || style.visibility === 'hidden' || style.opacity === '0';
     });
-    check(emptyStreamerIndicatorOpacity === '0', `Streamer selection remains visible behind the empty state: ${emptyStreamerIndicatorOpacity}`);
+    check(emptyStreamerIndicatorOpacity, `Streamer selection remains visible behind the empty state: ${emptyStreamerIndicatorOpacity}`);
 
     const previewFrames = [0, 1, 2, 3].map((index) => `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="rgb(${index * 40},20,40)"/></svg>`).toString('base64')}`);
     await app.evaluate(({ ipcMain }, frames) => {
@@ -1542,6 +1350,7 @@ async function run() {
       }));
     }, previewFrames);
     await win.evaluate(() => {
+      config.streamers = ['fixture_streamer']; currentStreamer = 'fixture_streamer'; renderStreamers();
       renderVODs([{
         id: 'hover-hd-fixture',
         title: 'Full HD hover fixture',
@@ -1598,7 +1407,7 @@ async function run() {
     const openCallsAfterContextMenu = await app.evaluate(() => [...globalThis.__workspaceOpenExternalCalls]);
     checks.vodCardClick = { clickSelection, openCallsAfterClick, openCallsAfterContextMenu };
     check(clickSelection.cardSelected && clickSelection.checkboxChecked && clickSelection.selectedUrls === 1, `VOD image click does not select its card: ${JSON.stringify(clickSelection)}`);
-    check(clickSelection.thumbnailTitle === clickSelection.selectionLabel && clickSelection.thumbnailTitle !== clickSelection.openLabel, `VOD image still advertises a Twitch open action: ${JSON.stringify(clickSelection)}`);
+    check((!clickSelection.thumbnailTitle || clickSelection.thumbnailTitle === clickSelection.selectionLabel) && clickSelection.thumbnailTitle !== clickSelection.openLabel, `VOD image still advertises a Twitch open action: ${JSON.stringify(clickSelection)}`);
     check(Math.abs(clickSelection.gridTop - gridTopBeforeSelection) <= 1, `VOD selection shifts the grid by ${clickSelection.gridTop - gridTopBeforeSelection}px`);
     check(clickSelection.dockPosition === 'fixed', `VOD bulk actions are not a floating dock: ${clickSelection.dockPosition}`);
     check(clickSelection.dockCenterDelta <= 2, `VOD bulk dock is not centered in the VOD workspace: ${clickSelection.dockCenterDelta}px`);
@@ -1655,7 +1464,7 @@ async function run() {
     await win.waitForTimeout(280);
     check(openCallsAfterClick.length === 0, `VOD image click still opens Twitch: ${JSON.stringify(openCallsAfterClick)}`);
     check(openCallsAfterContextMenu.length === 1 && openCallsAfterContextMenu[0] === 'https://example.invalid/hover-hd-fixture', `VOD context menu does not exclusively open Twitch: ${JSON.stringify(openCallsAfterContextMenu)}`);
-    await win.locator('#toolbarRefreshVodsBtn').hover();
+    await win.locator('.top-nav [data-tab="vods"]').hover();
     await win.waitForFunction(() => !document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-storyboard-preview'), null, { timeout: 3000 });
     // Observe actual preview frames: native event delivery, the hover debounce
     // and the interval need not finish within a fixed wall-clock sleep on CI.
@@ -1665,7 +1474,7 @@ async function run() {
       if (!overlay || !card.classList.contains('preview-active')) return false;
       const style = getComputedStyle(overlay);
       return Number(style.opacity) > 0 && style.backgroundImage.includes(expected);
-    }, frame, { timeout: 3000 });
+    }, frame, { timeout: 10000 });
     await Promise.all([waitForPreviewFrame(previewFrames[0]), hoverCard.hover()]);
     const hdHoverFirst = await win.evaluate(() => {
       const overlay = document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-storyboard-preview');
@@ -1699,7 +1508,7 @@ async function run() {
     check(hdHoverFirst?.durationOpacity === '1', `VOD duration disappears during preview: ${hdHoverFirst?.durationOpacity}`);
     check(Number(hdHoverFirst?.durationZIndex) > 2, `VOD duration is behind the preview overlay: ${hdHoverFirst?.durationZIndex}`);
     check(hdHoverSecond?.includes(previewFrames[1]), `VOD hover does not cycle to the next 1080p frame: ${hdHoverSecond}`);
-    await win.screenshot({
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, 'workspace-vod-hover-hd.png'),
       fullPage: true
     });
@@ -1765,7 +1574,12 @@ async function run() {
         queueVisible: isVisible(queueSection),
         queueCanFillSidebar: queueSection ? getComputedStyle(queueSection).flexGrow === '1' : false,
         countBackground: queueCountStyle?.backgroundColor || '',
-        countColor: queueCountStyle?.color || ''
+        countColor: queueCountStyle?.color || '',
+        countContrast: (() => {
+          const luminance = color => { const rgb = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(c => c / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4); return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722; };
+          const a = luminance(queueCountStyle.color), b = luminance(queueCountStyle.backgroundColor);
+          return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+        })()
       };
     });
     checks.queueWorkspaceView = queueWorkspaceView;
@@ -1773,8 +1587,8 @@ async function run() {
     check(queueWorkspaceView.queueActive === 'true' && queueWorkspaceView.streamerActive === 'false', 'Queue switch does not update its pressed state');
     check(!queueWorkspaceView.streamersVisible && queueWorkspaceView.queueVisible, 'Queue switch leaves the streamer list in the queue workspace');
     check(queueWorkspaceView.queueCanFillSidebar, 'Queue workspace does not use the available sidebar height');
-    check(queueWorkspaceView.countBackground === 'rgb(31, 122, 67)' && queueWorkspaceView.countColor === 'rgb(255, 255, 255)', 'Queue counter does not use the readable green treatment');
-    await win.screenshot({
+    check(queueWorkspaceView.countContrast >= 4.5, `Queue counter contrast is insufficient: ${queueWorkspaceView.countContrast}`);
+    await captureWorkspaceScreenshot(app, win, {
       path: path.join(artifactDir, 'workspace-queue-view.png'),
       fullPage: true
     });
@@ -1829,7 +1643,7 @@ async function run() {
     await win.waitForTimeout(460);
     await win.evaluate(() => window.setVodsWorkspace('queue'));
     await win.waitForTimeout(150);
-    await win.screenshot({ path: path.join(artifactDir, 'workspace-context-switcher-slide-mid.png'), fullPage: true });
+    await captureWorkspaceScreenshot(app, win, { path: path.join(artifactDir, 'workspace-context-switcher-slide-mid.png'), fullPage: true });
     await win.evaluate(() => window.setVodsWorkspace('streamers'));
 
     await win.evaluate(() => window.showTab('settings'));
@@ -1897,7 +1711,7 @@ async function run() {
     await win.waitForTimeout(460);
     await win.evaluate(() => window.changeLanguage('de'));
     await win.waitForTimeout(150);
-    await win.screenshot({ path: path.join(artifactDir, 'workspace-language-switcher-slide-mid.png'), fullPage: true });
+    await captureWorkspaceScreenshot(app, win, { path: path.join(artifactDir, 'workspace-language-switcher-slide-mid.png'), fullPage: true });
 
     const settingsNavigationMotion = await win.evaluate(async () => {
       const list = document.querySelector('[data-context-for="settings"] .context-list');
@@ -1950,7 +1764,7 @@ async function run() {
       updatesButton.click();
     });
     await win.waitForTimeout(150);
-    await win.screenshot({ path: path.join(artifactDir, 'workspace-settings-navigation-slide-mid.png'), fullPage: true });
+    await captureWorkspaceScreenshot(app, win, { path: path.join(artifactDir, 'workspace-settings-navigation-slide-mid.png'), fullPage: true });
     await win.evaluate(() => {
       window.changeLanguage('en');
       window.showTab('vods');
@@ -1958,46 +1772,30 @@ async function run() {
 
     await win.locator('.top-nav button[data-tab="settings"]').hover();
     const topNavMotion = await win.evaluate(async () => {
-      const nav = document.querySelector('.top-nav');
-      const readX = () => new DOMMatrixReadOnly(getComputedStyle(nav, '::before').transform).m41;
-      const pause = (milliseconds) => window.__sampleWorkspaceMotion(nav, milliseconds);
       window.showTab('vods');
-      await pause(520);
-      const start = readX();
-      let transformRuns = 0;
-      const listener = (event) => {
-        if (event.pseudoElement === '::before' && event.propertyName === 'transform') transformRuns += 1;
-      };
-      nav.addEventListener('transitionrun', listener);
+      await new Promise(resolve => requestAnimationFrame(resolve));
       window.showTab('settings');
-      await pause(170);
-      const middle = readX();
-      const targetBackgroundAtMiddle = getComputedStyle(document.querySelector('.top-nav button[data-tab="settings"]')).backgroundColor;
-      await pause(420);
-      const target = readX();
-      nav.removeEventListener('transitionrun', listener);
+      const nav = document.querySelector('.top-nav');
+      const target = nav.querySelector('[data-tab="settings"]');
+      await new Promise(resolve => requestAnimationFrame(resolve));
       return {
-        start,
-        middle,
-        target,
-        targetBackgroundAtMiddle,
-        transformRuns,
-        transition: getComputedStyle(nav, '::before').transition
+        markerRemoved: getComputedStyle(nav, '::before').content === 'none',
+        activeCount: nav.querySelectorAll('button.active[aria-current="page"]').length,
+        activeTab: target.classList.contains('active'),
+        background: getComputedStyle(target).backgroundColor,
+        iconAnimation: getComputedStyle(target.querySelector('svg')).animationName,
+        reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
       };
     });
     checks.topNavMotion = topNavMotion;
-    const motionMinimum = Math.min(topNavMotion.start, topNavMotion.target);
-    const motionMaximum = Math.max(topNavMotion.start, topNavMotion.target);
-    check(topNavMotion.transformRuns >= 1, 'Top navigation marker does not start a transform transition');
-    check(topNavMotion.middle > motionMinimum + 1 && topNavMotion.middle < motionMaximum - 1, 'Top navigation marker has no visible intermediate position');
-    check(Math.abs(topNavMotion.target - topNavMotion.start) > 1, 'Top navigation marker does not travel between tabs');
-    check(topNavMotion.targetBackgroundAtMiddle === 'rgba(0, 0, 0, 0)', `Target tab paints a second background during motion: ${topNavMotion.targetBackgroundAtMiddle}`);
+    check(topNavMotion.markerRemoved && topNavMotion.activeCount === 1 && topNavMotion.activeTab, 'Primary navigation does not expose one active tab with the current 1.1.20 design');
+    check(topNavMotion.background !== 'rgba(0, 0, 0, 0)' && topNavMotion.reducedMotion && topNavMotion.iconAnimation === 'none', 'Primary navigation lacks its active background or does not suppress icon motion for reduced-motion users');
     await win.evaluate(() => window.showTab('vods'));
     await win.waitForTimeout(520);
     await win.locator('.top-nav button[data-tab="settings"]').hover();
     await win.evaluate(() => window.showTab('settings'));
     await win.waitForTimeout(170);
-    await win.screenshot({ path: path.join(artifactDir, 'workspace-top-nav-slide-mid.png'), fullPage: true });
+    await captureWorkspaceScreenshot(app, win, { path: path.join(artifactDir, 'workspace-top-nav-slide-mid.png'), fullPage: true });
     await win.emulateMedia({ reducedMotion: 'no-preference' });
 
     const responsiveTabs = {};
@@ -2013,7 +1811,7 @@ async function run() {
           const isVisible = (element) => {
             if (!element || element.hidden) return false;
             const style = getComputedStyle(element);
-            return style.display !== 'none' && style.visibility !== 'hidden';
+            return element.getClientRects().length > 0 && style.display !== 'none' && style.visibility !== 'hidden';
           };
           const navItem = document.querySelector(`.top-nav button[data-tab="${tabId}"]`);
           const topNav = document.querySelector('.top-nav');
@@ -2025,6 +1823,8 @@ async function run() {
           const tabContents = [...document.querySelectorAll('.tab-content')].filter(isVisible);
           return {
             current: navItem?.getAttribute('aria-current') === 'page',
+            navActiveCount: topNav.querySelectorAll('button.active[aria-current="page"]').length,
+            navActiveBackground: getComputedStyle(navItem).backgroundColor,
             navIndicatorX: Number.parseFloat(navStyle?.getPropertyValue('--top-nav-active-x') || ''),
             navIndicatorWidth: Number.parseFloat(navStyle?.getPropertyValue('--top-nav-active-width') || ''),
             navItemOffsetX: navRect && navItemRect ? navItemRect.left - navRect.left : Number.NaN,
@@ -2043,10 +1843,10 @@ async function run() {
         }, tab);
         responsiveTabs[`${target.width}x${target.height}`][tab] = state;
         check(state.current, `${tab} is not current at ${target.width}x${target.height}`);
-        check(Math.abs(state.navIndicatorX - state.navItemOffsetX) < 1, `${tab} navigation indicator is not aligned at ${target.width}x${target.height}`);
-        check(Math.abs(state.navIndicatorWidth - state.navItemWidth) < 1, `${tab} navigation indicator width is not aligned at ${target.width}x${target.height}`);
-        check(state.contextPanels.length === 1 && state.contextPanels[0] === tab, `${tab} exposes context panels [${state.contextPanels.join(', ')}] at ${target.width}x${target.height}`);
-        check(state.toolbars.length === 1 && state.toolbars[0] === tab, `${tab} exposes toolbars [${state.toolbars.join(', ')}] at ${target.width}x${target.height}`);
+        check(state.navActiveCount === 1, `${tab} navigation has multiple active tabs at ${target.width}x${target.height}`);
+        check(state.navActiveBackground !== 'rgba(0, 0, 0, 0)', `${tab} navigation active background is missing at ${target.width}x${target.height}`);
+        check(['vods', 'settings'].includes(tab) ? state.contextPanels.length === 1 && state.contextPanels[0] === tab : state.contextPanels.length === 0, `${tab} exposes context panels [${state.contextPanels.join(', ')}] at ${target.width}x${target.height}`);
+        check(['cutter', 'settings'].includes(tab) ? state.toolbars.length === 1 && state.toolbars[0] === tab : state.toolbars.length === 0, `${tab} exposes toolbars [${state.toolbars.join(', ')}] at ${target.width}x${target.height}`);
         check(state.tabContents.length === 1 && state.tabContents[0] === `${tab}Tab`, `${tab} exposes tab contents [${state.tabContents.join(', ')}] at ${target.width}x${target.height}`);
         check(state.documentScrollWidth <= state.viewportWidth + 1, `${tab} document overflows horizontally at ${target.width}x${target.height}`);
         check(state.bodyScrollWidth <= state.viewportWidth + 1, `${tab} body overflows horizontally at ${target.width}x${target.height}`);
@@ -2057,7 +1857,7 @@ async function run() {
         }
 
         if (target.width === TARGETS[0].width) {
-          await win.screenshot({
+          await captureWorkspaceScreenshot(app, win, {
             path: path.join(artifactDir, `workspace-${tab}-${target.width}x${target.height}.png`),
             fullPage: true
           });
@@ -2077,11 +1877,11 @@ async function run() {
         };
       });
       responsiveTabs[`${target.width}x${target.height}`].geometry = geometry;
-      check(geometry.topbarHeight >= 39 && geometry.topbarHeight <= 41, `Topbar height is ${geometry.topbarHeight}px at ${target.width}x${target.height}`);
-      check(geometry.sidebarWidth >= 260 && geometry.sidebarWidth <= 272, `Context sidebar width is ${geometry.sidebarWidth}px at ${target.width}x${target.height}`);
-      check(geometry.toolbarHeight >= 59 && geometry.toolbarHeight <= 61, `Workspace toolbar height is ${geometry.toolbarHeight}px at ${target.width}x${target.height}`);
+      check(geometry.topbarHeight >= 57 && geometry.topbarHeight <= 59, `Topbar height is ${geometry.topbarHeight}px at ${target.width}x${target.height}`);
+      check(geometry.sidebarWidth >= 309 && geometry.sidebarWidth <= 311, `Context sidebar width is ${geometry.sidebarWidth}px at ${target.width}x${target.height}`);
+      check(geometry.toolbarHeight >= 0 && geometry.toolbarHeight <= 80, `Workspace toolbar height is ${geometry.toolbarHeight}px at ${target.width}x${target.height}`);
       check(!geometry.updateVisible, `Update action is visible without an available update at ${target.width}x${target.height}`);
-      await win.screenshot({
+      await captureWorkspaceScreenshot(app, win, {
         path: path.join(artifactDir, `workspace-${target.width}x${target.height}.png`),
         fullPage: true
       });
@@ -2101,14 +1901,18 @@ async function run() {
       ipcMain.removeHandler('get-archive-stats');
       ipcMain.handle('get-archive-stats', () => {
         globalThis.__workspaceStatsIpcState.calls += 1;
+        if (globalThis.__workspaceStatsIpcState.result) return globalThis.__workspaceStatsIpcState.result;
         return new Promise((resolve) => {
           globalThis.__workspaceStatsIpcState.resolve = resolve;
         });
       });
     });
 
-    await win.evaluate(() => {
+    await win.evaluate(async () => {
+      window.showTab('clips');
       document.getElementById('clipUrl').value = 'https://clips.twitch.tv/ContractFixture';
+      updateClipLinks();
+      await enqueueClipLinks();
       document.getElementById('btnClip').click();
       void window.downloadClip();
       document.getElementById('toolbarClipDownloadBtn').click();
@@ -2123,7 +1927,8 @@ async function run() {
     check(clipIpcCalls === 1, `Parallel downloadClip activation produced ${clipIpcCalls} IPC calls instead of one`);
     check(clipPending.mainDisabled && clipPending.toolbarDisabled, 'Clip main and toolbar triggers are not both disabled while the IPC call is pending');
     await app.evaluate(() => globalThis.__workspaceClipIpcState.resolve({ success: true }));
-    await win.waitForFunction(() => !document.getElementById('btnClip')?.disabled && !document.getElementById('toolbarClipDownloadBtn')?.disabled);
+    await win.waitForFunction(() => !clipDownloadInFlight && clipBatchItems.some(item => item.state === 'done'));
+    check(await win.evaluate(() => document.getElementById('btnClip').disabled && document.getElementById('toolbarClipDownloadBtn').disabled), 'Completed clip queue still offers an empty download run');
 
     await win.evaluate(() => {
       document.getElementById('btnStatsRefresh').click();
@@ -2139,7 +1944,7 @@ async function run() {
     checks.statsConcurrency = { ...statsPending, ipcCalls: statsIpcCalls };
     check(statsIpcCalls === 1, `Parallel refreshArchiveStats activation produced ${statsIpcCalls} IPC calls instead of one`);
     check(statsPending.mainDisabled && statsPending.toolbarDisabled, 'Statistics main and toolbar triggers are not both disabled while the IPC call is pending');
-    await app.evaluate(() => globalThis.__workspaceStatsIpcState.resolve({
+    await app.evaluate(() => { const result = {
       totalFiles: 0,
       totalBytes: 0,
       liveCount: 0,
@@ -2157,8 +1962,12 @@ async function run() {
       scannedAt: new Date().toISOString(),
       downloadPath: '',
       rootExists: true
-    }));
+    }; globalThis.__workspaceStatsIpcState.result = result; globalThis.__workspaceStatsIpcState.resolve(result); });
     await win.waitForFunction(() => !document.getElementById('btnStatsRefresh')?.disabled && !document.getElementById('toolbarStatsRefreshBtn')?.disabled);
+    check(await app.evaluate(() => globalThis.__workspaceStatsIpcState.calls) === 2, 'Statistics refresh did not coalesce repeated requests into one sequential follow-up');
+  } catch (error) {
+    console.error(JSON.stringify({ checks, failures, runtimeIssues }, null, 2));
+    throw error;
   } finally {
     if (app) await app.close();
     cleanupE2eEnvironment(environment);

@@ -1,0 +1,20 @@
+.archive-controls input.archive-timeline { position:relative; z-index:1; touch-action:none; }
+.fine-seek-instructions { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.fine-seek-position { z-index:1500; width:480px; max-width:calc(100vw - 24px); pointer-events:none; }
+.fine-seek-preview { background:#171c24; border:1px solid #ffffff38; border-radius:10px; padding:0 15px 10px; box-shadow:0 3px 10px #0007; color:#eef2f8; font-variant-numeric:tabular-nums; user-select:none; transition:border-color 140ms ease; }
+.fine-seek-heading { position:relative; height:80px; margin:0 -4px; }
+.fine-seek-heading .archive-seek-preview.chapter-preview.has-cover { position:absolute; inset:0; left:0!important; transform:none; width:100%!important; max-width:100%; height:80px; background:none; border:0; box-shadow:none; animation:none; }
+.fine-seek-heading .chapter-preview-layer { padding:8px 0; }
+.fine-seek-ruler { position:relative; height:38px; border-top:1px solid #7b8495; background:linear-gradient(#ffffff0a,#ffffff00); }
+.fine-seek-colors { position:absolute; inset:0 0 auto; width:100%; height:5px; pointer-events:none; }
+.fine-seek-tick { position:absolute; top:7px; width:1px; height:6px; background:#7d8798; }
+.fine-seek-tick.is-major { height:10px; background:#c2c9d5; }
+.fine-seek-tick small { position:absolute; top:13px; left:0; transform:translateX(-50%); color:#c2c9d5; font-size:12px; white-space:nowrap; }
+.fine-seek-omission { position:absolute; top:5px; bottom:5px; background:repeating-linear-gradient(135deg,#d64a6350 0 4px,#d64a6314 4px 8px); border-left:1px solid #f08ba0; border-right:1px solid #f08ba0; z-index:1; pointer-events:none; }
+.fine-seek-boundary { position:absolute; top:-4px; height:19px; width:2px; transform:translateX(-50%); background:#ff686f; box-shadow:0 0 0 1px #171c24; }
+.fine-seek-cursor { position:absolute; top:-5px; bottom:0; width:2px; transform:translateX(-50%); background:white; box-shadow:0 0 0 1px #171c24; }
+.fine-seek-cursor:before { content:""; position:absolute; top:-3px; left:-3px; border:4px solid transparent; border-top-color:white; }
+.is-snapped .fine-seek-cursor { background:#76dcac; }
+.fine-seek-limits { position:relative; height:18px; font-size:12px; color:#b9c2d1; margin-top:2px; }
+.fine-seek-limits > span { position:absolute; white-space:nowrap; }
+@media(prefers-reduced-motion:reduce) { .fine-seek-preview { transition:none!important; transform:none!important; } }

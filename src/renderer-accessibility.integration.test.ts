@@ -358,6 +358,7 @@ describe('renderer accessibility integration', () => {
                 commandPaletteStreamerHint: 'Streamer',
             }
         };
+        runtime.context.config = { streamers: [] };
         runtime.context.showTab = () => undefined;
         runInNewContext(compile('renderer-command-palette.ts'), runtime.context);
 

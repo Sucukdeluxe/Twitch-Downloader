@@ -58,6 +58,8 @@ export interface FetchTopClipsOptions {
     endedAt?: string;
     first?: number;           // 1-100, default 20
     fetchImpl?: typeof fetch;
+    after?: string;
+    signal?: AbortSignal;
 }
 
 function rowToClip(row: HelixClipRow): TopClip {
@@ -81,7 +83,13 @@ function rowToClip(row: HelixClipRow): TopClip {
     };
 }
 
+export interface TopClipsPage { clips: TopClip[]; cursor: string | null }
+
 export async function fetchTopClips(opts: FetchTopClipsOptions): Promise<TopClip[]> {
+    return (await fetchTopClipsPage(opts)).clips;
+}
+
+export async function fetchTopClipsPage(opts: FetchTopClipsOptions): Promise<TopClipsPage> {
     const fetchFn = opts.fetchImpl ?? fetch;
     const first = Math.min(100, Math.max(1, opts.first ?? 20));
 
@@ -89,31 +97,35 @@ export async function fetchTopClips(opts: FetchTopClipsOptions): Promise<TopClip
         broadcaster_id: opts.broadcasterId,
         first: String(first),
     });
+    if (opts.after) params.set('after', opts.after);
     if (opts.startedAt) params.set('started_at', opts.startedAt);
     if (opts.endedAt) params.set('ended_at', opts.endedAt);
 
-    const res = await fetchFn(`${HELIX_CLIPS_URL}?${params.toString()}`, {
-        headers: {
-            'Authorization': `Bearer ${opts.accessToken}`,
-            'Client-Id': opts.clientId,
-        },
-    });
-
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`top-clips-crawler: helix ${res.status}: ${text}`);
+    let res: Response;
+    try {
+        res = await fetchFn(`${HELIX_CLIPS_URL}?${params.toString()}`, {
+            signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+            headers: {
+                'Authorization': `Bearer ${opts.accessToken}`,
+                'Client-Id': opts.clientId,
+            },
+        });
+    } catch {
+        throw new Error('top-clips-crawler: helix request failed');
     }
+    if (!res.ok) throw new Error(`top-clips-crawler: helix returned HTTP ${res.status}`);
     let parsed: HelixClipsResponse;
     try {
-        parsed = JSON.parse(text) as HelixClipsResponse;
-    } catch (e) {
-        throw new Error(`top-clips-crawler: parse failed: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+        parsed = JSON.parse(await res.text()) as HelixClipsResponse;
+    } catch {
+        throw new Error('top-clips-crawler: invalid helix response');
     }
 
-    const rows = parsed.data ?? [];
+    if (!parsed || typeof parsed !== 'object' || (parsed.data !== undefined && !Array.isArray(parsed.data))) throw new Error('top-clips-crawler: invalid helix response');
+    const rows = (parsed.data ?? []).filter(row => row && typeof row.id === 'string').slice(0, 100);
     // Helix returns clips already sorted by view_count desc, but we re-sort
     // defensively in case that order ever changes.
-    return rows.map(rowToClip).sort((a, b) => b.viewCount - a.viewCount);
+    return { clips: rows.map(rowToClip).sort((a, b) => b.viewCount - a.viewCount), cursor: typeof parsed.pagination?.cursor === 'string' ? parsed.pagination.cursor.slice(0, 1024) : null };
 }
 
 export interface DateRange {

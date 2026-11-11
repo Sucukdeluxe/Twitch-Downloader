@@ -132,6 +132,7 @@ function getElectronLaunchOptions(environment, extraArgs = []) {
       TVM_E2E_ROOT: environment.rootDir,
       TVM_E2E_ID: encryption.id,
       TVM_E2E_SECRET_KEY: encryption.key,
+      TVM_E2E_BACKGROUND: '1',
       HTTP_PROXY: OFFLINE_PROXY,
       HTTPS_PROXY: OFFLINE_PROXY,
       ALL_PROXY: OFFLINE_PROXY,
@@ -153,12 +154,15 @@ function isSamePath(left, right) {
 }
 
 async function verifyE2eIsolation(app, win, environment) {
+  await win.waitForURL(url => url.protocol === 'file:' && url.pathname.endsWith('/index.html'));
+  await win.waitForLoadState('domcontentloaded');
   const main = await app.evaluate(({ app: electronApp }) => {
     const appRequire = process.getBuiltinModule('module').createRequire(`${electronApp.getAppPath()}/package.json`);
     return {
       programData: process.env.PROGRAMDATA || '',
       userData: electronApp.getPath('userData'),
       encryption: appRequire('./dist/main/infra/secure-storage.js').getSecureStorageDiagnostics(),
+      background: process.platform !== 'darwin' || process.env.TVM_E2E_BACKGROUND !== '1' || electronApp.dock?.isVisible() === false,
     };
   });
   const rendererDownloadPath = await win.evaluate(async () => {
@@ -178,6 +182,8 @@ async function verifyE2eIsolation(app, win, environment) {
   if (main.encryption.backend !== 'isolated-test' || main.encryption.blockedNativeCalls !== 0) {
     throw new Error('E2E encryption isolation is not active');
   }
+
+  if (!main.background) throw new Error('Isolated Mac tests must run without a Dock entry');
 
   if (!verification.programDataIsolated || !verification.userDataIsolated || !verification.downloadPathIsolated) {
     throw new Error(`E2E isolation verification failed: ${JSON.stringify(verification)}`);
@@ -276,7 +282,10 @@ async function activateElectronWindow(app) {
     await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
     win = await opened;
   }
+  // A newly created BrowserWindow first exposes about:blank; wait for the application navigation.
+  await win.waitForURL(url => url.protocol === 'file:' && url.pathname.endsWith('/index.html'));
   await win.waitForLoadState('domcontentloaded');
+  await win.waitForFunction(() => typeof window.showTab === 'function');
   return win;
 }
 

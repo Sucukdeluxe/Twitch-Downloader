@@ -269,8 +269,16 @@ describe('migrateJsonToSqlite', () => {
 
         expect(result.errors).toHaveLength(1);
         expect(fs.readFileSync(configPath, 'utf-8')).toContain('must-survive');
-        expect(db.all('SELECT * FROM config_kv')).toEqual([]);
-        expect(db.all('SELECT * FROM app_secrets')).toEqual([]);
-        expect(db.get('SELECT name FROM migrations_applied WHERE name = ?', ['authoritative-state-v1'])).toBeUndefined();
+        expect(result.configMigrated).toBe(true);
+        expect(result.errors[0].source).toBe('legacy-config-scrub');
+        expect(db.get<{ value: string }>('SELECT value FROM config_kv WHERE key = ?', ['language'])?.value).toBe('"de"');
+        expect(secrets.get('twitch_client_secret')).toBe('must-survive');
+        expect(db.get('SELECT name FROM migrations_applied WHERE name = ?', ['authoritative-state-v1'])).toBeDefined();
+        // Database commit must survive a later filesystem error; retry only scrubs the legacy file.
+        fs.rmdirSync(`${configPath}.v4-backup`);
+        const retried = migrateJsonToSqlite({ db, appDataDir, secrets });
+        expect(retried).toMatchObject({ alreadyApplied: true, errors: [] });
+        expect(fs.readFileSync(configPath, 'utf-8')).not.toContain('must-survive');
+        expect(secrets.get('twitch_client_secret')).toBe('must-survive');
     });
 });

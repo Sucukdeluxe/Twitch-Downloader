@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag matching package.json, e.g. mac-v1.0.10'
+        description: 'Existing tag matching package.json, e.g. mac-v1.1.20'
         required: true
         type: string
       channel:
@@ -15,6 +15,9 @@ on:
         default: preview
         type: choice
         options: [preview, stable]
+
+env:
+  TVM_STRICT_LOCAL_CHECKS: 'true'
 
 permissions:
   contents: read
@@ -110,6 +113,8 @@ jobs:
       - run: npm run lint
       - run: npm run security:check
       - run: npm run test:security && npm run test:lint-config && npm run test:ci-contract
+      - run: npm run test:unit
+      - run: npm run rebuild:electron
       - run: npm run tools:mac -- ${{ matrix.arch }}
       - run: npm run test:mac-update
         timeout-minutes: 10
@@ -153,8 +158,23 @@ jobs:
         timeout-minutes: 10
         env:
           PACKAGED_APP_PATH: release/${{ matrix.folder }}/Twitch VOD Manager.app/Contents/MacOS/Twitch VOD Manager
+      - name: Fetch original 1.0.10 update source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .cache/original-release
+          gh release download mac-v1.0.10 --repo Sucukdeluxe/Twitch-Downloader-macos --pattern "Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" --dir .cache/original-release
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            expected=943aa43944b40bdac42fa820a7ceee87addc673fbed256deb67fe6a4760926c1
+          else
+            expected=4a06cc4eecff18cb65f19553ff925fa3bfa7c3db8515667e6f162640846ec5bd
+          fi
+          echo "$expected  .cache/original-release/Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" | shasum -a 256 -c -
+          ditto -x -k ".cache/original-release/Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" .cache/original-release
       - name: Verify actual old-to-new application update
         run: node scripts/smoke-test-macos-update.js
+        env:
+          MAC_UPDATE_FROM_APP: .cache/original-release/Twitch VOD Manager.app
         timeout-minutes: 10
       - uses: actions/upload-artifact@v4
         with:

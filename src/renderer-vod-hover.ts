@@ -18,6 +18,7 @@ interface ActiveHover {
 const vodStoryboardClientCache = new Map<string, VodStoryboard | null>();
 let activeHover: ActiveHover | null = null;
 let pendingHoverVodId: string | null = null;
+let hoverRequestGeneration = 0;
 
 const HOVER_DEBOUNCE_MS = 220;
 const FRAME_INTERVAL_MS = 600;
@@ -49,6 +50,8 @@ function ensureVodHoverHandlersBound(): void {
         const target = e.target as HTMLElement | null;
         const card = target?.closest('.vod-card') as HTMLElement | null;
         if (!card) return;
+        const related = e.relatedTarget as HTMLElement | null;
+        if (related && card.contains(related)) return;
         const vodId = card.dataset.vodId;
         if (!vodId) return;
         scheduleHoverPreview(card, vodId);
@@ -66,17 +69,20 @@ function ensureVodHoverHandlersBound(): void {
 }
 
 function scheduleHoverPreview(card: HTMLElement, vodId: string): void {
+    if (card.dataset.liveVod === 'true') return;
     if (pendingHoverVodId === vodId) return;
     pendingHoverVodId = vodId;
+    const generation = ++hoverRequestGeneration;
     // Debounce so rapid mouse passes (scrolling, dragging across cards)
     // don't trigger a download for every card brushed.
     window.setTimeout(() => {
-        if (pendingHoverVodId !== vodId) return;
-        void activateHoverPreview(card, vodId);
+        if (pendingHoverVodId !== vodId || generation !== hoverRequestGeneration) return;
+        void activateHoverPreview(card, vodId, generation);
     }, HOVER_DEBOUNCE_MS);
 }
 
 function clearHoverPreview(): void {
+    hoverRequestGeneration += 1;
     pendingHoverVodId = null;
     if (!activeHover) return;
     window.clearInterval(activeHover.intervalId);
@@ -88,9 +94,9 @@ function clearHoverPreview(): void {
     activeHover = null;
 }
 
-async function activateHoverPreview(card: HTMLElement, vodId: string): Promise<void> {
+async function activateHoverPreview(card: HTMLElement, vodId: string, generation: number): Promise<void> {
     // Stale-guard: user might have moved off the card in the debounce window.
-    if (pendingHoverVodId !== vodId) return;
+    if (pendingHoverVodId !== vodId || generation !== hoverRequestGeneration) return;
 
     let storyboard: VodStoryboard | null | undefined = vodStoryboardClientCache.get(vodId);
     if (storyboard === undefined) {
@@ -103,7 +109,7 @@ async function activateHoverPreview(card: HTMLElement, vodId: string): Promise<v
     }
 
     // Cursor may have moved on while we awaited; re-check guard.
-    if (pendingHoverVodId !== vodId) return;
+    if (pendingHoverVodId !== vodId || generation !== hoverRequestGeneration) return;
     if (!storyboard) return;
 
     clearHoverPreview();
@@ -168,9 +174,6 @@ async function activateHoverPreview(card: HTMLElement, vodId: string): Promise<v
     advanceFrame(0);
 
     host.appendChild(overlay);
-    // Trigger CSS transition to opacity:1 on the next frame.
-    requestAnimationFrame(() => { card.classList.add('preview-active'); });
-
     let frameIdx = 1;
     const intervalId = window.setInterval(() => {
         advanceFrame(frameIdx);
@@ -178,9 +181,13 @@ async function activateHoverPreview(card: HTMLElement, vodId: string): Promise<v
     }, FRAME_INTERVAL_MS);
 
     activeHover = { vodId, intervalId, overlay, card };
+    requestAnimationFrame(() => {
+        if (activeHover?.overlay === overlay) card.classList.add('preview-active');
+    });
 }
 
 (window as unknown as { ensureVodHoverHandlersBound: typeof ensureVodHoverHandlersBound }).ensureVodHoverHandlersBound = ensureVodHoverHandlersBound;
+(window as unknown as { clearVodHoverPreview: typeof clearHoverPreview }).clearVodHoverPreview = clearHoverPreview;
 
 // Bind once the grid exists. Tab switches don't re-create the grid, so
 // one-time binding via DOMContentLoaded is enough.

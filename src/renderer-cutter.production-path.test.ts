@@ -28,6 +28,9 @@ describe('cutter production paths', () => {
         let opens = 0;
         const api = evaluate(sourceFragment('async function openCutterProject', 'function setCutterExportProfile'), {
             cutterFile: { token: 'source-capability' },
+            cutterCutDraft: null,
+            isCutting: false,
+            UI_TEXT: { cutter: { projectOpened: 'opened' } },
             persistCutterProject: async () => { saves += 1; return true; },
             applyCutterProject: () => true,
             renderCutterProjectRecovery: () => undefined,
@@ -85,7 +88,7 @@ describe('cutter production paths', () => {
         [
             'cutterPreview', 'cutterPlayerLoading', 'cutterPreviewEmpty', 'cutterWorkspace', 'btnCut', 'cutterZoom', 'cutterFilePath',
             'cutterInfo', 'timelineContainer', 'infoDuration', 'infoResolution', 'infoFps', 'cutterTotalTime', 'cutterWaveform',
-            'cutterAudioEmpty', 'cutterPlaybackRate',
+            'cutterAudioEmpty', 'cutterPlaybackRate', 'cutterEditPanel',
         ].forEach((id) => elements.set(id, element()));
         const video = { pause: () => undefined, removeAttribute: () => undefined, load: () => undefined, src: '', playbackRate: 1 };
         const file = { token: 'source-capability', name: 'source.mp4' };
@@ -113,6 +116,9 @@ describe('cutter production paths', () => {
             cutterZoom: 1,
             byId: (id: string) => elements.get(id),
             getCutterVideo: () => video,
+            finishCutterPlayerRange: () => undefined,
+            syncCutterAudioProcessing: () => undefined,
+            clearCutterWaveform: () => undefined,
             stopCutterPlaybackFrameSync: () => undefined,
             cancelCutterScrubFrames: () => undefined,
             updateCutterPlayUi: () => undefined,
@@ -153,4 +159,122 @@ describe('cutter production paths', () => {
         expect(events.indexOf('recovery')).toBeLessThan(events.indexOf('enable'));
         expect(events.indexOf('offer')).toBeLessThan(events.indexOf('probe'));
     });
+});
+
+
+describe('native macOS editing commands', () => {
+    test('routes menu undo to clip, cutter and merge histories while preserving normal text editing', () => {
+        let command!: (action: 'undo' | 'redo') => void;
+        let activeTab = 'clipsTab';
+        let textEditing = true;
+        let dialogOpen = false;
+        let controlsEnabled = true;
+        const focus = { id: 'clipUrl', closest: () => textEditing ? {} : null };
+        const actions: string[] = [];
+        const context = {
+            document: { activeElement: focus },
+            byId: (id: string) => ({ classList: { contains: () => id === activeTab } }),
+            cutterEditorState: {},
+            get cutterControlsEnabled() { return controlsEnabled; },
+            RendererAccessibility: { hasNativeDialog: () => dialogOpen },
+            restoreClipDraftHistory: (direction: number) => actions.push(`clip:${direction}`),
+            undoCutterEdit: () => actions.push('cutter:undo'),
+            redoCutterEdit: () => actions.push('cutter:redo'),
+            restoreMergeEdit: (redo: boolean) => actions.push(`merge:${redo ? 'redo' : 'undo'}`),
+            api: {
+                onNativeEditCommand: (handler: typeof command) => { command = handler; },
+                performNativeEdit: (action: string) => actions.push(`text:${action}`),
+                onPrepareWindowClose: () => undefined,
+            },
+        };
+        const native = evaluate(sourceFragment('function initNativeCutterCommands', 'function renderCutterProjectRecovery'), context, 'initNativeCutterCommands');
+        native.initNativeCutterCommands();
+        command('undo');
+        command('redo');
+        focus.id = 'clientSecret';
+        activeTab = 'cutterTab';
+        command('undo');
+        textEditing = false;
+        command('undo');
+        command('redo');
+        controlsEnabled = false;
+        command('undo');
+        activeTab = 'mergeTab';
+        command('undo');
+        command('redo');
+        dialogOpen = true;
+        command('undo');
+        expect(actions).toEqual(['clip:-1', 'clip:1', 'text:undo', 'cutter:undo', 'cutter:redo', 'text:undo', 'merge:undo', 'merge:redo', 'text:undo']);
+    });
+
+    test('flushes pending edits before close and refuses close when saving fails', async () => {
+        let close!: () => Promise<boolean>;
+        let saved = false;
+        let saves = 0;
+        const context = {
+            flushSettingsBeforeClose: async () => true,
+            flushWorkspaceBeforeClose: async () => true,
+            cutterFile: { token: 'source' },
+            cutterEditorState: {},
+            cutterAutosaveTimer: 7,
+            cutterRecoveryDecisionPending: false,
+            cutterSaveRevision: 2,
+            cutterSavedRevision: 1,
+            clearTimeout: () => undefined,
+            persistCutterProject: async () => { saves++; return saved; },
+            showAppToast: () => undefined,
+            UI_TEXT: { cutter: { projectSaveFailed: 'Failed' } },
+            api: {
+                onNativeEditCommand: () => undefined,
+                onPrepareWindowClose: (handler: typeof close) => { close = handler; },
+            },
+        };
+        const native = evaluate(sourceFragment('function initNativeCutterCommands', 'function renderCutterProjectRecovery'), context, 'initNativeCutterCommands');
+        native.initNativeCutterCommands();
+        expect(await close()).toBe(false);
+        saved = true;
+        expect(await close()).toBe(true);
+        context.cutterRecoveryDecisionPending = true;
+        expect(await close()).toBe(true);
+        expect(saves).toBe(2);
+    });
+});
+
+test('cutter Space shortcut preserves native navigation button activation', () => {
+    let prevented = false;
+    let played = false;
+    const api = evaluate(sourceFragment('function handleCutterPageKey(', 'function handleCutterPageKeyUp('), {
+        RendererAccessibility: { hasNativeDialog: () => false },
+        byId: () => ({ classList: { contains: () => true } }),
+        cutterEditorState: {}, cutterControlsEnabled: true, cutterPageSpaceHeld: false,
+        toggleCutterPlayback: () => { played = true; },
+    }, 'handleCutterPageKey');
+    api.handleCutterPageKey({
+        key: ' ', code: 'Space', target: { closest: () => null },
+        preventDefault: () => { prevented = true; }, stopPropagation: () => undefined,
+    });
+    expect(prevented).toBe(false);
+    expect(played).toBe(false);
+});
+
+
+test('close persists metadata arriving during a slow cutter save', async () => {
+    let close!: () => Promise<boolean>;
+    let finish!: (saved: boolean) => void;
+    let metadataArrived = false;
+    let metadataSaved = false;
+    const native = evaluate(sourceFragment('function initNativeCutterCommands', 'function renderCutterProjectRecovery'), {
+        cutterFile: { token: 'source' }, cutterEditorState: {}, cutterAutosaveTimer: null,
+        cutterRecoveryDecisionPending: false, cutterSaveRevision: 2, cutterSavedRevision: 1,
+        persistCutterProject: () => new Promise<boolean>(resolve => { finish = resolve; }),
+        flushSettingsBeforeClose: async () => true,
+        flushWorkspaceBeforeClose: async () => { metadataSaved = metadataArrived; return metadataSaved; },
+        api: { onNativeEditCommand: () => undefined, onPrepareWindowClose: (handler: typeof close) => { close = handler; } },
+    }, 'initNativeCutterCommands');
+    native.initNativeCutterCommands();
+    const result = close();
+    metadataArrived = true;
+    finish(true);
+    expect(await result).toBe(true);
+    expect(metadataSaved).toBe(true);
 });

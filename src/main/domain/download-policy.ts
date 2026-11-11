@@ -107,3 +107,7 @@ export function decideDownloadStart(policy: DownloadPolicy, now: Date, manualOve
     }
     return { allowed: false, reason: 'outside-window', maxBytesPerSecond, nextStart: nextWindowStart(now, parsedWindows) };
 }
+
+export function decideStandaloneDownloadStart(policy: DownloadPolicy, now: Date): DownloadStartDecision {
+    return decideDownloadStart(policy, now, false);
+}

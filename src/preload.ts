@@ -1,5 +1,53 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import { CustomClip, MergeGroupItem, MergeGroup, QueueItem, DownloadProgress } from './types';
+import type { DownloadProgress, QueueAdditionResult, QueueItem } from './types';
+
+let developmentStyleRevision = -1;
+
+function applyDevelopmentStyles(update: import('./main/development-live').DevelopmentStyleUpdate): void {
+    if (new URLSearchParams(window.location.search).get('development') !== '1') return;
+    if (update.revision <= developmentStyleRevision) return;
+    document.documentElement.dataset.developmentUpdate = update.status;
+    const badge = document.getElementById('developmentBadge');
+    if (badge) {
+        const de = document.documentElement.lang !== 'en';
+        badge.title = update.status === 'error'
+            ? (de ? 'Änderung nicht geladen. Bisheriger Stand bleibt aktiv.' : 'Change not loaded. Previous state remains active.')
+            : update.status === 'restart' || update.status === 'reload'
+                ? (de ? 'Änderung bereit. Wird automatisch übernommen, sobald keine Bearbeitung läuft.' : 'Change ready. Applies automatically when editing is idle.')
+                : (de ? 'Änderungen werden automatisch übernommen.' : 'Changes apply automatically.');
+    }
+    if (update.status !== 'ready') return;
+    const replacements = update.styles.map(({ name, css }) => {
+        const link = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).find(element => {
+            const filename = new URL(element.href).pathname.split('/').pop() || '';
+            return filename === name + '.css' || filename.startsWith(name + '.') && /^[a-f0-9]{16}\.css$/.test(filename.slice(name.length + 1));
+        });
+        return { name, css, link };
+    });
+    if (replacements.some(item => !item.link)) return;
+    for (const { name, css, link } of replacements) {
+        let style = Array.from(document.querySelectorAll<HTMLStyleElement>('style[data-development-style]')).find(element => element.dataset.developmentStyle === name);
+        if (!style) {
+            style = document.createElement('style');
+            style.dataset.developmentStyle = name;
+            style.textContent = css;
+            link!.after(style);
+        } else if (style.textContent !== css) {
+            style.textContent = css;
+        }
+        link!.disabled = true;
+    }
+    developmentStyleRevision = update.revision;
+}
+
+ipcRenderer.on('development-style-update', (_event, update: import('./main/development-live').DevelopmentStyleUpdate) => {
+    applyDevelopmentStyles(update);
+});
+window.addEventListener('DOMContentLoaded', () => {
+    if (new URLSearchParams(window.location.search).get('development') === '1') {
+        ipcRenderer.send('development-style-ready');
+    }
+}, { once: true });
 
 let chatReadSequence = 0;
 
@@ -44,6 +92,8 @@ interface RuntimeMetricsSnapshot {
 }
 
 interface VideoInfo {
+    startTime?: number;
+    sourceFormat?: import('./main/domain/media-format').VideoSourceFormat;
     duration: number;
     width: number;
     height: number;
@@ -73,6 +123,8 @@ interface VideoEditorAssets {
 }
 
 interface VideoEditorWaveform {
+    peaks?: number[][];
+    channels?: number;
     jobId: number;
     waveform: string | null;
     pixelWidth: number;
@@ -86,17 +138,13 @@ interface VideoEditorAssetProfile {
 }
 
 interface VideoEditExportRequest {
+    allAudioStreams?: boolean;
+    colorMode?: 'source' | 'sdr';
     inputCapability: string;
     outputName?: string;
     trimStart: number;
     trimEnd: number;
     cuts: Array<{ id: string; start: number; end: number }>;
-}
-
-interface FileCapabilityReference {
-    token: string;
-    name: string;
-    displayPath?: string;
 }
 
 // Expose protected methods to renderer
@@ -118,10 +166,23 @@ contextBridge.exposeInMainWorld('api', {
     // Twitch API
     getUserId: (username: string) => ipcRenderer.invoke('get-user-id', username),
     getVODs: (userId: string, forceRefresh: boolean = false) => ipcRenderer.invoke('get-vods', userId, forceRefresh),
+    getVodQualities: (request: { id: string; url: string }): Promise<import('./main/domain/vod-quality').VodQualityOption[] | null> => ipcRenderer.invoke('get-vod-qualities', request),
+    cancelVodQualities: (id: string): Promise<void> => ipcRenderer.invoke('cancel-vod-qualities', id),
+    openClipPlayback: (request: { id: string; url: string }) => ipcRenderer.invoke('open-clip-playback', request),
+    closeClipPlayback: (id: string) => ipcRenderer.invoke('close-clip-playback', id),
+    openVodPlayback: (request: { id: string; url: string }) => ipcRenderer.invoke('open-vod-playback', request),
+    getVodTimeline: (request: { id: string; url: string; refresh?: boolean }) => ipcRenderer.invoke('get-vod-timeline', request),
+    onVodTimelineProgress: (callback: (update: { id: string; timeline: import('./main/domain/vod-timeline').VodTimeline }) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, update: { id: string; timeline: import('./main/domain/vod-timeline').VodTimeline }) => callback(update);
+        ipcRenderer.on('vod-timeline-progress', listener);
+        return () => { ipcRenderer.removeListener('vod-timeline-progress', listener); };
+    },
+    closeVodPlayback: (id: string) => ipcRenderer.invoke('close-vod-playback', id),
 
     // Queue
     getQueue: () => ipcRenderer.invoke('get-queue'),
-    addToQueue: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip'>) => ipcRenderer.invoke('add-to-queue', item),
+    addToQueue: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>) => ipcRenderer.invoke('add-to-queue', item),
+    addToQueueWithResult: (item: Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'customClip' | 'quality' | 'qualityLabel'>): Promise<QueueAdditionResult> => ipcRenderer.invoke('add-to-queue-with-result', item),
     startLiveRecording: (streamerName: string) => ipcRenderer.invoke('start-live-recording', streamerName),
     removeFromQueue: (id: string) => ipcRenderer.invoke('remove-from-queue', id),
     reorderQueue: (orderIds: string[]) => ipcRenderer.invoke('reorder-queue', orderIds),
@@ -135,10 +196,25 @@ contextBridge.exposeInMainWorld('api', {
     pauseDownload: () => ipcRenderer.invoke('pause-download'),
     cancelDownload: () => ipcRenderer.invoke('cancel-download'),
     isDownloading: () => ipcRenderer.invoke('is-downloading'),
-    downloadClip: (url: string) => ipcRenderer.invoke('download-clip', url),
+    downloadClip: (url: string, requestId: string) => ipcRenderer.invoke('download-clip', url, requestId),
+    cancelClipDownload: (requestId: string) => ipcRenderer.invoke('cancel-clip-download', requestId),
+    onClipProgress: (callback: (progress: import('./main/domain/workspace-session').ClipTransferProgress) => void) => {
+        ipcRenderer.on('clip-progress', (_, progress) => callback(progress));
+    },
+    getWorkspaceSession: () => ipcRenderer.invoke('get-workspace-session'),
+    setClipOutputDirectory: (capability: string | null) => ipcRenderer.invoke('set-clip-output-directory', capability),
+    getClipLibrary: (offset = 0, refresh = false) => ipcRenderer.invoke('get-clip-library', offset, refresh),
+    saveClipWorkspace: (items: import('./main/domain/workspace-session').WorkspaceClip[]) => ipcRenderer.invoke('save-clip-workspace', items),
+    saveMergeWorkspace: (ids: string[]) => ipcRenderer.invoke('save-merge-workspace', ids),
+    getMergeVideoInfo: (id: string) => ipcRenderer.invoke('get-merge-video-info', id),
+    getMergePreview: (id: string): Promise<string | null> => ipcRenderer.invoke('get-merge-preview', id),
+    getMergeAssets: (id: string, kind: 'thumbnails' | 'waveform'): Promise<string[] | number[][] | null> => ipcRenderer.invoke('get-merge-assets', id, kind),
+    getClipInfo: (url: string): Promise<{ title: string; broadcaster_name: string; thumbnail_url?: string } | null> => ipcRenderer.invoke('get-clip-info', url),
 
     // Files
     selectFolder: () => ipcRenderer.invoke('select-folder'),
+    saveQueueOutputDialog: (defaultName: string) => ipcRenderer.invoke('save-queue-output-dialog', defaultName),
+    setQueueOutput: (id: string, capability: string) => ipcRenderer.invoke('set-queue-output', id, capability),
     selectVideoFile: () => ipcRenderer.invoke('select-video-file'),
     selectMultipleVideos: () => ipcRenderer.invoke('select-multiple-videos'),
     selectDroppedVideo: (file: File) => ipcRenderer.invoke('grant-dropped-video', webUtils.getPathForFile(file)),
@@ -158,16 +234,24 @@ contextBridge.exposeInMainWorld('api', {
     openDebugLogFile: () => ipcRenderer.invoke('open-debug-log-file'),
     checkFolderWritable: (capability: string) => ipcRenderer.invoke('check-folder-writable', capability),
     getStorageStats: () => ipcRenderer.invoke('get-storage-stats'),
-    getArchiveStats: () => ipcRenderer.invoke('get-archive-stats'),
+    getArchiveStats: (range?: import('./main/domain/download-history-store').DownloadHistoryRange) => ipcRenderer.invoke('get-archive-stats', range),
+    prepareArchiveVideos: (paths: string[], target: 'cutter' | 'merge') => ipcRenderer.invoke('prepare-archive-videos', paths, target),
+    searchDownloadHistory: (filter?: import('./main/domain/download-history-store').DownloadHistoryFilter) => ipcRenderer.invoke('search-download-history', filter),
+    hasDownloadedClip: (clipId: string) => ipcRenderer.invoke('has-downloaded-clip', clipId),
+    exportStatistics: (range?: import('./main/domain/download-history-store').DownloadHistoryRange) => ipcRenderer.invoke('export-statistics', range),
     getStreamerProfile: (login: string, forceRefresh?: boolean) => ipcRenderer.invoke('get-streamer-profile', login, forceRefresh),
     getStreamerDisplayNames: (logins: string[]) => ipcRenderer.invoke('get-streamer-display-names', logins),
     getVodStoryboard: (vodId: string) => ipcRenderer.invoke('get-vod-storyboard', vodId),
+    searchTwitchChannels: (query: string) => ipcRenderer.invoke('search-twitch-channels', query),
     getLiveStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot'),
-    onLiveStatusBatchUpdate: (callback: (info: { changes: Array<{ login: string; isLive: boolean }> }) => void) => {
+    getLiveVodStatusSnapshot: () => ipcRenderer.invoke('get-live-status-snapshot', true),
+    onLiveStatusBatchUpdate: (callback: (info: { changes: Array<import('./types').LiveVodStatus & { login: string }> }) => void) => {
         ipcRenderer.on('live-status-batch-update', (_, info) => callback(info));
     },
     searchArchive: (filter: Record<string, unknown>) => ipcRenderer.invoke('search-archive', filter),
-    runStorageCleanup: (options?: { dryRun?: boolean }) => ipcRenderer.invoke('run-storage-cleanup', options),
+    getArchiveThumbnail: (filename: string): Promise<string | null> => ipcRenderer.invoke('get-archive-thumbnail', filename),
+    recoverStorageCleanup: () => ipcRenderer.invoke('recover-storage-cleanup'),
+    runStorageCleanup: (options?: { dryRun?: boolean; token?: string }) => ipcRenderer.invoke('run-storage-cleanup', options),
     readChatFile: async (filePath: string, signal?: AbortSignal) => {
         const capability = await ipcRenderer.invoke('authorize-managed-path', 'chat-input', filePath);
         if (!capability) return { success: false, error: 'File access denied' };
@@ -205,6 +289,9 @@ contextBridge.exposeInMainWorld('api', {
     extractFrame: (capability: string, timeSeconds: number): Promise<string | null> => ipcRenderer.invoke('extract-frame', capability, timeSeconds),
     prepareVideoEditorMedia: (capability: string): Promise<VideoEditorMedia | null> => ipcRenderer.invoke('prepare-video-editor-media', capability),
     prepareVideoEditorWaveform: (capability: string, jobId: number): Promise<VideoEditorWaveform | null> => ipcRenderer.invoke('prepare-video-editor-waveform', capability, jobId),
+    onVideoEditorWaveformProgress: (callback: (progress: import('./main/domain/cutter-waveform').VideoEditorWaveformProgress) => void) => {
+        ipcRenderer.on('video-editor-waveform-progress', (_, progress) => callback(progress));
+    },
     prepareVideoEditorAssets: (capability: string, jobId: number, profile: VideoEditorAssetProfile): Promise<VideoEditorAssets | null> => ipcRenderer.invoke('prepare-video-editor-assets', capability, jobId, profile),
     cancelVideoEditorAssets: (jobId: number): Promise<boolean> => ipcRenderer.invoke('cancel-video-editor-assets', jobId),
     getCutterProjectRecovery: (capability: string): Promise<CutterProject | null> => ipcRenderer.invoke('get-cutter-project-recovery', capability),
@@ -223,6 +310,7 @@ contextBridge.exposeInMainWorld('api', {
 
     // App
     getVersion: () => ipcRenderer.invoke('get-version'),
+    notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
     checkUpdate: () => ipcRenderer.invoke('check-update'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
     installUpdate: () => ipcRenderer.invoke('install-update'),
@@ -231,6 +319,7 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
     runPreflight: (autoFix: boolean) => ipcRenderer.invoke('run-preflight', autoFix),
     getManagedToolStatus: () => ipcRenderer.invoke('get-managed-tool-status'),
+    getManagedToolExecutionDiagnostics: (): Promise<{ ffmpeg: { path: string | null; count: number }; ffprobe: { path: string | null; count: number }; streamlink: { path: string | null; count: number } } | null> => ipcRenderer.invoke('get-managed-tool-execution-diagnostics'),
     repairManagedTools: () => ipcRenderer.invoke('repair-managed-tools'),
     resetManagedTools: () => ipcRenderer.invoke('reset-managed-tools'),
     getDebugLog: (lines: number) => ipcRenderer.invoke('get-debug-log', lines),
@@ -241,6 +330,26 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.invoke('reset-downloaded-vod-ids'),
     markVodDownloaded: (vodId: string, mark: boolean): Promise<{ success: boolean }> =>
         ipcRenderer.invoke('mark-vod-downloaded', vodId, mark),
+    listNamedCutterProjects: () => ipcRenderer.invoke('editing-projects-list'),
+    saveNamedCutterProject: (token: string, project: unknown, name: string, saveAs = false) => ipcRenderer.invoke('editing-project-save', token, project, name, saveAs),
+    openNamedCutterProject: (id?: string) => ipcRenderer.invoke('editing-project-open', id),
+    listExportJobs: () => ipcRenderer.invoke('editing-jobs-list'),
+    enqueueCutterExport: (token: string, project: unknown) => ipcRenderer.invoke('editing-job-cut', token, project),
+    inspectMergeExport: (ids: string[]) => ipcRenderer.invoke('editing-merge-inspect', ids),
+    enqueueMergeExport: (ids: string[], mode: 'copy' | 'encode', output?: { name: string; directory?: string }) => ipcRenderer.invoke('editing-job-merge', ids, mode, output),
+    exportJobAction: (action: string, id?: string) => ipcRenderer.invoke('editing-job-action', action, id),
+    onExportJobsChanged: (callback: (state: unknown) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+        ipcRenderer.on('editing-jobs-changed', listener);
+        return () => ipcRenderer.removeListener('editing-jobs-changed', listener);
+    },
+
+    previewAutoVodRule: (channel: string, rule: unknown) => ipcRenderer.invoke('preview-auto-vod-rule', channel, rule),
+    getVodLibrary: () => ipcRenderer.invoke('get-vod-library'),
+    changeVodLibrary: (change: unknown) => ipcRenderer.invoke('change-vod-library', change),
+    discoverClips: (request: import('./main/domain/clip-discovery').ClipDiscoveryRequest) => ipcRenderer.invoke('discover-clips', request),
+    exportApplicationBackup: () => ipcRenderer.invoke('export-application-backup'),
+    restoreApplicationBackup: () => ipcRenderer.invoke('restore-application-backup'),
     exportConfig: (): Promise<{ success: boolean; cancelled?: boolean; error?: string; filePath?: string }> =>
         ipcRenderer.invoke('export-config'),
     importConfig: (): Promise<{ success: boolean; cancelled?: boolean; error?: string; filePath?: string }> =>
@@ -249,6 +358,11 @@ contextBridge.exposeInMainWorld('api', {
     // Events
     onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
         ipcRenderer.on('download-progress', (_, progress) => callback(progress));
+    },
+    onArchiveIndexUpdated: (callback: () => void) => {
+        const listener = () => callback();
+        ipcRenderer.on('archive-index-updated', listener);
+        return () => ipcRenderer.removeListener('archive-index-updated', listener);
     },
     onQueueUpdated: (callback: (queue: QueueItem[]) => void) => {
         ipcRenderer.on('queue-updated', (_, queue) => callback(queue));
@@ -271,6 +385,7 @@ contextBridge.exposeInMainWorld('api', {
     onCutProgress: (callback: (percent: number) => void) => {
         ipcRenderer.on('cut-progress', (_, percent) => callback(percent));
     },
+    onMergeFinished: (callback: (result: { success: boolean }) => void) => { ipcRenderer.on('merge-finished', (_, result) => callback(result)); },
     onMergeProgress: (callback: (percent: number) => void) => {
         ipcRenderer.on('merge-progress', (_, percent) => callback(percent));
     },
@@ -291,7 +406,7 @@ contextBridge.exposeInMainWorld('api', {
     onUpdateDownloaded: (callback: (info: { version: string; releaseDate?: string; releaseName?: string; releaseNotes?: string }) => void) => {
         ipcRenderer.on('update-downloaded', (_, info) => callback(info));
     },
-    onUpdateError: (callback: (payload: { message: string }) => void) => {
+    onUpdateError: (callback: (payload: { message: string; kind: 'check' | 'download'; version?: string }) => void) => {
         ipcRenderer.on('update-error', (_, payload) => callback(payload));
     }
 });

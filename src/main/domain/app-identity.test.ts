@@ -17,12 +17,12 @@ afterEach(() => {
 describe('getWindowsAppIdentity', () => {
     test('trennt Hot-Dev von der veröffentlichten Windows-Identität', () => {
         expect(getWindowsAppIdentity(true)).toEqual({
-            name: 'Twitch VOD Manager',
-            appUserModelId: 'io.github.sucukdeluxe.twitch-vod-manager.development'
+            name: 'Twitch Downloader · Entwickler-Version',
+            appUserModelId: 'io.github.sucukdeluxe.twitch-downloader.development'
         });
         expect(getWindowsAppIdentity(false)).toEqual({
-            name: 'Twitch VOD Manager',
-            appUserModelId: 'io.github.sucukdeluxe.twitch-vod-manager'
+            name: 'Twitch Downloader',
+            appUserModelId: 'io.github.sucukdeluxe.twitch-downloader'
         });
     });
 });
@@ -90,7 +90,7 @@ describe('Windows taskbar identity', () => {
         const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
         const windowCreation = mainSource.indexOf('mainWindow = new BrowserWindow');
         const appDetails = mainSource.indexOf('mainWindow.setAppDetails', windowCreation);
-        const windowShow = mainSource.indexOf('mainWindow.show()', windowCreation);
+        const windowShow = mainSource.indexOf('window.show()', windowCreation);
 
         expect(mainSource.slice(windowCreation, appDetails)).toContain('show: false');
         expect(appDetails).toBeGreaterThan(windowCreation);

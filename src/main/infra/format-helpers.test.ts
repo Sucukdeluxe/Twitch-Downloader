@@ -84,9 +84,9 @@ describe('formatDateWithPattern', () => {
 describe('getMergeGroupPhaseText', () => {
     test('known DE phases', () => {
         expect(getMergeGroupPhaseText('downloading', 'de')).toBe('VOD wird heruntergeladen');
-        expect(getMergeGroupPhaseText('merging', 'de')).toBe('Zusammenfugen...');
+        expect(getMergeGroupPhaseText('merging', 'de')).toBe('Zusammenfügen...');
         expect(getMergeGroupPhaseText('splitting', 'de')).toBe('Part wird erstellt');
-        expect(getMergeGroupPhaseText('cleanup', 'de')).toBe('Aufraumen...');
+        expect(getMergeGroupPhaseText('cleanup', 'de')).toBe('Aufräumen...');
     });
     test('known EN phases', () => {
         expect(getMergeGroupPhaseText('downloading', 'en')).toBe('Downloading VOD');

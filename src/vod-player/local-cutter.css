@@ -1,0 +1,196 @@
+#cutterTab { overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
+#cutterTab .cutter-container { max-width: 1900px; height: auto; display: flex; flex-direction: column; gap: 14px; }
+#cutterTab .editing-project-toolbar { flex: 0 0 auto; min-height: 0; padding: 0; box-sizing: border-box; align-items: center; }
+#cutterTab .editing-project-toolbar label { display: flex; align-items: center; gap: 10px; max-width: 370px; }
+#cutterTab .editing-project-toolbar input { height: 34px; }
+#cutterTab .cutter-source-bar, #cutterTab .cutter-source-bar:has(~ .cutter-workspace.shown) { display: flex; flex: 0 0 auto; min-height: 68px; padding: 12px 16px; gap: 14px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; }
+#cutterTab .cutter-source-icon { display: grid; place-items: center; flex: 0 0 38px; height: 42px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; background: var(--workspace-control, var(--bg-main)); color: var(--text); }
+#cutterTab .cutter-source-icon svg { width: 24px; height: 24px; }
+#cutterTab .cutter-source-copy { display: grid; min-width: 0; gap: 7px; }
+#cutterTab #cutterFilePath { display: block; height: 22px; min-height: 0; font-size: 15px; font-weight: 600; color: var(--workspace-text); }
+#cutterTab .cutter-info.shown { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; padding: 0; background: transparent; border: 0; }
+#cutterTab .cutter-info-item { display: flex; align-items: baseline; gap: 7px; padding: 0; min-width: 0; text-align: left; background: transparent; border: 0; }
+#cutterTab .cutter-info-label { font-size: 12px; text-transform: none; letter-spacing: normal; color: var(--text-secondary); }
+#cutterTab .cutter-info-value { font-size: 12px; font-weight: 600; color: var(--text); }
+#cutterTab button.btn-secondary, #cutterTab button.btn-primary { font-size: 13px; }
+#cutterTab .cutter-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 420px; min-height: 0; gap: 14px; align-items: start; flex: 0 0 auto; }
+#cutterTab .cutter-workspace:not(.shown) { grid-template-columns: minmax(0, 1fr); }
+#cutterTab .cutter-preview-panel, #cutterTab .cutter-workspace:not(.shown) .cutter-preview-panel { display: flex; width: 100%; height: auto; min-height: 0; padding: 0; background: transparent; border: 0; overflow: visible; }
+#cutterPlayer { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; min-height: 0; overflow: visible; background: transparent; border: 0; border-radius: 0; }
+#cutterTab .cutter-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); overflow: hidden; }
+#cutterTab .cutter-panel-header, #cutterTab .cutter-export-header { display: flex; align-items: center; justify-content: space-between; min-height: 40px; gap: 10px; padding: 8px 12px; flex: 0 0 auto; border-bottom: 1px solid var(--workspace-border, var(--border)); }
+#cutterTab h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--workspace-text); }
+#cutterPlayer .video-preview { width: 100%; height: auto; min-height: 180px; flex: 0 0 auto; aspect-ratio: 16 / 9; max-height: 650px; border: 0; border-radius: 0; }
+#cutterPlayer .video-preview video { display: block; width: 100%; height: 100%; object-fit: contain; }
+#cutterPlayer:fullscreen .archive-controls { position: relative; inset: auto; padding: 6px 10px; background: #16181b; opacity: 1; }
+#cutterPlayerControls { flex: 0 0 auto; min-width: 0; }
+#cutterTab .local-cutter-controls { padding: 6px 10px; background: #16181b; }
+#cutterTab .local-frame-controls { display: flex; }
+#cutterTab .local-player-message { position: absolute; bottom: 60px; right: 15px; padding: 8px 12px; border: 1px solid #626773; border-radius: 6px; background: #171b21; font-size: 13px; }
+#cutterPlayer.cinema, #cutterPlayer:fullscreen { height: 100dvh; padding: 14px; box-sizing: border-box; background: var(--workspace-background, #202020); }
+#cutterPlayer.cinema .cutter-viewer, #cutterPlayer:fullscreen .cutter-viewer { flex: 1 1 0; }
+#cutterPlayer.cinema .video-preview, #cutterPlayer:fullscreen .video-preview { height: 0; flex: 1 1 0; aspect-ratio: auto; max-height: none; }
+#cutterTab .cutter-inspector { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#cutterTab .cutter-workspace:not(.shown) .cutter-inspector { display: none; }
+#cutterTab .cutter-sidebar { flex: 0 0 auto; display: flex; flex-direction: column; align-self: stretch; max-height: none; min-height: 0; padding: 0; gap: 0; overflow: visible; border-radius: 10px; scrollbar-gutter: auto; }
+#cutterTab .cutter-format-badge { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 4px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 5px; color: var(--text); }
+#cutterTab .cutter-export-body { display: grid; gap: 10px; padding: 12px; min-height: 0; overflow: visible; }
+#cutterTab .cutter-export-summary { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; padding: 10px 12px; border: 1px solid var(--workspace-border, var(--border)); background: var(--workspace-control, var(--bg-main)); border-radius: 7px; }
+#cutterTab .cutter-export-summary > span { font-size: 12px; color: var(--text-secondary); }
+#cutterTab .cutter-export-summary strong { font: 600 18px Consolas, monospace; font-variant-numeric: tabular-nums; color: var(--text); }
+#cutterTab .cutter-export-codecs { grid-column: 1 / -1; }
+#cutterTab .cutter-profile-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+#cutterTab .cutter-profile-fieldset legend, #cutterTab .cutter-export-field > label { font-size: 13px; font-weight: 600; margin-bottom: 7px; padding: 0; }
+#cutterTab .cutter-profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+#cutterTab .cutter-profile-grid label { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 9px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 6px; font-size: 13px; background: var(--workspace-control, var(--bg-main)); cursor: pointer; user-select: none; }
+#cutterTab .cutter-profile-grid label:has(input:checked) { background: #468b6220; border-color: #64a57e; }
+#cutterTab .cutter-profile-grid label:has(input:disabled) { opacity: .5; cursor: default; }
+#cutterTab .cutter-profile-grid input { position: relative; padding: 0; width: 13px; height: 13px; margin: 0; opacity: 1; accent-color: #438c60 !important; flex: 0 0 auto; }
+#cutterTab .cutter-field-help { margin: 6px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+#cutterTab .cutter-export-field { display: grid; min-width: 0; }
+#cutterTab .cutter-export-field select { appearance: none; width: 100%; min-width: 0; height: 36px; padding: 6px 36px 6px 10px; padding-right: 36px !important; font-size: 13px; color: var(--text); background-color: var(--workspace-control, var(--bg-main)); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23969da8'%3E%3Cpath d='m4 6 4 4 4-4z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-size: 14px; background-position: right 14px center; border: 1px solid var(--workspace-border, var(--border)); border-radius: 6px; user-select: none; }
+#cutterTab .cutter-export-field select:disabled { opacity: .65; }
+#cutterTab .cutter-format-details { font-size: 13px; line-height: 1.5; border-top: 1px solid var(--workspace-border, var(--border)); padding-top: 10px; }
+#cutterTab .cutter-format-details summary { cursor: pointer; padding: 2px 0; color: var(--text); user-select: none; }
+#cutterTab .cutter-format-details[open] summary { margin-bottom: 12px; }
+#cutterTab .cutter-export-footer { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--workspace-border, var(--border)); }
+#cutterTab .cutter-actions { display: flex; gap: 8px; margin: 0; flex-wrap: wrap; }
+#cutterTab .cutter-actions #btnCut { flex: 1 1 100%; width: 100%; min-width: 0; min-height: 40px; font-weight: 600; background: #287a49; color: #fff; border: 1px solid #439460; }
+#cutterTab .cutter-actions #btnCut:hover:not(:disabled) { background: #318c56; }
+#cutterTab .cutter-actions #cutterCancelExportBtn { width: 100%; }
+#cutterTab .cutter-export-state { margin: 0 0 10px; }
+#cutterTab #cutProgress { margin: 0 0 12px; padding: 0; }
+#cutterTab #cutProgress .progress-text { font-size: 13px; }
+#cutterTab .timeline-container { flex: 0 0 auto; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); color: var(--text); overflow: visible; }
+#cutterTab .cutter-timeline-toolbar { min-height: 48px; padding: 8px 12px; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--workspace-border, var(--border)); }
+#cutterTab .cutter-timeline-timecode { width: 102px; min-width: 102px; color: var(--text-secondary); font-size: 12px; }
+#cutterTab .cutter-timeline-views { display: flex; gap: 3px; margin-left: auto; padding: 3px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 6px; background: var(--workspace-control, var(--bg-main)); }
+#cutterTab .cutter-timeline-views button { padding: 5px 9px; border: 0; border-radius: 4px; font: inherit; font-size: 12px; color: var(--text); background: transparent; cursor: pointer; }
+#cutterTab .cutter-timeline-views button:hover:not(:disabled) { background: var(--workspace-panel, var(--bg-card)); }
+#cutterTab .cutter-timeline-views button[aria-pressed="true"] { background: #287a49; color: #fff; box-shadow: inset 0 0 0 1px #64a57e; }
+#cutterTab .cutter-timeline-views button[aria-pressed="true"]:hover:not(:disabled) { background: #318c56; }
+#cutterTab .cutter-timeline-views button:disabled { opacity: .5; cursor: default; }
+#cutterTab .cutter-zoom-controls { margin-left: 0; }
+#cutterTab .cutter-zoom-controls .cutter-icon-button { color: var(--text); width: 28px; height: 28px; }
+#cutterTab #cutterZoom { width: 90px; accent-color: #6faa88; }
+#cutterTab .cutter-timeline-scroll { margin: 10px 14px 12px; padding: 0; overflow-x: scroll; overflow-y: hidden; scrollbar-color: #626773 #17191c; }
+#cutterTab .timeline { height: 180px; background: #17191c; }
+#cutterTab .cutter-ruler { height: 32px; border: 0; }
+#cutterTab .cutter-ruler-tick { color: #bbc2cc; font-size: 11px; top: 162px; bottom: auto; }
+#cutterTab .cutter-ruler-tick::after { top: -4px; bottom: auto; }
+#cutterTab .cutter-track { height: 64px; }
+#cutterTab .cutter-audio-track { height: 64px; }
+#cutterTab #cutterWaveform { position: absolute; top: 0; height: 100%; width: auto; image-rendering: crisp-edges; }
+#cutterTab .cutter-track-label { left: 6px; font-size: 10px; padding: 2px 4px; }
+#cutterTab .cutter-outside-shade { top: 32px; bottom: 20px; }
+#cutterRangeMarkers { position: absolute; top: 32px; left: 0; right: 0; height: 6px; pointer-events: none; z-index: 12; }
+#cutterTab .timeline-selection { top: 32px; bottom: 20px; border: 1px solid #79bc93; z-index: 8; }
+#cutterTab .cutter-cut-overlays { inset: 32px 0 20px; z-index: 7; }
+#cutterTab .cutter-cut-overlay { min-width: 0; background: #bd405943; border: 1px solid #e1667c; }
+#cutterTab .cutter-cut-overlay.active { background: #bd405966; box-shadow: none; }
+#cutterTab .cutter-cut-overlay > span { font-size: 11px; }
+#cutterTab .timeline-current { top: 32px; bottom: 20px; width: 1px; z-index: 9; }
+#cutterTab .vod-range-markers.is-excerpt .vod-range-handle { background: #287a49; border-color: #82c69d; }
+#cutterTab .vod-range-markers.is-excerpt .vod-range-band { border-color: #79bc93; background: #438c601a; }
+#cutterTab .vod-range-markers.is-excerpt .vod-range-connectors path { stroke: #79bc93; }
+#cutterTab .cutter-edit-panel { padding: 12px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 10px; background: var(--workspace-panel, var(--bg-card)); flex: 0 0 auto; }
+#cutterTab .cutter-edit-panel[hidden] { display: none; }
+#cutterTab .cutter-edit-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; margin-bottom: 10px; }
+#cutterTab .cutter-edit-toolbar h3 { grid-row: 1; grid-column: 1; }
+#cutterTab .cutter-history-controls { grid-row: 1; grid-column: 3; margin: 0; }
+#cutterTab .cutter-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; grid-row: 2; grid-column: 1 / -1; }
+#cutterTab .cutter-modes button { display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 6px 7px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 6px; background: var(--workspace-control, var(--bg-main)); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; user-select: none; }
+#cutterTab .cutter-modes button[aria-pressed="true"] { border-color: #64a57e; background: #468b6220; }
+#cutterTab .cutter-mode-icon { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
+#cutterTab #cutterFullRange { grid-row: 1; grid-column: 2; width: auto; min-height: 30px; padding: 4px 8px; font-size: 12px; }
+#cutterTab .cutter-trim-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: stretch; }
+#cutterTab .cutter-boundary-field { display: grid; gap: 5px; padding: 7px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; background: var(--workspace-control, var(--bg-main)); }
+#cutterTab .cutter-boundary-field > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
+#cutterTab .cutter-boundary-field label { grid-row: 1; }
+#cutterTab .cutter-boundary-field input { grid-row: 2; }
+#cutterTab .cutter-boundary-field .btn-secondary { grid-row: 3; }
+#cutterTab .cutter-boundary-field label { font-size: 13px; font-weight: 600; }
+#cutterTab .cutter-boundary-field kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 5px; background: #287a49; border: 1px solid #64a57e; color: #fff; border-radius: 4px; font-size: 12px; }
+#cutterTab .cutter-boundary-field .btn-secondary { min-height: 24px; padding: 2px 5px; font-size: 12px; }
+#cutterTab .cutter-boundary-field input { width: 100%; height: 32px; text-align: left; font: 600 17px Consolas, monospace; font-variant-numeric: tabular-nums; padding: 4px 2px; background: transparent; border: 0; border-radius: 4px; color: var(--text); }
+#cutterTab .cutter-output-length { grid-column: 1 / -1; grid-row: 2; min-width: 0; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 6px 8px; border: 0; border-radius: 0; background: transparent; }
+#cutterTab .cutter-output-length span { font-size: 12px; color: var(--text-secondary); }
+#cutterTab .cutter-output-length strong { font: 600 18px Consolas, monospace; font-variant-numeric: tabular-nums; color: #80c49e; }
+.theme-light #cutterTab .cutter-output-length strong { color: #227649; }
+#cutterTab .cutter-edit-bottom { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; margin-top: 8px; min-height: 0; }
+#cutterTab #cutterNewCutBtn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+#cutterTab #cutterNewCutBtn svg { width: 16px; height: 16px; }
+#cutterTab .cutter-preview-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; white-space: nowrap; color: var(--text); font-size: 12px; line-height: 1.35; cursor: pointer; user-select: none; }
+#cutterTab .cutter-preview-toggle input { appearance: none; position: relative; box-sizing: border-box; flex: 0 0 16px; width: 16px; height: 16px; margin: 0; padding: 0; opacity: 1; border: 1px solid var(--workspace-border-strong, var(--border)); border-radius: 4px; background-color: var(--workspace-control, var(--bg-main)); cursor: pointer; transition: background-color .15s, border-color .15s; }
+#cutterTab .cutter-preview-toggle input:checked { background-color: #287a49; border-color: #64a57e; background-position: center; background-size: 12px; background-repeat: no-repeat; }
+#cutterTab .cutter-preview-toggle input:hover:not(:disabled) { border-color: #79bc93; }
+#cutterTab .cutter-preview-toggle input:focus-visible { outline: 2px solid #79bc93; outline-offset: 2px; box-shadow: none; }
+#cutterTab .cutter-preview-toggle input:active:not(:disabled) { transform: none; }
+#cutterTab .cutter-preview-toggle input:disabled { opacity: .5; cursor: default; }
+#cutterTab .cutter-edit-hint { grid-column: 1 / -1; font-size: 11px; color: var(--text-secondary); margin: 0; width: 100%; }
+#cutterTab .cutter-cut-list { height: auto; min-height: 0; max-height: none; overflow: visible; scrollbar-gutter: auto; margin-top: 10px; gap: 8px; }
+#cutterTab .cutter-cut-list:has(.cutter-cut-empty), #cutterTab .cutter-cut-list:empty { display: none; }
+#cutterTab .cutter-cut-count { padding: 4px 8px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 5px; background: transparent; color: var(--text-secondary); font-size: 11px; }
+#cutterTab .cutter-cut-count[hidden] { display: none; }
+#cutterTab .cutter-cut-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--workspace-border, var(--border)); border-radius: 7px; margin: 0; }
+#cutterTab .cutter-cut-row.active { border-color: #c76d80; background: #bd405914; }
+#cutterTab .cutter-cut-row-heading { display: block; width: 100%; min-width: 0; text-align: left; font-size: 12px; padding: 0; border: 0; cursor: pointer; background: transparent; color: var(--text); }
+#cutterTab .cutter-cut-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; grid-row: 2; grid-column: 1 / -1; }
+#cutterTab .cutter-cut-fields label { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+#cutterTab .cutter-cut-fields input { width: 100%; min-width: 0; height: 29px; font-size: 12px; padding: 4px; }
+#cutterTab .cutter-cut-fields input[readonly] { border-color: transparent; background: transparent; color: var(--text); cursor: text; }
+#cutterTab .cutter-cut-fields input[aria-invalid="true"] { border-color: #da697d; }
+#cutterTab .cutter-cut-duration { font: 12px Consolas, monospace; font-variant-numeric: tabular-nums; text-align: left; grid-row: 3; }
+#cutterTab .cutter-cut-actions { display: flex; gap: 5px; align-items: center; justify-content: flex-end; grid-row: 1; grid-column: 2; }
+#cutterTab .cutter-cut-actions .btn-secondary { font-size: 12px; padding: 5px 7px; min-height: 27px; }
+#cutterTab .cutter-cut-actions .cutter-icon-button { font-size: 20px; width: 27px; height: 27px; }
+#cutterTab .cutter-range-error { grid-column: 1 / -1; color: var(--text-secondary); font-size: 12px; }
+#cutterPreviewPlaceholder { font-size: 14px; color: #d3d8e0; }
+#cutterTab .fine-seeking .cutter-timeline-timecode { color: #9fd8b6; }
+#cutterTab :is(button, summary, .cutter-modes, .cutter-boundary-field label) { user-select: none; }
+#cutterTab .cutter-cut-fields input { user-select: text; }
+#cutterTab :is(button, input, select, summary):focus-visible { outline: 2px solid #79bc93; outline-offset: 2px; box-shadow: none; }
+#cutterTab .cutter-profile-grid label:focus-within { border-color: #79bc93; }
+@container (max-width: 800px) { .local-cutter-controls .local-frame-controls { display: none !important; } .local-cutter-controls .player-button.player-rate-button { width: 74px; } }
+@container (max-width: 550px) { .local-cutter-controls .player-volume-control { display: none; } .local-cutter-controls .player-button { width: 36px; } }
+@media (min-width: 1101px) and (min-height: 860px) {
+  #cutterTab .cutter-container { height: 100%; min-height: 0; }
+  #cutterTab .cutter-workspace.shown { flex: 1 0 auto; align-items: stretch; }
+  #cutterTab .cutter-preview-panel, #cutterTab .cutter-workspace.shown #cutterPlayer { height: 100%; }
+  #cutterTab .cutter-workspace.shown .cutter-viewer { flex: 1 1 0; min-height: 280px; }
+  #cutterTab .cutter-workspace.shown #cutterPlayer .video-preview { height: 0; min-height: 180px; flex: 1 1 0; aspect-ratio: auto; max-height: none; }
+  #cutterTab .cutter-inspector { max-height: none; overflow: visible; padding: 0; }
+}
+@media (max-width: 1100px) {
+  #cutterTab .cutter-workspace { grid-template-columns: minmax(0, 1fr); }
+  #cutterTab .cutter-inspector { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  #cutterTab .cutter-sidebar { display: flex; }
+}
+@media (max-width: 700px) {
+  #cutterTab .cutter-inspector { grid-template-columns: minmax(0, 1fr); }
+  #cutterTab .cutter-source-bar { padding: 10px; gap: 10px; }
+  #cutterTab .cutter-source-icon { display: none; }
+  #cutterTab .cutter-timeline-toolbar { gap: 8px; }
+  #cutterTab .cutter-timeline-timecode { margin-right: auto; }
+  #cutterTab .cutter-timeline-views { margin-left: 0; }
+  #cutterTab .cutter-zoom-controls { margin-left: auto; }
+}
+
+.audio-preview-meter { width:126px; margin-inline-start: 16px; flex-shrink:0; font-size:11px; font-variant-numeric:tabular-nums; }
+.audio-preview-meter[hidden] { display:none; }
+.audio-preview-meter > div { display:flex; align-items:center; gap:5px; line-height:16px; }
+.audio-preview-meter b { width:70px; height:4px; background:#363c43; overflow:hidden; border-radius:2px; }
+.audio-preview-meter i { display:block; height:100%; background:#73d69c; }
+.audio-preview-meter i.is-peak { background:#f4ba57; }
+.audio-preview-meter output { width:33px; text-align:right; color:#e7edf3; }
+@media (max-width:760px) { .audio-preview-meter { display:none; } }
+
+@media (min-width: 701px) and (max-width: 900px) {
+  #cutterTab .cutter-edit-bottom { grid-template-columns: minmax(0, 1fr); }
+  #cutterTab .cutter-edit-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
+  #cutterTab .cutter-history-controls { grid-column: 2; }
+  #cutterTab #cutterFullRange { grid-row: 3; grid-column: 1 / -1; }
+}
+
+#cutterTab .player-time-button { min-width: 11ch; font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
+@container (max-width: 850px) { .local-cutter-controls .audio-preview-meter { display: none; } }

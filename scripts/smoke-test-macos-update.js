@@ -1,5 +1,5 @@
-// Synthetic older-version bundle with the new updater -> unmodified release ZIP.
-// This proves real shutdown/replacement/relaunch, not legacy bootstrap or public delivery.
+// Original released application (MAC_UPDATE_FROM_APP) -> unmodified release ZIP.
+// Without an original bundle, use an explicitly reported synthetic updater fixture.
 // Every process and data directory is isolated from user data and Keychain.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -75,8 +75,15 @@ async function run() {
   const version = require('../package.json').version;
   const parts = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
   assert.ok(parts, 'A stable packaged version is required.');
-  const previous = process.env.MAC_UPDATE_FROM_VERSION || `${parts[1]}.${parts[2]}.${Number(parts[3]) - 1}`;
+  const originalApp = process.env.MAC_UPDATE_FROM_APP ? path.resolve(process.env.MAC_UPDATE_FROM_APP) : null;
+  if (originalApp && process.env.CI !== 'true') throw new Error('Original 1.0.10 may activate its window. Run the original-release upgrade on CI; local tests use the background-capable fixture.');
+  const originalVersion = originalApp ? JSON.parse(asar.extractFile(path.join(originalApp, 'Contents', 'Resources', 'app.asar'), 'package.json')).version : null;
+  const previous = originalVersion || process.env.MAC_UPDATE_FROM_VERSION || `${parts[1]}.${parts[2]}.${Number(parts[3]) - 1}`;
   assert.ok(/^\d+\.\d+\.\d+$/.test(previous), 'Set MAC_UPDATE_FROM_VERSION to a lower stable version.');
+  const oldParts = previous.split('.').map(Number);
+  const newParts = version.split('.').map(Number);
+  const difference = oldParts.findIndex((part, index) => part !== newParts[index]);
+  assert.ok(difference >= 0 && oldParts[difference] < newParts[difference], 'Original application must be older than the target release');
   const source = process.env.PACKAGED_APP_PATH
     ? path.dirname(path.dirname(path.dirname(path.resolve(process.env.PACKAGED_APP_PATH))))
     : path.join(repository, 'release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Twitch VOD Manager.app');
@@ -89,7 +96,7 @@ async function run() {
   const executable = path.join(target, 'Contents', 'MacOS', 'Twitch VOD Manager');
   const state = path.join(environment.userDataDir, 'mac-updates');
   const helperPrefix = path.join(fs.realpathSync(environment.userDataDir), 'mac-updates', 'installer-');
-  const checks = { previous, version, arch: process.arch, source: 'synthetic older-version fixture with current updater', destination: 'unmodified packaged release' };
+  const checks = { previous, version, arch: process.arch, source: originalApp ? 'original released application with isolated test signing key' : 'synthetic older-version fixture with current updater', destination: 'unmodified packaged release' };
   let app;
   let phase = 'preparing isolated bundle';
   let token;
@@ -97,7 +104,19 @@ async function run() {
     const keys = nodeCrypto.generateKeyPairSync('ed25519');
     const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' });
     console.log('[macos-update] Preparing isolated older application');
-    await makeOldBundle(source, target, path.join(directory, 'old-asar'), previous, publicKey);
+    if (originalApp) {
+      // Never mutate the user's installed app. Only the copied fixture trusts the ephemeral test key.
+      await execute('/usr/bin/ditto', [originalApp, target]);
+      const resources = path.join(target, 'Contents', 'Resources');
+      fs.writeFileSync(path.join(resources, 'mac-update-public-key.pem'), publicKey);
+      // Keep the original released code intact while suppressing a test-only Dock item.
+      await execute('/usr/bin/plutil', ['-replace', 'LSUIElement', '-bool', 'true', path.join(target, 'Contents', 'Info.plist')]);
+      await execute('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', target], { timeout: 120000 });
+      await execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', target], { timeout: 120000 });
+      assert.equal(await sha256(path.join(resources, 'app.asar')), await sha256(path.join(originalApp, 'Contents', 'Resources', 'app.asar')), 'Original release code must remain unchanged');
+    } else {
+      await makeOldBundle(source, target, path.join(directory, 'old-asar'), previous, publicKey);
+    }
     const fileHash = await sha256(zip);
     const size = fs.statSync(zip).size;
     const artifacts = Object.fromEntries(['arm64', 'x64'].map((arch) => [arch, {
@@ -109,6 +128,8 @@ async function run() {
     const envelope = JSON.stringify({ payload: payload.toString('base64'), signature: nodeCrypto.sign(null, payload, keys.privateKey).toString('base64') });
     phase = 'launching older application';
     const options = getElectronLaunchOptions(environment);
+    // Only remote CI may run the unchanged legacy release, which predates background tests.
+    if (originalApp) options.env.TVM_E2E_BACKGROUND = '0';
     options.executablePath = executable;
     options.args = options.args.filter((arg) => arg !== '.');
     app = await electron.launch({ ...options, timeout: 60000 });

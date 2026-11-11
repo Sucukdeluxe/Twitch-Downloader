@@ -109,6 +109,24 @@ private func verifySignature(_ app: String) throws {
     guard process.terminationStatus == 0 else { throw UpdateFailure("Code signature verification failed for \(app)") }
 }
 
+private func verifyMinimumSystemVersion(_ value: Any?) throws {
+    guard let value = value else { return } // Compatibility with older signed bundles.
+    guard let version = value as? String, version.utf8.count <= 32 else {
+        throw UpdateFailure("Invalid macOS system version")
+    }
+    let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+    guard (1...3).contains(parts.count), parts.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) }) else {
+        throw UpdateFailure("Invalid macOS system version")
+    }
+    let numbers = parts.compactMap { Int($0) }
+    guard numbers.count == parts.count, numbers[0] > 0 else { throw UpdateFailure("Invalid macOS system version") }
+    let minimum = OperatingSystemVersion(majorVersion: numbers[0], minorVersion: numbers.count > 1 ? numbers[1] : 0, patchVersion: numbers.count > 2 ? numbers[2] : 0)
+    guard ProcessInfo.processInfo.isOperatingSystemAtLeast(minimum) else {
+        let current = ProcessInfo.processInfo.operatingSystemVersion
+        throw UpdateFailure("Update requires macOS \(version) or later (this Mac has \(current.majorVersion).\(current.minorVersion).\(current.patchVersion))")
+    }
+}
+
 private func verifyBundle(_ path: String, bundleId: String, version: String?) throws {
     _ = try canonicalPath(path)
     let value = try metadata(path)
@@ -126,6 +144,7 @@ private func verifyBundle(_ path: String, bundleId: String, version: String?) th
     if let version = version, info["CFBundleShortVersionString"] as? String != version {
         throw UpdateFailure("Staged application version does not match the authenticated release")
     }
+    try verifyMinimumSystemVersion(info["LSMinimumSystemVersion"])
     let executablePath = path + "/Contents/MacOS/" + executable
     _ = try canonicalPath(executablePath)
     let executableMetadata = try metadata(executablePath)
@@ -240,7 +259,7 @@ private final class Installer {
     func launch(_ arguments: [String]) throws -> NSRunningApplication {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        configuration.activates = true
+        configuration.activates = ProcessInfo.processInfo.environment["TVM_E2E_BACKGROUND"] != "1"
         configuration.promptsUserIfNeeded = false
         configuration.arguments = arguments + (plan.userDataDirectory.map { ["--user-data-dir=" + $0] } ?? [])
         configuration.environment = ProcessInfo.processInfo.environment

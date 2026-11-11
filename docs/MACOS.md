@@ -1,6 +1,9 @@
 # macOS port
 
-Baseline: `Sucukdeluxe/Twitch-Downloader` at `5113089`, version **1.0.9**.
+Baseline: `Sucukdeluxe/Twitch-Downloader` release tag **`v1.1.20`**, commit
+`9a814180291547e456f059eadf4b0a9bba518014` (the `public-v1` release line).
+The baseline follows the published release tag because the original repository's
+`main` still points to 1.0.9. The Mac version is **1.1.20**.
 The complete upstream history is retained. `upstream` points to the Windows repository;
 `origin` points to `Sucukdeluxe/Twitch-Downloader-macos`. No upstream merge has been made.
 
@@ -16,7 +19,7 @@ a Keychain permission prompt; [Electron documents why a consistent signature is 
 
 ## Build
 
-macOS 12 or later, Apple Silicon or Intel. Node.js 24 and the Xcode Command Line Tools
+macOS 13 or later, Apple Silicon or Intel. Node.js 24 and the Xcode Command Line Tools
 are needed to build; end users need neither Node, Python, Homebrew nor FFmpeg.
 
 ```sh
@@ -24,6 +27,8 @@ npm ci
 node node_modules/electron/install.js
 npm run tools:mac -- arm64
 npm run tools:mac -- x64
+npm run test:unit
+npm run rebuild:electron
 PATH="$PWD/.cache/macos-tools/stage-$(node -p process.arch)/ffmpeg:$PATH" npm run test:e2e:release
 npm run test:mac
 npm run dist:mac -- --arm64 --x64 -c.mac.identity=- --publish never
@@ -37,12 +42,14 @@ Never put credentials into the repository.
 `npm run dev` preserves the original hot reload workflow. It uses `.dev-program-data`
 and `.dev-user-data`, isolated from the installed app. Tests use unique temporary directories.
 The installed Mac app stores its database, configuration and managed tools under
-`~/Library/Application Support/Twitch VOD Manager/`. Windows keeps its existing data path.
+`~/Library/Application Support/Twitch VOD Manager/`. Windows uses the 1.1.20 `Twitch_Downloader` data path with the upstream legacy-directory migration.
 
 ## Scope
 
 All upstream screens, translations, queue, archive, statistics, trimming, merging,
 splitting, Twitch access, chat replay and automatic recording logic remain shared.
+This includes the 1.1.20 VOD player, quality selection, range exclusions, persistent
+editing workspaces, export queue, live-VOD snapshots and lifetime download history.
 Changes are restricted to OS paths, native menus, Apple hardware encoding,
 portable tool packaging, process argument safety and macOS test/build support.
 Window closing follows macOS behavior: the app and background downloads stay alive;
@@ -63,7 +70,15 @@ first install; it never probes a system Python or triggers the developer-tools i
 ## Validation and release boundary
 
 `macos-ci.yml` runs on separate native Apple Silicon and Intel runners, including the
-upstream release suite and real packaged-app tests.
+restored regression suite and real packaged-app tests. The public upstream
+release excludes its private tests; this Mac repository commits its own tests
+and fails required checks if their test sources are absent.
+The maintained source suite is `npm run test:e2e:release`. The legacy
+`test:e2e` alias runs the focused workspace suite, `test:e2e:full` runs that
+release suite, and `test:e2e:guide` runs the workspace checks that include the
+filename guide. Unpublished upstream private-check commands fail explicitly
+when their files are absent; they are not counted as passing Mac checks.
+
 The source and packaged-app jobs use separate fresh runners so their differently
 signed executables do not compete for the same login Keychain item.
 The macOS-specific test removes Homebrew from PATH, provisions the bundled tools offline, downloads a generated HLS

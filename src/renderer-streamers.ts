@@ -27,7 +27,16 @@ function scheduleStreamerActiveIndicatorSync(): void {
 // the lookup is case-insensitive regardless of how the streamer's
 // name was added (display-cased vs login-cased).
 const liveStatusByLogin = new Map<string, boolean>();
+const liveVodIdByLogin = new Map<string, string>();
+const lastLiveVodCovers = new Map<string, string>();
+const finishedVodCoverRefreshes = new Map<string, number>();
 const streamerDisplayNames = new Map<string, string>();
+
+function getStreamerDisplayName(login: string): string {
+    return streamerDisplayNames.get(login.trim().toLowerCase()) || login;
+}
+
+(window as unknown as { getStreamerDisplayName: typeof getStreamerDisplayName }).getStreamerDisplayName = getStreamerDisplayName;
 
 function rememberStreamerDisplayName(login: string, displayName: string): void {
     const normalizedLogin = login.trim().toLowerCase();
@@ -39,10 +48,22 @@ function rememberStreamerDisplayName(login: string, displayName: string): void {
         const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
         if (typeof setTitle === 'function') setTitle(normalizedDisplayName);
     }
-    if (changed) renderStreamers();
+    if (changed) {
+        renderStreamers();
+        renderQueue();
+    }
 }
 
 (window as unknown as { rememberStreamerDisplayName: typeof rememberStreamerDisplayName }).rememberStreamerDisplayName = rememberStreamerDisplayName;
+
+function renderHydratedStreamerDisplayNames(): void {
+    if (currentStreamer) {
+        const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
+        if (typeof setTitle === 'function') setTitle(getStreamerDisplayName(currentStreamer));
+    }
+    renderStreamers();
+    renderQueue();
+}
 
 async function hydrateStreamerDisplayNames(): Promise<void> {
     const configuredNames = config.streamer_display_names || {};
@@ -55,12 +76,13 @@ async function hydrateStreamerDisplayNames(): Promise<void> {
             changed = true;
         }
     }
+    if (changed) {
+        renderHydratedStreamerDisplayNames();
+        changed = false;
+    }
 
     const streamers = (config.streamers ?? []) as string[];
-    if (streamers.length === 0) {
-        if (changed) renderStreamers();
-        return;
-    }
+    if (streamers.length === 0) return;
 
     try {
         const resolvedNames = await window.api.getStreamerDisplayNames(streamers);
@@ -74,39 +96,59 @@ async function hydrateStreamerDisplayNames(): Promise<void> {
         }
     } catch { }
 
-    if (changed) {
-        if (currentStreamer) {
-            const displayName = streamerDisplayNames.get(currentStreamer.toLowerCase());
-            const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
-            if (displayName && typeof setTitle === 'function') setTitle(displayName);
-        }
-        renderStreamers();
-    }
+    if (changed) renderHydratedStreamerDisplayNames();
 }
 
 (window as unknown as { hydrateStreamerDisplayNames: typeof hydrateStreamerDisplayNames }).hydrateStreamerDisplayNames = hydrateStreamerDisplayNames;
 
-async function initLiveStatusSubscription(): Promise<void> {
-    try {
-        const initial = await window.api.getLiveStatusSnapshot();
-        for (const [k, v] of Object.entries(initial)) {
-            liveStatusByLogin.set(k.toLowerCase(), v === true);
+function applyLiveVodStatusChanges(changes: Array<{ login: string; isLive: boolean; vodId?: string | null }>): void {
+    let touched = false;
+    for (const change of changes) {
+        const key = change.login.toLowerCase();
+        const previousVodId = liveVodIdByLogin.get(key);
+        const vodId = change.isLive && typeof change.vodId === 'string' ? change.vodId : null;
+        const changed = liveStatusByLogin.get(key) !== change.isLive || (liveVodIdByLogin.get(key) ?? null) !== vodId;
+        if (changed) {
+            touched = true;
+            if (previousVodId && previousVodId !== vodId) void refreshFinishedVodCover(key, previousVodId);
         }
+        liveStatusByLogin.set(key, change.isLive);
+        if (vodId) liveVodIdByLogin.set(key, vodId);
+        else liveVodIdByLogin.delete(key);
+        if (changed) {
+            const refreshProfile = (window as unknown as { syncStreamerProfileLiveStatus?: (login: string, isLive: boolean) => void }).syncStreamerProfileLiveStatus;
+            refreshProfile?.(key, change.isLive);
+        }
+    }
+    if (touched) {
         renderStreamers();
-    } catch (_) { /* poller may not have fired yet — silent */ }
+        updateVodLiveBadges();
+    }
+}
 
+function getStreamerLiveVodStatus(login: string): { isLive: boolean; vodId: string | null } | undefined {
+    const key = login.toLowerCase();
+    const isLive = liveStatusByLogin.get(key);
+    return isLive === undefined ? undefined : { isLive, vodId: liveVodIdByLogin.get(key) ?? null };
+}
+
+(window as unknown as { getStreamerLiveVodStatus: typeof getStreamerLiveVodStatus }).getStreamerLiveVodStatus = getStreamerLiveVodStatus;
+
+async function initLiveStatusSubscription(): Promise<void> {
+    const changedWhileLoading = new Set<string>();
+    let loading = true;
     window.api.onLiveStatusBatchUpdate(({ changes }) => {
-        let touched = false;
-        for (const change of changes) {
-            const key = change.login.toLowerCase();
-            const prev = liveStatusByLogin.get(key);
-            if (prev !== change.isLive) {
-                liveStatusByLogin.set(key, change.isLive);
-                touched = true;
-            }
-        }
-        if (touched) renderStreamers();
+        if (loading) for (const change of changes) changedWhileLoading.add(change.login.toLowerCase());
+        applyLiveVodStatusChanges(changes);
     });
+    try {
+        const initial = typeof window.api.getLiveVodStatusSnapshot === 'function'
+            ? await window.api.getLiveVodStatusSnapshot()
+            : Object.fromEntries(Object.entries(await window.api.getLiveStatusSnapshot()).map(([login, isLive]) => [login, { isLive, vodId: null }]));
+        applyLiveVodStatusChanges(Object.entries(initial).filter(([login]) => !changedWhileLoading.has(login.toLowerCase()))
+            .map(([login, status]) => ({ login, ...status })));
+    } catch { }
+    finally { loading = false; }
 }
 (window as unknown as { initLiveStatusSubscription: typeof initLiveStatusSubscription }).initLiveStatusSubscription = initLiveStatusSubscription;
 
@@ -124,6 +166,9 @@ const streamerVodCache = new Map<string, CachedStreamerVods>();
 const streamerVodLoads = new Map<string, Promise<CachedStreamerVods | null>>();
 let streamerBackgroundRefreshTimer: number | null = null;
 const STREAMER_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
+const VOD_LOAD_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+let vodLoadRetryTimer: number | null = null;
+let vodLoadRetryAttempt = 0;
 let vodFilterQuery = '';
 const VOD_FILTER_STORAGE_KEY = 'twitch-vod-manager:vod-filter';
 
@@ -131,6 +176,9 @@ const VOD_FILTER_STORAGE_KEY = 'twitch-vod-manager:vod-filter';
 // on streamer switch (selection is per-streamer mental model). NOT persisted
 // because a stale selection across reloads is more confusing than helpful.
 const selectedVodUrls = new Set<string>();
+const selectedVodUrlRevisions = new Map<string, number>();
+let vodSelectionRevision = 0;
+let vodBulkOperationInFlight = false;
 let vodGridDelegationInitialized = false;
 
 // Hide-downloaded toggle: when enabled, the VOD grid skips entries whose
@@ -307,8 +355,114 @@ function focusVodFilter(): void {
     }
 }
 
+function renderVodLiveBadge(): string {
+    return `<span class="vod-live-badge" title="${escapeHtml(UI_TEXT.vods.liveNowTooltip)}">${escapeHtml(UI_TEXT.vods.liveBadge)}</span>`;
+}
+
+function usableVodThumbnail(url: string): boolean {
+    return Boolean(url) && !/(?:^|[/_-])404(?:[/_.-]|$)|not_found|processing/i.test(url);
+}
+
+function getVodCoverUrl(vodId: string, streamer: string, thumbnail: string): string {
+    const login = streamer.toLowerCase();
+    const key = login + '/' + vodId;
+    if (liveVodIdByLogin.get(login) === vodId) {
+        const getCover = (window as unknown as { getLiveVodCover?: (login: string, vodId: string) => string }).getLiveVodCover;
+        const cover = getCover?.(login, vodId);
+        if (cover) {
+            lastLiveVodCovers.set(key, cover);
+            if (lastLiveVodCovers.size > 64) lastLiveVodCovers.delete(lastLiveVodCovers.keys().next().value!);
+            return cover;
+        }
+        return lastLiveVodCovers.get(key) || thumbnail;
+    }
+    return usableVodThumbnail(thumbnail) ? thumbnail : lastLiveVodCovers.get(key) || thumbnail;
+}
+
+function onVodThumbnailError(image: HTMLImageElement): void {
+    const card = image.closest<HTMLElement>('.vod-card');
+    const key = (card?.dataset.vodStreamer || '').toLowerCase() + '/' + card?.dataset.vodId;
+    const fallback = lastLiveVodCovers.get(key);
+    if (fallback && image.getAttribute('src') !== fallback) image.src = fallback;
+    else {
+        image.onerror = null;
+        image.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%23333" width="320" height="180"/></svg>';
+    }
+}
+
+function syncVodCardCovers(): void {
+    document.querySelectorAll<HTMLElement>('#vodGrid .vod-card[data-vod-id]').forEach(card => {
+        const image = card.querySelector<HTMLImageElement>('.vod-thumbnail');
+        if (!image) return;
+        const source = getVodCoverUrl(card.dataset.vodId || '', card.dataset.vodStreamer || '', card.dataset.vodThumbnail || '');
+        const key = (card.dataset.vodStreamer || '').toLowerCase() + '/' + card.dataset.vodId;
+        const finalCover = card.dataset.liveVod !== 'true' && source === card.dataset.vodThumbnail && usableVodThumbnail(source);
+        if (image.getAttribute('src') === source && image.complete && image.naturalWidth > 0 && finalCover) finishedVodCoverRefreshes.delete(key);
+        if (image.getAttribute('src') === source) {
+            delete image.dataset.coverRequest;
+            return;
+        }
+        if (!source || image.dataset.coverRequest === source) return;
+        image.dataset.coverRequest = source;
+        const next = new Image();
+        next.onload = () => {
+            if (!image.isConnected || image.dataset.coverRequest !== source) return;
+            image.src = source;
+            delete image.dataset.coverRequest;
+            if (finalCover) finishedVodCoverRefreshes.delete(key);
+        };
+        next.onerror = () => {
+            if (image.dataset.coverRequest === source) delete image.dataset.coverRequest;
+        };
+        next.src = source;
+    });
+}
+
+async function refreshFinishedVodCover(login: string, vodId: string, attempt = 0): Promise<void> {
+    const key = login + '/' + vodId;
+    if (attempt > 0 && !finishedVodCoverRefreshes.has(key)) return;
+    const revision = (finishedVodCoverRefreshes.get(key) ?? 0) + 1;
+    finishedVodCoverRefreshes.set(key, revision);
+    try {
+        const entry = await loadStreamerVods(login, true);
+        if (finishedVodCoverRefreshes.get(key) !== revision || !entry) return;
+        if (lastLoadedStreamer?.toLowerCase() !== login) { finishedVodCoverRefreshes.delete(key); return; }
+        const thumbnails = new Map(entry.vods.map(vod => [vod.id, vod.thumbnail_url.replace('%{width}', '320').replace('%{height}', '180')]));
+        lastLoadedVods = lastLoadedVods.map(vod => ({ ...vod, thumbnail_url: thumbnails.get(vod.id) ?? vod.thumbnail_url }));
+        document.querySelectorAll<HTMLElement>('#vodGrid .vod-card').forEach(card => {
+            if ((card.dataset.vodStreamer || '').toLowerCase() !== login) return;
+            const thumbnail = thumbnails.get(card.dataset.vodId || '');
+            if (thumbnail) card.dataset.vodThumbnail = thumbnail;
+        });
+        syncVodCardCovers();
+    } catch { }
+    finally {
+        if (finishedVodCoverRefreshes.get(key) === revision) {
+            if (attempt < 4) window.setTimeout(() => { void refreshFinishedVodCover(login, vodId, attempt + 1); }, [5000, 15000, 30000, 60000][attempt]);
+            else finishedVodCoverRefreshes.delete(key);
+        }
+    }
+}
+
+(window as unknown as { syncVodCardCovers: typeof syncVodCardCovers }).syncVodCardCovers = syncVodCardCovers;
+(window as unknown as { onVodThumbnailError: typeof onVodThumbnailError }).onVodThumbnailError = onVodThumbnailError;
+
+function updateVodLiveBadges(): void {
+    document.querySelectorAll<HTMLElement>('#vodGrid .vod-card[data-vod-id]').forEach(card => {
+        const badges = card.querySelector('.vod-status-badges');
+        if (!badges) return;
+        const isLive = liveVodIdByLogin.get((card.dataset.vodStreamer || '').toLowerCase()) === card.dataset.vodId;
+        card.dataset.liveVod = String(isLive);
+        const badge = badges.querySelector('.vod-live-badge');
+        if (isLive && !badge) badges.insertAdjacentHTML('afterbegin', renderVodLiveBadge());
+        else if (!isLive) badge?.remove();
+    });
+    syncVodCardCovers();
+}
+
 function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string>): string {
     const thumb = vod.thumbnail_url.replace('%{width}', '320').replace('%{height}', '180');
+    const cover = getVodCoverUrl(vod.id, streamer, thumb);
     const date = formatVodCardDate(vod.created_at);
     const safeDisplayTitle = escapeHtml(vod.title || UI_TEXT.vods.untitled);
     const safeUrlAttr = escapeHtml(vod.url);
@@ -320,7 +474,7 @@ function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string
     const isChecked = selectedVodUrls.has(vod.url);
     const isAlreadyDownloaded = downloadedIds ? downloadedIds.has(vod.id) : false;
     const downloadedBadge = isAlreadyDownloaded
-        ? `<div class="vod-downloaded-badge" title="${escapeHtml(UI_TEXT.vods.alreadyDownloaded)}">&#10003;</div>`
+        ? `<div class="vod-downloaded-badge" role="img" aria-label="${escapeHtml(UI_TEXT.vods.alreadyDownloaded)}" title="${escapeHtml(UI_TEXT.vods.alreadyDownloaded)}"><img src="./vod-downloaded-check.webp" width="24" height="24" alt="" draggable="false"></div>`
         : '';
 
     // All identity attributes go on data-* — a delegated listener on #vodGrid
@@ -337,11 +491,13 @@ function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string
              data-vod-title="${safeTitleAttr}"
              data-vod-date="${safeDateAttr}"
              data-vod-streamer="${safeStreamerAttr}"
+             data-live-vod="${liveVodIdByLogin.get(streamer.toLowerCase()) === vod.id}"
+             data-vod-thumbnail="${escapeHtml(thumb)}"
              data-vod-duration="${safeDurationAttr}">
             <input type="checkbox" class="vod-select-checkbox" data-vod-url="${safeUrlAttr}" ${isChecked ? 'checked' : ''} aria-label="${escapeHtml(UI_TEXT.vods.selectAriaLabel)}">
-            ${downloadedBadge}
+            <div class="vod-status-badges">${liveVodIdByLogin.get(streamer.toLowerCase()) === vod.id ? renderVodLiveBadge() : ''}${downloadedBadge}</div>
             <div class="vod-thumb-wrap">
-                <img class="vod-thumbnail" loading="lazy" decoding="async" src="${thumb}" alt="" title="${escapeHtml(UI_TEXT.vods.selectAriaLabel)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 320 180%22><rect fill=%22%23333%22 width=%22320%22 height=%22180%22/></svg>'">
+                <img class="vod-thumbnail" loading="lazy" decoding="async" src="${escapeHtml(cover)}" alt="" onerror="onVodThumbnailError(this)">
                 <div class="vod-duration-badge">${escapeHtml(vod.duration)}</div>
             </div>
             <div class="vod-info">
@@ -352,8 +508,8 @@ function buildVodCardHtml(vod: VOD, streamer: string, downloadedIds?: Set<string
                 </div>
             </div>
             <div class="vod-actions">
-                <button type="button" class="vod-btn secondary" data-vod-action="trim">${escapeHtml(UI_TEXT.vods.trimButton)}</button>
-                <button type="button" class="vod-btn primary" data-vod-action="queue">${escapeHtml(UI_TEXT.vods.addQueue)}</button>
+                <button type="button" class="vod-btn secondary" data-vod-action="trim"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.5 7.5 12 12m-12-3 12-12"/></svg><span>${escapeHtml(UI_TEXT.vods.trimButton)}</span></button>
+                <button type="button" class="vod-btn primary" data-vod-action="queue"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h13M4 11h9M4 16h6M18 12v8m-4-4h8"/></svg><span>${escapeHtml(UI_TEXT.vods.addQueue)}</span></button>
             </div>
         </div>
     `;
@@ -397,6 +553,7 @@ let streamerListFilterQuery = '';
 const VOD_SCROLL_POSITIONS_KEY = 'twitch-vod-manager:vod-scroll-positions';
 let vodScrollPositions: Record<string, number> = {};
 let pendingScrollRestore: { streamer: string; y: number } | null = null;
+let vodScrollRestoreTimer: number | null = null;
 
 function loadVodScrollPositions(): void {
     try {
@@ -452,6 +609,10 @@ function initVodScrollTracking(): void {
     }, { passive: true });
 }
 
+function isSupportedCutterVideoFile(file: { name: string }): boolean {
+    return /\.(mp4|m4v|mov|webm|mkv|ts|avi)$/i.test(file.name);
+}
+
 function initCutterDragDrop(): void {
     const tab = document.getElementById('cutterTab');
     if (!tab) return;
@@ -485,8 +646,7 @@ function initCutterDragDrop(): void {
 
         const files = Array.from(e.dataTransfer.files || []);
         if (files.length === 0) return;
-        const allowed = /\.(mp4|m4v|mov|webm|mkv|ts|avi)$/i;
-        const file = files.find((entry) => allowed.test(entry.name));
+        const file = files.find(isSupportedCutterVideoFile);
         if (!file) {
             showAppToast(UI_TEXT.cutter.unsupportedFile, 'warn');
             return;
@@ -520,7 +680,7 @@ function showStreamerContextMenu(event: MouseEvent, streamer: string): void {
     const menu = document.createElement('div');
     menu.className = 'streamer-context-menu';
     menu.setAttribute('role', 'menu');
-    menu.setAttribute('aria-label', streamerDisplayNames.get(streamer.toLowerCase()) || streamer);
+    menu.setAttribute('aria-label', getStreamerDisplayName(streamer));
 
     const appendAction = (action: 'auto' | 'vod' | 'record', label: string, active: boolean, handler: () => void): void => {
         const button = document.createElement('button');
@@ -571,11 +731,54 @@ function showStreamerContextMenu(event: MouseEvent, streamer: string): void {
     menu.querySelector<HTMLButtonElement>('button')?.focus();
 }
 
+function createStreamerAvatar(streamer: string): HTMLElement {
+    const fallback = document.createElement('span');
+    fallback.className = 'streamer-avatar-fallback';
+    fallback.textContent = Array.from(getStreamerDisplayName(streamer))[0]?.toUpperCase() || '?';
+    fallback.setAttribute('aria-hidden', 'true');
+    const profile = streamerProfileCache.get(streamer.trim().toLowerCase());
+    if (!profile?.avatarUrl) return fallback;
+    const image = document.createElement('img');
+    image.className = 'streamer-avatar';
+    image.alt = '';
+    image.draggable = false;
+    image.referrerPolicy = 'no-referrer';
+    image.decoding = 'async';
+    image.addEventListener('error', () => image.replaceWith(fallback), { once: true });
+    image.src = profile.avatarUrl;
+    return image;
+}
+
+function updateStreamerAvatars(login: string): void {
+    const key = login.trim().toLowerCase();
+    for (const item of Array.from(document.querySelectorAll<HTMLElement>('#streamerList .streamer-item'))) {
+        if (item.dataset.streamerName?.trim().toLowerCase() !== key) continue;
+        item.querySelector('.streamer-avatar, .streamer-avatar-fallback')?.replaceWith(createStreamerAvatar(login));
+    }
+}
+
+function syncVodSelectionState(): void {
+    const hasStreamers = (config.streamers ?? []).length > 0;
+    const hasSelection = hasStreamers && Boolean(currentStreamer);
+    document.getElementById('vodsTab')?.classList.toggle('vod-selection-empty', !hasSelection);
+    const filters = document.getElementById('vodFilterRow');
+    if (filters) filters.hidden = !hasSelection;
+    const refresh = document.getElementById('toolbarRefreshVodsBtn') as HTMLButtonElement | null;
+    if (refresh) refresh.disabled = !hasSelection;
+    if (hasSelection) return;
+    const grid = document.getElementById('vodGrid');
+    if (grid) setVodGridEmptyState(grid,
+        hasStreamers ? UI_TEXT.vods.noneTitle : UI_TEXT.vods.noStreamersTitle,
+        hasStreamers ? UI_TEXT.vods.noneText : UI_TEXT.vods.noStreamersText);
+}
+
 function renderStreamers(): void {
+    syncVodSelectionState();
     const list = byId('streamerList');
     list.replaceChildren();
 
     const all = (config.streamers ?? []) as string[];
+    list.classList.toggle('streamers-empty', all.length === 0);
     const filterInput = document.getElementById('streamerListFilter') as HTMLInputElement | null;
     const sectionTitle = document.getElementById('streamerSectionTitle');
     const showFilter = all.length >= STREAMER_FILTER_THRESHOLD;
@@ -589,10 +792,10 @@ function renderStreamers(): void {
     if (all.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'streamer-list-empty';
-        empty.textContent = UI_TEXT.streamers.sidebarEmpty || 'No streamers yet. Add one via the top bar.';
+        empty.textContent = UI_TEXT.streamers.sidebarEmpty;
         list.appendChild(empty);
         const counter = document.getElementById('streamerSectionCounter');
-        if (counter) counter.textContent = '';
+        if (counter) counter.textContent = '0';
         const bulkBtn = document.getElementById('btnStreamerBulkRemove') as HTMLButtonElement | null;
         if (bulkBtn) bulkBtn.classList.add('is-hidden');
         scheduleStreamerActiveIndicatorSync();
@@ -603,11 +806,12 @@ function renderStreamers(): void {
     // stays accurate after add/remove/live-status changes.
     const counter = document.getElementById('streamerSectionCounter');
     if (counter) {
-        counter.textContent = all.length === 0 ? '' : String(all.length);
+        counter.textContent = all.length === 0 ? '' : formatUiNumber(all.length);
     }
 
     const q = (streamerListFilterQuery || '').trim().toLowerCase();
-    const visible = q ? all.filter((s) => s.toLowerCase().includes(q)) : all;
+    const grouped = RendererVodLibrary.channels(all);
+    const visible = q ? grouped.filter((s) => s.toLowerCase().includes(q)) : grouped;
 
     visible.forEach((streamer: string) => {
         const item = document.createElement('div');
@@ -620,7 +824,8 @@ function renderStreamers(): void {
         // first, then AUTO / VOD / REC / remove in order.
         item.setAttribute('role', 'button');
         item.setAttribute('tabindex', '0');
-        item.setAttribute('aria-label', streamer);
+        item.setAttribute('aria-label', getStreamerDisplayName(streamer));
+        item.title = getStreamerDisplayName(streamer);
         if (currentStreamer === streamer) item.setAttribute('aria-current', 'true');
 
         // Live-dot — red pulsing dot when this streamer is currently
@@ -640,10 +845,10 @@ function renderStreamers(): void {
 
         const nameSpan = document.createElement('span');
         nameSpan.className = 'streamer-name' + (isLive ? ' is-live' : '');
-        nameSpan.textContent = streamerDisplayNames.get(streamer.toLowerCase()) || streamer;
+        nameSpan.textContent = getStreamerDisplayName(streamer);
         const removeSpan = document.createElement('span');
         removeSpan.className = 'remove';
-        removeSpan.textContent = 'x';
+        removeSpan.appendChild(createStreamerRemoveIcon());
         removeSpan.setAttribute('role', 'button');
         removeSpan.setAttribute('tabindex', '0');
         removeSpan.setAttribute('aria-label', UI_TEXT.streamers.removeAria);
@@ -658,7 +863,7 @@ function renderStreamers(): void {
                 void removeStreamer(streamer);
             }
         });
-        item.append(nameSpan, removeSpan);
+        item.append(createStreamerAvatar(streamer), nameSpan, removeSpan);
 
         item.addEventListener('contextmenu', (contextEvent) => {
             showStreamerContextMenu(contextEvent, streamer);
@@ -707,6 +912,61 @@ function onStreamerListFilterChange(): void {
     renderStreamers();
 }
 
+function clearActiveVodHoverPreview(): void {
+    const clear = (window as unknown as { clearVodHoverPreview?: () => void }).clearVodHoverPreview;
+    if (typeof clear === 'function') clear();
+}
+
+function cancelVodScrollRestore(): void {
+    pendingScrollRestore = null;
+    if (vodScrollRestoreTimer === null) return;
+    window.clearTimeout(vodScrollRestoreTimer);
+    vodScrollRestoreTimer = null;
+}
+
+function clearActiveStreamerSelection(): void {
+    selectStreamerRequestId += 1;
+    vodRenderTaskId += 1;
+    currentStreamer = null;
+    lastLoadedVods = [];
+    lastLoadedStreamer = null;
+    cancelVodScrollRestore();
+    selectedVodUrls.clear();
+    selectedVodUrlRevisions.clear();
+    clearActiveVodHoverPreview();
+    closeVodContextMenu();
+    const hide = (window as unknown as { hideStreamerProfileHeader?: () => void }).hideStreamerProfileHeader;
+    if (typeof hide === 'function') hide();
+    updateVodBulkBar();
+    updateVodFilterCount(0, 0);
+    syncVodSelectionState();
+    const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
+    if (typeof setTitle === 'function') setTitle(UI_TEXT.tabs.vods);
+}
+
+let streamerListSaveQueue: Promise<boolean> = Promise.resolve(true);
+let streamerAddInFlight = false;
+
+function persistStreamerList(change: (current: string[]) => string[]): Promise<boolean> {
+    const save = async (): Promise<boolean> => {
+        const previous = [...(config.streamers || [])];
+        const streamers = change(previous);
+        if (JSON.stringify(streamers) === JSON.stringify(config.streamers || [])) return true;
+        try {
+            const saved = await window.api.saveConfig({ streamers });
+            config = { ...config, streamers: saved.streamers };
+            renderStreamers();
+            return true;
+        } catch {
+            showAppToast(currentLanguage === 'de' ? 'Streamerliste konnte nicht gespeichert werden.' : 'Could not save the streamer list.', 'warn');
+            return false;
+        }
+    };
+    const pending = streamerListSaveQueue.then(save, save);
+    streamerListSaveQueue = pending;
+    return pending;
+}
+
 async function bulkRemoveStreamers(): Promise<void> {
     const all = (config.streamers ?? []) as string[];
     if (all.length === 0) return;
@@ -719,13 +979,9 @@ async function bulkRemoveStreamers(): Promise<void> {
     const messageTemplate = q ? UI_TEXT.static.streamerBulkRemoveFiltered : UI_TEXT.static.streamerBulkRemoveAll;
     if (!confirm(messageTemplate.replace('{count}', String(targets.length)))) return;
 
-    const remaining = all.filter((s) => !targets.includes(s));
-    config.streamers = remaining;
-    config = await window.api.saveConfig({ streamers: remaining });
+    if (!await persistStreamerList(current => current.filter(name => !targets.includes(name)))) return;
     if (currentStreamer && targets.includes(currentStreamer)) {
-        currentStreamer = null;
-        const hide = (window as unknown as { hideStreamerProfileHeader?: () => void }).hideStreamerProfileHeader;
-        if (typeof hide === 'function') hide();
+        clearActiveStreamerSelection();
     }
     streamerListFilterQuery = '';
     const input = document.getElementById('streamerListFilter') as HTMLInputElement | null;
@@ -765,16 +1021,15 @@ function initStreamerDragDrop(): void {
         const targetName = target.dataset.streamerName;
         if (!targetName || targetName === draggedStreamerName) return;
 
-        const streamers = [...(config.streamers ?? [])];
-        const fromIdx = streamers.indexOf(draggedStreamerName);
-        const toIdx = streamers.indexOf(targetName);
-        if (fromIdx < 0 || toIdx < 0) return;
-        const [moved] = streamers.splice(fromIdx, 1);
-        streamers.splice(toIdx, 0, moved);
-
-        config.streamers = streamers;
-        renderStreamers();
-        config = await window.api.saveConfig({ streamers });
+        const dragged = draggedStreamerName;
+        await persistStreamerList(current => {
+            const from = current.indexOf(dragged);
+            const to = current.indexOf(targetName);
+            if (from < 0 || to < 0) return current;
+            const [moved] = current.splice(from, 1);
+            current.splice(to, 0, moved);
+            return current;
+        });
     });
 
     list.addEventListener('dragend', () => {
@@ -788,46 +1043,27 @@ function initStreamerDragDrop(): void {
     });
 }
 
-async function addStreamer(): Promise<void> {
+async function addStreamer(selectedLogin?: string): Promise<boolean> {
+    if (streamerAddInFlight) return false;
     const input = byId<HTMLInputElement>('newStreamer');
-    const name = input.value.trim().toLowerCase();
-    if (!name) {
-        return;
+    const name = (selectedLogin ?? input.value).trim().toLowerCase();
+    if (!/^[a-zA-Z0-9_]{1,25}$/.test(name)) return false;
+    if ((config.streamers ?? []).includes(name)) return true;
+    streamerAddInFlight = true;
+    try {
+        if (!await persistStreamerList(current => current.includes(name) ? current : [...current, name])) return false;
+    } finally {
+        streamerAddInFlight = false;
     }
-
-    // Twitch usernames: 4-25 characters, alphanumeric + underscore.
-    // Catch typos / invalid input before it hits the API and silently
-    // returns "streamer not found".
-    if (!/^[a-zA-Z0-9_]{4,25}$/.test(name)) {
-        showAppToast(UI_TEXT.static.streamerInvalid, 'warn');
-        return;
-    }
-
-    if ((config.streamers ?? []).includes(name)) {
-        return;
-    }
-
-    config.streamers = [...(config.streamers ?? []), name];
-    config = await window.api.saveConfig({ streamers: config.streamers });
-    input.value = '';
-    renderStreamers();
     void hydrateStreamerDisplayNames();
-    await selectStreamer(name);
+    void selectStreamer(name).catch(() => showAppToast(currentLanguage === 'de' ? 'VODs konnten nicht geladen werden.' : 'Could not load VODs.', 'warn'));
+    return true;
 }
 
 async function removeStreamer(name: string): Promise<void> {
-    config.streamers = (config.streamers ?? []).filter((s: string) => s !== name);
-    config = await window.api.saveConfig({ streamers: config.streamers });
+    if (!await persistStreamerList(current => current.filter(streamer => streamer !== name))) return;
+    if (currentStreamer === name) clearActiveStreamerSelection();
     renderStreamers();
-
-    if (currentStreamer !== name) {
-        return;
-    }
-
-    currentStreamer = null;
-    const hide = (window as unknown as { hideStreamerProfileHeader?: () => void }).hideStreamerProfileHeader;
-    if (typeof hide === 'function') hide();
-    setVodGridEmptyState(byId('vodGrid'), UI_TEXT.vods.noneTitle, UI_TEXT.vods.noneText);
 }
 
 function normalizeStreamerCacheKey(name: string): string {
@@ -901,13 +1137,42 @@ function startStreamerBackgroundRefresh(): void {
     }, STREAMER_BACKGROUND_REFRESH_MS);
 }
 
+function renderVodGridLoadingState(): void {
+    byId('vodGrid').innerHTML = Array.from({ length: 6 }, () => `
+        <div class="vod-card vod-card-skeleton">
+            <div class="vod-skel-thumb"></div>
+            <div class="vod-info">
+                <div class="vod-skel-line title"></div>
+                <div class="vod-skel-line meta-1"></div>
+                <div class="vod-skel-line meta-2"></div>
+            </div>
+        </div>
+    `).join('');
+}
+
 async function selectStreamer(name: string, forceRefresh = false): Promise<void> {
+    clearActiveVodHoverPreview();
     // Save where we were on the OLD streamer before navigating away.
     rememberCurrentVodScroll();
+    cancelVodScrollRestore();
 
     const requestId = ++selectStreamerRequestId;
     const isStaleRequest = () => requestId !== selectStreamerRequestId || currentStreamer !== name;
 
+    cancelVodLoadRetry();
+    if (currentStreamer !== name) {
+        vodLoadRetryAttempt = 0;
+        vodRenderTaskId += 1;
+        lastLoadedStreamer = null;
+        lastLoadedVods = [];
+        closeVodContextMenu();
+        renderVodGridLoadingState();
+        if (selectedVodUrls.size > 0) {
+            selectedVodUrls.clear();
+            selectedVodUrlRevisions.clear();
+            updateVodBulkBar();
+        }
+    }
     currentStreamer = name;
     // Schedule a scroll-restore once the VOD grid renders. The actual
     // restore runs after renderVODs replaces the grid.
@@ -915,7 +1180,7 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
     pendingScrollRestore = (typeof savedY === 'number' && savedY > 0) ? { streamer: name, y: savedY } : null;
     renderStreamers();
     const setTitle = (window as unknown as { setPageTitle?: (text: string) => void }).setPageTitle;
-    const displayName = streamerDisplayNames.get(name.toLowerCase()) || name;
+    const displayName = getStreamerDisplayName(name);
     if (typeof setTitle === 'function') setTitle(displayName);
     else byId('pageTitle').textContent = displayName;
 
@@ -943,20 +1208,24 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
     if (cached) {
         renderVODs(cached.vods, name);
     } else {
-        byId('vodGrid').innerHTML = Array.from({ length: 6 }, () => `
-            <div class="vod-card vod-card-skeleton">
-                <div class="vod-skel-thumb"></div>
-                <div class="vod-info">
-                    <div class="vod-skel-line title"></div>
-                    <div class="vod-skel-line meta-1"></div>
-                    <div class="vod-skel-line meta-2"></div>
-                </div>
-            </div>
-        `).join('');
+        renderVodGridLoadingState();
     }
 
-    const loaded = await loadStreamerVods(name, forceRefresh);
+    let loaded: CachedStreamerVods | null;
+    try {
+        loaded = await loadStreamerVods(name, forceRefresh);
+    } catch {
+        if (isStaleRequest()) return;
+        if (cached) {
+            showAppToast(UI_TEXT.vods.refreshFailed, 'warn');
+            return;
+        }
+        setVodGridLoadError(byId('vodGrid'), name);
+        scheduleVodLoadRetry(name);
+        return;
+    }
     if (isStaleRequest()) return;
+    vodLoadRetryAttempt = 0;
 
     if (!loaded) {
         byId('vodGrid').innerHTML = `<div class="empty-state"><h3>${UI_TEXT.vods.notFound}</h3></div>`;
@@ -964,6 +1233,23 @@ async function selectStreamer(name: string, forceRefresh = false): Promise<void>
     }
 
     if (!cached || !vodCollectionsMatch(cached.vods, loaded.vods)) renderVODs(loaded.vods, name, Boolean(cached));
+}
+
+function createStreamerRemoveIcon(): SVGSVGElement {
+    const namespace = 'http://www.w3.org/2000/svg';
+    const icon = document.createElementNS(namespace, 'svg');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('width', '14');
+    icon.setAttribute('height', '14');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2.2');
+    icon.setAttribute('stroke-linecap', 'round');
+    const cross = document.createElementNS(namespace, 'path');
+    cross.setAttribute('d', 'M6 6l12 12M18 6L6 18');
+    icon.appendChild(cross);
+    return icon;
 }
 
 function createVodEmptyStateIcon(): SVGSVGElement {
@@ -996,10 +1282,41 @@ function setVodGridEmptyState(grid: HTMLElement, title: string, text: string): v
     grid.replaceChildren(wrap);
 }
 
+function setVodGridLoadError(grid: HTMLElement, streamer: string): void {
+    setVodGridEmptyState(grid, UI_TEXT.vods.loadFailedTitle, UI_TEXT.vods.loadFailedText);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn-secondary vod-load-retry';
+    retry.textContent = UI_TEXT.vods.loadRetry;
+    retry.addEventListener('click', () => {
+        if (currentStreamer !== streamer) return;
+        vodLoadRetryAttempt = 0;
+        void selectStreamer(streamer);
+    });
+    grid.querySelector('.empty-state')?.append(retry);
+}
+
+function cancelVodLoadRetry(): void {
+    if (vodLoadRetryTimer === null) return;
+    window.clearTimeout(vodLoadRetryTimer);
+    vodLoadRetryTimer = null;
+}
+
+function scheduleVodLoadRetry(streamer: string): void {
+    cancelVodLoadRetry();
+    const delay = VOD_LOAD_RETRY_DELAYS_MS[Math.min(vodLoadRetryAttempt, VOD_LOAD_RETRY_DELAYS_MS.length - 1)];
+    vodLoadRetryAttempt += 1;
+    vodLoadRetryTimer = window.setTimeout(() => {
+        vodLoadRetryTimer = null;
+        if (currentStreamer === streamer) void selectStreamer(streamer);
+    }, delay);
+}
+
 function renderVODs(vods: VOD[] | null | undefined, streamer: string, animateChanges = false): void {
     // Clear bulk-selection on streamer switch — selection is per-streamer
     if (lastLoadedStreamer && lastLoadedStreamer !== streamer && selectedVodUrls.size > 0) {
         selectedVodUrls.clear();
+        selectedVodUrlRevisions.clear();
         updateVodBulkBar();
     }
     const motion = animateChanges ? captureVodGridMotion() : undefined;
@@ -1013,7 +1330,9 @@ function renderVODs(vods: VOD[] | null | undefined, streamer: string, animateCha
     if (pendingScrollRestore && pendingScrollRestore.streamer === streamer) {
         const target = pendingScrollRestore;
         pendingScrollRestore = null;
-        window.setTimeout(() => {
+        vodScrollRestoreTimer = window.setTimeout(() => {
+            vodScrollRestoreTimer = null;
+            if (lastLoadedStreamer !== target.streamer) return;
             const grid = document.getElementById('vodGrid');
             if (!grid) return;
             const scrollable = (grid.closest('.content') as HTMLElement | null) || grid;
@@ -1092,8 +1411,16 @@ function setVodCardSelection(card: HTMLElement, selected: boolean): void {
     if (!checkbox || !url) return;
     checkbox.checked = selected;
     card.classList.toggle('selected', selected);
-    if (selected) selectedVodUrls.add(url);
-    else selectedVodUrls.delete(url);
+    if (selected !== selectedVodUrls.has(url)) {
+        vodSelectionRevision += 1;
+        if (selected) {
+            selectedVodUrls.add(url);
+            selectedVodUrlRevisions.set(url, vodSelectionRevision);
+        } else {
+            selectedVodUrls.delete(url);
+            selectedVodUrlRevisions.delete(url);
+        }
+    }
     updateVodBulkBar();
 }
 
@@ -1105,14 +1432,28 @@ function toggleVodCardSelection(card: HTMLElement): void {
 
 let activeVodContextMenu: HTMLElement | null = null;
 let activeVodContextMenuInvoker: HTMLElement | null = null;
+let activeVodContextMenuCleanup: (() => void) | null = null;
 
 function closeVodContextMenu(restoreFocus = false): void {
+    const cleanup = activeVodContextMenuCleanup;
+    activeVodContextMenuCleanup = null;
+    cleanup?.();
     if (!activeVodContextMenu) return;
     activeVodContextMenu.remove();
     activeVodContextMenu = null;
     const invoker = activeVodContextMenuInvoker;
     activeVodContextMenuInvoker = null;
     if (restoreFocus && invoker?.isConnected) invoker.focus();
+}
+
+async function copyVodUrl(url: string): Promise<void> {
+    const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
+    try {
+        await navigator.clipboard.writeText(url);
+        if (toast) toast(UI_TEXT.vods.ctxCopiedUrl, 'info');
+    } catch {
+        if (toast) toast(UI_TEXT.vods.ctxCopyFailed, 'warn');
+    }
 }
 
 function showVodContextMenu(x: number, y: number, ctx: VodCardContext, invoker: HTMLElement | null): void {
@@ -1129,7 +1470,7 @@ function showVodContextMenu(x: number, y: number, ctx: VodCardContext, invoker: 
     );
     const isMarkedDownloaded = downloadedIds.has(ctx.id);
 
-    let cleanup = (restoreFocus = false): void => closeVodContextMenu(restoreFocus);
+    const cleanup = (restoreFocus = false): void => closeVodContextMenu(restoreFocus);
     const makeItem = (label: string, onClick: () => void): HTMLElement => {
         const el = document.createElement('button');
         el.type = 'button';
@@ -1146,11 +1487,7 @@ function showVodContextMenu(x: number, y: number, ctx: VodCardContext, invoker: 
         void window.api.openExternal(ctx.url);
     }));
     menu.appendChild(makeItem(UI_TEXT.vods.ctxCopyUrl, () => {
-        try {
-            void navigator.clipboard.writeText(ctx.url);
-            const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
-            if (toast) toast(UI_TEXT.vods.ctxCopiedUrl, 'info');
-        } catch { /* ignore */ }
+        void copyVodUrl(ctx.url);
     }));
     menu.appendChild(makeItem(UI_TEXT.vods.trimButton, () => {
         openClipDialog(ctx.url, ctx.title, ctx.date, ctx.streamer, ctx.duration);
@@ -1182,8 +1519,7 @@ function showVodContextMenu(x: number, y: number, ctx: VodCardContext, invoker: 
         cleanup();
     };
     const dismissOnScroll = () => cleanup();
-    cleanup = (restoreFocus = false): void => {
-        closeVodContextMenu(restoreFocus);
+    activeVodContextMenuCleanup = () => {
         document.removeEventListener('mousedown', dismissOnClick, true);
         document.removeEventListener('scroll', dismissOnScroll, true);
     };
@@ -1216,8 +1552,34 @@ function updateVodBulkBar(): void {
 function clearVodSelection(): void {
     if (selectedVodUrls.size === 0) return;
     selectedVodUrls.clear();
+    selectedVodUrlRevisions.clear();
     updateVodBulkBar();
     if (lastLoadedStreamer) renderVodGridFromCurrentState();
+}
+
+function removeVodSelectionIfUnchanged(url: string, revision: number | undefined): void {
+    if (!selectedVodUrls.has(url) || selectedVodUrlRevisions.get(url) !== revision) return;
+    selectedVodUrls.delete(url);
+    selectedVodUrlRevisions.delete(url);
+}
+
+function setVodBulkActionsDisabled(disabled: boolean): void {
+    for (const id of ['vodBulkAddBtn', 'vodBulkMarkBtn', 'vodBulkUnmarkBtn']) {
+        const button = document.getElementById(id) as HTMLButtonElement | null;
+        if (button) button.disabled = disabled;
+    }
+}
+
+function beginVodBulkOperation(): boolean {
+    if (vodBulkOperationInFlight) return false;
+    vodBulkOperationInFlight = true;
+    setVodBulkActionsDisabled(true);
+    return true;
+}
+
+function endVodBulkOperation(): void {
+    vodBulkOperationInFlight = false;
+    setVodBulkActionsDisabled(false);
 }
 
 async function toggleAutoRecord(streamer: string): Promise<void> {
@@ -1280,76 +1642,137 @@ async function triggerLiveRecording(streamer: string): Promise<void> {
 async function bulkMarkSelectedDownloaded(mark: boolean): Promise<void> {
     const urls = Array.from(selectedVodUrls);
     if (urls.length === 0) return;
+    if (!beginVodBulkOperation()) return;
+    const vods = new Map(lastLoadedVods.map((vod) => [vod.url, { id: vod.id }]));
+    const selectionRevisions = new Map(urls.map((url) => [url, selectedVodUrlRevisions.get(url)]));
 
-    let updated = 0;
-    for (const url of urls) {
-        const vod = lastLoadedVods.find((v) => v.url === url);
-        if (!vod || !vod.id) continue;
-        try {
-            const result = await window.api.markVodDownloaded(vod.id, mark);
-            if (result?.success) updated++;
-        } catch { /* keep going */ }
-    }
+    try {
+        let updated = 0;
+        let failed = 0;
+        for (const url of urls) {
+            const vod = vods.get(url);
+            if (!vod || !vod.id) {
+                failed++;
+                continue;
+            }
+            try {
+                const result = await window.api.markVodDownloaded(vod.id, mark);
+                if (result?.success) {
+                    updated++;
+                    removeVodSelectionIfUnchanged(url, selectionRevisions.get(url));
+                } else {
+                    failed++;
+                }
+            } catch {
+                failed++;
+            }
+        }
 
-    if (updated === 0) return;
+        updateVodBulkBar();
+        if (updated > 0) {
+            try { config = await window.api.getConfig(); } catch { /* ignore */ }
+            if (lastLoadedStreamer) renderVodGridFromCurrentState();
+        }
 
-    try { config = await window.api.getConfig(); } catch { /* ignore */ }
-    selectedVodUrls.clear();
-    updateVodBulkBar();
-    if (lastLoadedStreamer) renderVodGridFromCurrentState();
-
-    const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
-    if (toast) {
-        const template = mark ? UI_TEXT.vods.bulkMarkedDownloaded : UI_TEXT.vods.bulkUnmarkedDownloaded;
-        toast(template.replace('{count}', String(updated)), 'info');
+        const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
+        if (toast && updated > 0 && failed === 0) {
+            const template = updated === 1
+                ? (mark ? UI_TEXT.vods.bulkMarkedDownloadedOne : UI_TEXT.vods.bulkUnmarkedDownloadedOne)
+                : (mark ? UI_TEXT.vods.bulkMarkedDownloaded : UI_TEXT.vods.bulkUnmarkedDownloaded);
+            toast(template.replace('{count}', String(updated)), 'info');
+        } else if (toast && updated === 0 && failed > 0) {
+            const template = failed === 1 ? UI_TEXT.vods.bulkMarkFailedOne : UI_TEXT.vods.bulkMarkFailed;
+            toast(template.replace('{count}', String(failed)), 'warn');
+        } else if (toast && updated > 0 && failed > 0) {
+            toast(UI_TEXT.vods.bulkMarkResult
+                .replace('{updated}', String(updated))
+                .replace('{failed}', String(failed)), 'warn');
+        }
+    } finally {
+        endVodBulkOperation();
     }
 }
 
 async function bulkAddSelectedVodsToQueue(): Promise<void> {
     const urls = Array.from(selectedVodUrls);
     if (urls.length === 0 || !lastLoadedStreamer) return;
+    if (!beginVodBulkOperation()) return;
     const streamer = lastLoadedStreamer;
+    const vods = new Map(lastLoadedVods.map((vod) => [vod.url, {
+        url: vod.url,
+        title: vod.title,
+        date: vod.created_at,
+        streamer,
+        duration_str: vod.duration
+    }]));
+    const selectionRevisions = new Map(urls.map((url) => [url, selectedVodUrlRevisions.get(url)]));
 
     const btn = document.getElementById('vodBulkAddBtn') as HTMLButtonElement | null;
     const originalText = btn?.textContent || '';
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = UI_TEXT.vods.bulkAdding;
-    }
+    if (btn) btn.textContent = UI_TEXT.vods.bulkAdding;
 
-    let added = 0;
-    let skipped = 0;
-    for (const url of urls) {
-        const vod = lastLoadedVods.find((v) => v.url === url);
-        if (!vod) { skipped++; continue; }
-        try {
-            queue = await window.api.addToQueue({
-                url: vod.url,
-                title: vod.title,
-                date: vod.created_at,
-                streamer,
-                duration_str: vod.duration
-            });
-            added++;
-        } catch {
-            skipped++;
+    try {
+        let added = 0;
+        let duplicates = 0;
+        let invalid = 0;
+        let failed = 0;
+        for (const [index, url] of urls.entries()) {
+            const vod = vods.get(url);
+            if (!vod) {
+                invalid++;
+                removeVodSelectionIfUnchanged(url, selectionRevisions.get(url));
+                continue;
+            }
+            try {
+                const result = await window.api.addToQueueWithResult(vod);
+                if (result.accepted) {
+                    added++;
+                } else if (result.reason === 'duplicate') {
+                    duplicates++;
+                } else if (result.reason === 'invalid') {
+                    invalid++;
+                } else {
+                    failed++;
+                    if (result.reason === 'shutting-down' || result.reason === 'access-denied') {
+                        failed += urls.length - index - 1;
+                        break;
+                    }
+                    continue;
+                }
+                removeVodSelectionIfUnchanged(url, selectionRevisions.get(url));
+            } catch {
+                failed++;
+            }
         }
-    }
 
-    selectedVodUrls.clear();
-    if (btn) {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-    updateVodBulkBar();
-    renderQueue();
-    renderVodGridFromCurrentState();
+        updateVodBulkBar();
+        renderQueue();
+        if (lastLoadedStreamer === streamer) renderVodGridFromCurrentState();
 
-    const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
-    if (toast && added > 0) {
-        toast(UI_TEXT.vods.bulkAddedToQueue.replace('{count}', String(added)), 'info');
-    } else if (toast && skipped > 0) {
-        toast(UI_TEXT.vods.bulkAddSkipped, 'warn');
+        const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
+        const categoryCount = Number(added > 0) + Number(duplicates > 0) + Number(invalid > 0) + Number(failed > 0);
+        if (toast && categoryCount === 1 && added > 0) {
+            const template = added === 1 ? UI_TEXT.vods.bulkAddedToQueueOne : UI_TEXT.vods.bulkAddedToQueue;
+            toast(template.replace('{count}', String(added)), 'info');
+        } else if (toast && categoryCount === 1 && duplicates > 0) {
+            const template = duplicates === 1 ? UI_TEXT.vods.bulkAddDuplicateOne : UI_TEXT.vods.bulkAddDuplicate;
+            toast(template.replace('{count}', String(duplicates)), 'warn');
+        } else if (toast && categoryCount === 1 && invalid > 0) {
+            const template = invalid === 1 ? UI_TEXT.vods.bulkAddInvalidOne : UI_TEXT.vods.bulkAddInvalid;
+            toast(template.replace('{count}', String(invalid)), 'warn');
+        } else if (toast && categoryCount === 1 && failed > 0) {
+            const template = failed === 1 ? UI_TEXT.vods.bulkAddFailedOne : UI_TEXT.vods.bulkAddFailed;
+            toast(template.replace('{count}', String(failed)), 'warn');
+        } else if (toast && categoryCount > 1) {
+            toast(UI_TEXT.vods.bulkAddResult
+                .replace('{added}', String(added))
+                .replace('{duplicates}', String(duplicates))
+                .replace('{invalid}', String(invalid))
+                .replace('{failed}', String(failed)), 'warn');
+        }
+    } finally {
+        if (btn) btn.textContent = originalText;
+        endVodBulkOperation();
     }
 }
 
@@ -1395,10 +1818,12 @@ function animateVodGridMotion(motion: VodGridMotion): void {
 }
 
 function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
+    clearActiveVodHoverPreview();
     if (!lastLoadedStreamer) return;
 
     const grid = byId('vodGrid');
     const renderTaskId = ++vodRenderTaskId;
+    vodGridSizeObservers.get(grid)?.disconnect();
     const total = lastLoadedVods.length;
 
     if (total === 0) {
@@ -1417,6 +1842,12 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
         ? sorted.filter((vod) => !downloadedIdsForFilter.has(vod.id))
         : sorted;
     const filtered = filterVodsByQuery(sortedAndHidden, vodFilterQuery);
+
+    if (filtered.length === 0 && vodHideDownloaded && sortedAndHidden.length === 0 && !vodFilterQuery.trim()) {
+        setVodGridEmptyState(grid, UI_TEXT.vods.hideDownloadedEmptyTitle, UI_TEXT.vods.hideDownloadedEmptyText);
+        updateVodFilterCount(0, total);
+        return;
+    }
 
     if (filtered.length === 0 && vodFilterQuery.trim()) {
         setVodGridEmptyState(grid, UI_TEXT.vods.filterNoMatchTitle, UI_TEXT.vods.filterNoMatchText);
@@ -1453,6 +1884,7 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
         }
 
         grid.insertAdjacentHTML('beforeend', chunk.map((vod) => buildVodCardHtml(vod, lastLoadedStreamer || '', downloadedIds)).join(''));
+        if (startIndex === 0) observeVodGridCardSize(grid);
 
         if (startIndex + chunk.length < filtered.length) {
             scheduleNextChunk(startIndex + chunk.length);
@@ -1464,12 +1896,74 @@ function renderVodGridFromCurrentState(motion?: VodGridMotion): void {
     renderChunk(0);
 }
 
-async function refreshVODs(): Promise<void> {
-    if (!currentStreamer) {
-        return;
-    }
+const vodGridSizeObservers = new WeakMap<HTMLElement, ResizeObserver>();
 
-    await selectStreamer(currentStreamer, true);
+function observeVodGridCardSize(grid: HTMLElement): void {
+    if (typeof ResizeObserver !== 'function') return;
+    const first = grid.querySelector<HTMLElement>('.vod-card');
+    if (!first) return;
+    let references: HTMLElement[] = [];
+    let width = -1;
+    let updateQueued = false;
+    const updateHeight = (): void => {
+        let rowHeight = 0;
+        const height = Math.max(...references.map((card) => {
+            const style = getComputedStyle(card);
+            const edges = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            const contentHeight = parseFloat(style.height) - (style.boxSizing === 'border-box' ? edges : 0);
+            rowHeight = Math.max(rowHeight, contentHeight + edges);
+            return contentHeight;
+        }));
+        if (height > 0 && rowHeight > 0) {
+            grid.style.setProperty('--vod-card-content-height', Math.ceil(height * 64) / 64 + 'px');
+            grid.style.setProperty('--vod-card-row-height', Math.ceil(rowHeight * 64) / 64 + 'px');
+        }
+    };
+    const updateReferences = (): void => {
+        width = grid.getBoundingClientRect().width;
+        const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+        references.forEach((card) => {
+            observer.unobserve(card);
+            card.removeAttribute('data-vod-size-reference');
+        });
+        references = Array.from(grid.querySelectorAll<HTMLElement>('.vod-card')).slice(0, Math.max(1, columns));
+        references.forEach((card) => {
+            card.setAttribute('data-vod-size-reference', '');
+            observer.observe(card);
+        });
+        updateHeight();
+    };
+    const observer = new ResizeObserver((entries) => {
+        if (!first.isConnected || first.parentElement !== grid) return;
+        if (updateQueued || !entries.some((entry) => entry.target !== grid || entry.contentRect.width !== width)) return;
+        updateQueued = true;
+        requestAnimationFrame(() => {
+            updateQueued = false;
+            if (!first.isConnected || first.parentElement !== grid) return;
+            if (grid.getBoundingClientRect().width !== width) updateReferences();
+            else updateHeight();
+        });
+    });
+    vodGridSizeObservers.set(grid, observer);
+    updateReferences();
+    observer.observe(grid);
+}
+
+let vodRefreshInFlight = false;
+
+async function refreshVODs(): Promise<void> {
+    if (!currentStreamer || vodRefreshInFlight) return;
+    vodRefreshInFlight = true;
+    syncVodRefreshButton();
+    try { await selectStreamer(currentStreamer, true); }
+    finally { vodRefreshInFlight = false; syncVodRefreshButton(); }
+}
+
+function syncVodRefreshButton(): void {
+    const button = document.getElementById('toolbarRefreshVodsBtn') as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = vodRefreshInFlight || !currentStreamer;
+    button.classList.toggle('is-loading', vodRefreshInFlight);
 }
 
 (window as unknown as {

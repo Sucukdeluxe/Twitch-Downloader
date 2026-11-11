@@ -172,7 +172,7 @@ async function run() {
           commitCutterChange(before);
         });
         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-        await win.waitForFunction(() => document.body.textContent.includes('Projekt konnte nicht gespeichert werden'));
+        await win.waitForFunction(() => document.body.textContent.includes(UI_TEXT.cutter.projectSaveFailed));
         assert.equal(win.isClosed(), false);
         fs.rmdirSync(blockedTemporaryFile);
         await closeElectronWindow(app, win);
@@ -193,6 +193,11 @@ async function run() {
     fs.writeFileSync(path.join(environment.mediaDir, 'invalid.ts'), Buffer.alloc(32768, 42));
     fs.writeFileSync(path.join(environment.mediaDir, 'invalid.m3u8'), '#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:3,\ninvalid.ts\n#EXT-X-ENDLIST\n');
     server = http.createServer((request, response) => {
+      if (new URL(request.url, 'http://localhost').pathname === '/slow.m3u8') {
+        response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+        response.flushHeaders();
+        return; // The clip cancellation test deliberately interrupts this pending transfer.
+      }
       const file = path.join(environment.mediaDir, path.basename(new URL(request.url, 'http://localhost').pathname));
       if (!fs.existsSync(file)) { response.writeHead(404).end(); return; }
       fs.createReadStream(file).pipe(response);
@@ -203,14 +208,19 @@ async function run() {
       const axios = appRequire('axios').default;
       const childProcess = appRequire('node:child_process');
       const original = { get: axios.get, post: axios.post, spawn: childProcess.spawn };
-      axios.post = async (url, ...args) => String(url).includes('/oauth2/token')
-        ? { data: { access_token: 'audit-fixture-token' } } : original.post.call(axios, url, ...args);
+      axios.post = async (url, ...args) => {
+        if (String(url).includes('/oauth2/token')) return { data: { access_token: 'audit-fixture-token' } };
+        if (String(url) === 'https://gql.twitch.tv/gql' && String(args[0]?.query).includes('clip(slug:')) {
+          return { data: { data: { clip: { title: 'Local fixture', broadcaster: { login: 'audit' } } } } };
+        }
+        return original.post.call(axios, url, ...args);
+      };
       axios.get = async (url, ...args) => String(url).includes('/helix/clips')
         ? { data: { data: [{ broadcaster_name: 'audit', title: 'Local fixture' }] } } : original.get.call(axios, url, ...args);
       childProcess.spawn = (command, args, spawnOptions) => {
         const isFixture = (arg) => String(arg).startsWith('https://clips.twitch.tv/') || arg === 'https://www.twitch.tv/videos/2222222';
         if (args.some(isFixture)) {
-          args = args.map((arg) => isFixture(arg) ? `hls://http://localhost:${port}/${String(arg).endsWith('AuditInvalid') ? 'invalid' : String(arg).endsWith('AuditMuxed') ? 'muxed' : 'index'}.m3u8` : arg);
+          args = args.map((arg) => isFixture(arg) ? `hls://http://localhost:${port}/${String(arg).endsWith('AuditSlow') ? 'slow' : String(arg).endsWith('AuditInvalid') ? 'invalid' : String(arg).endsWith('AuditMuxed') ? 'muxed' : 'index'}.m3u8` : arg);
           spawnOptions = { ...spawnOptions, env: { ...process.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
         }
         return original.spawn(command, args, spawnOptions);
@@ -226,7 +236,7 @@ async function run() {
     });
     await check('clip-as-first-download', async () => {
       assert.equal(fs.existsSync(ffmpeg), false);
-      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditFixture'));
+      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditFixture', crypto.randomUUID()));
       assert.equal(result.success, true, JSON.stringify(result));
       assert(fs.existsSync(ffprobe), 'First clip must install its integrity checker');
       const probe = await execute(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', result.filename]);
@@ -236,14 +246,28 @@ async function run() {
     // The negative case must have working tools even when the first-use test failed.
     await win.evaluate(() => window.api.runPreflight(true));
     await check('separate-audio-video-streams-use-private-ffmpeg', async () => {
-      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditMuxed'));
+      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditMuxed', crypto.randomUUID()));
       assert.equal(result.success, true, JSON.stringify(result));
       const probe = await execute(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', result.filename]);
       assert.deepEqual(JSON.parse(probe.stdout).streams.map((stream) => stream.codec_type).sort(), ['audio', 'video']);
       return true;
     });
+    await check('active-clip-survives-window-reopen-and-can-be-cancelled', async () => {
+      const requestId = 'mac-reopen-clip';
+      await win.evaluate((id) => { void window.api.downloadClip('https://clips.twitch.tv/AuditSlow', id); }, requestId);
+      await win.waitForFunction(async (id) => (await window.api.getWorkspaceSession()).activeClip?.requestId === id, requestId);
+      await closeElectronWindow(app, win);
+      win = await activateElectronWindow(app);
+      assert.equal((await win.evaluate(() => window.api.getWorkspaceSession())).activeClip?.requestId, requestId);
+      await win.evaluate(() => { window.__reopenedClipProgress = []; window.api.onClipProgress(progress => window.__reopenedClipProgress.push(progress)); });
+      await win.waitForFunction((id) => window.__reopenedClipProgress.some(progress => progress.requestId === id), requestId);
+      assert.equal(await win.evaluate((id) => window.api.cancelClipDownload(id), requestId), true);
+      await win.waitForFunction(async () => !(await window.api.getWorkspaceSession()).activeClip);
+      assert.equal((await win.evaluate(() => window.__reopenedClipProgress)).at(-1).state, 'stopped');
+      return true;
+    });
     await check('invalid-video-is-not-published', async () => {
-      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditInvalid'));
+      const result = await win.evaluate(() => window.api.downloadClip('https://clips.twitch.tv/AuditInvalid', crypto.randomUUID()));
       assert.equal(result.success, false, 'Streamlink exit 0 published bytes that FFprobe cannot parse');
       const files = fs.readdirSync(path.join(environment.downloadsDir, 'Clips', 'audit'));
       assert(!files.some((file) => file.includes('.part')));
@@ -311,7 +335,8 @@ async function run() {
     });
     await app.close(); app = null;
     app = await electron.launch(options);
-    win = await app.firstWindow();
+    await app.firstWindow();
+    win = await activateElectronWindow(app);
     await check('secret-read-failure-preserves-config-and-queue', async () => {
       const config = await win.evaluate(() => window.api.getConfig());
       assert.equal(config.theme, 'light', 'Failed secret decryption reset ordinary preferences');
@@ -322,8 +347,8 @@ async function run() {
         return appRequire('./dist/main.js').getAppDb()?.get("SELECT encrypted_value FROM app_secrets WHERE key='twitch_client_secret'");
       });
       assert.equal(stored.encrypted_value, 'not-decryptable-fixture');
-      await win.evaluate(async () => { await window.api.saveConfig({ ...(await window.api.getConfig()), theme: 'dark' }); });
-      assert.equal((await win.evaluate(() => window.api.getConfig())).theme, 'dark');
+      await win.evaluate(async () => { await window.api.saveConfig({ ...(await window.api.getConfig()), theme: 'twitch' }); });
+      assert.equal((await win.evaluate(() => window.api.getConfig())).theme, 'twitch');
       return true;
     });
     const encryption = await app.evaluate(({ app: nativeApp }) => {

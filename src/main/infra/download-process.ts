@@ -40,7 +40,7 @@ function groupExists(pid: number): boolean {
     }
 }
 
-export function waitForDownloadProcessExit(child: ChildProcess, forceKillAfterMs: number): Promise<void> | undefined {
+export function waitForDownloadProcessExit(child: ChildProcess, forceKillAfterMs: number, confirmExitAfterKillMs = forceKillAfterMs): Promise<void> | undefined {
     const group = groups.get(child);
     if (!group) return undefined;
     if (group.waiting) return group.waiting;
@@ -54,7 +54,7 @@ export function waitForDownloadProcessExit(child: ChildProcess, forceKillAfterMs
                 killDownloadProcess(child, 'SIGKILL');
                 forced = true;
             }
-            if (Date.now() >= deadline + 2000) throw new Error('Download process group did not exit after SIGKILL');
+            if (Date.now() >= deadline + confirmExitAfterKillMs) throw new Error('Download process group did not exit after SIGKILL');
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
     })();

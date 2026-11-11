@@ -1,3 +1,4 @@
+import { validAudioProcessing, type AudioProcessingOptions } from './audio-processing';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { writeFileAtomicSync } from '../infra/fs-atomic';
@@ -10,6 +11,9 @@ export interface CutterProjectSource {
 }
 
 export interface CutterProject {
+    audioProcessing?: AudioProcessingOptions;
+    allAudioStreams?: boolean;
+    colorMode?: 'source' | 'sdr';
     source: CutterProjectSource;
     duration: number;
     fps: number;
@@ -30,6 +34,7 @@ function cloneProject(project: CutterProject): CutterProject {
     return {
         ...project,
         source: { ...project.source },
+        ...(project.audioProcessing ? { audioProcessing: { ...project.audioProcessing } } : {}),
         cuts: project.cuts.map((cut) => ({ ...cut })),
     };
 }
@@ -54,7 +59,9 @@ function isProjectSource(value: unknown): value is CutterProjectSource {
 function isProject(value: unknown): value is CutterProject {
     if (!value || typeof value !== 'object') return false;
     const project = value as Record<string, unknown>;
-    return isProjectSource(project.source)
+    return (project.allAudioStreams === undefined || typeof project.allAudioStreams === 'boolean')
+        && (project.colorMode === undefined || project.colorMode === 'source' || project.colorMode === 'sdr')
+        && isProjectSource(project.source)
         && typeof project.duration === 'number'
         && Number.isFinite(project.duration)
         && project.duration > 0
@@ -76,7 +83,8 @@ function isProject(value: unknown): value is CutterProject {
         && (project.encoder === 'software' || project.encoder === 'h264_nvenc' || project.encoder === 'h264_qsv' || project.encoder === 'h264_amf' || project.encoder === 'h264_videotoolbox')
         && typeof project.audioStreamIndex === 'number'
         && Number.isInteger(project.audioStreamIndex)
-        && project.audioStreamIndex >= 0;
+        && project.audioStreamIndex >= 0
+        && validAudioProcessing(project.audioProcessing, Number(project.trimEnd) - Number(project.trimStart) - (project.cuts as Array<{start:number;end:number}>).reduce((sum, cut) => sum + cut.end - cut.start, 0));
 }
 
 function readDocument(filePath: string): CutterProjectDocument {

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { DbHandle } from '../infra/db';
 import { createAppStateStore } from './app-state-store';
+import { isSecretBearingKey } from './config-export';
 import type { SecretStore } from './secret-store';
 
 export interface MigratorOptions {
@@ -26,7 +27,19 @@ export interface MigrationResult {
 }
 
 const MIGRATION_NAME = 'authoritative-state-v1';
-const SECRET_KEYS = new Set(['client_secret', 'discord_webhook_url']);
+function normalizeSecretKey(key: string): string {
+    return key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function findLegacySecret(config: Record<string, unknown>, canonicalKey: string): string | null {
+    const canonicalValue = config[canonicalKey];
+    if (typeof canonicalValue === 'string' && canonicalValue) return canonicalValue;
+    const normalizedKey = normalizeSecretKey(canonicalKey);
+    for (const [key, value] of Object.entries(config)) {
+        if (normalizeSecretKey(key) === normalizedKey && typeof value === 'string' && value) return value;
+    }
+    return null;
+}
 
 function readJson<T>(filePath: string, source: string, errors: MigrationError[]): T | undefined {
     if (!fs.existsSync(filePath)) return undefined;
@@ -39,7 +52,7 @@ function readJson<T>(filePath: string, source: string, errors: MigrationError[])
 }
 
 function withoutSecrets(config: Record<string, unknown>): Record<string, unknown> {
-    return Object.fromEntries(Object.entries(config).filter(([key]) => !SECRET_KEYS.has(key)));
+    return Object.fromEntries(Object.entries(config).filter(([key]) => !isSecretBearingKey(key)));
 }
 
 function writeJsonAtomic(filePath: string, value: unknown): void {
@@ -60,9 +73,23 @@ function scrubConfigFiles(configPath: string, config: Record<string, unknown>): 
 }
 
 function scrubExistingConfig(configPath: string): void {
-    if (!fs.existsSync(configPath)) return;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-    scrubConfigFiles(configPath, config);
+    for (const candidate of [configPath, `${configPath}.v4-backup`]) {
+        if (!fs.existsSync(candidate)) continue;
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(fs.readFileSync(candidate, 'utf-8'));
+        } catch {
+            fs.rmSync(candidate, { force: true });
+            continue;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            fs.rmSync(candidate, { force: true });
+            continue;
+        }
+        const config = parsed as Record<string, unknown>;
+        const sanitized = withoutSecrets(config);
+        if (JSON.stringify(config) !== JSON.stringify(sanitized)) writeJsonAtomic(candidate, sanitized);
+    }
 }
 
 function emptyResult(alreadyApplied: boolean, errors: MigrationError[] = []): MigrationResult {
@@ -82,6 +109,11 @@ export function migrateJsonToSqlite(opts: MigratorOptions): MigrationResult {
     const queuePath = path.join(appDataDir, 'download_queue.json');
     const existing = db.get<{ name: string }>('SELECT name FROM migrations_applied WHERE name = ?', [MIGRATION_NAME]);
     if (existing) {
+        try {
+            scrubExistingConfig(configPath);
+        } catch (error) {
+            return emptyResult(true, [{ source: 'legacy-config-scrub', message: error instanceof Error ? error.message : String(error) }]);
+        }
         return emptyResult(true);
     }
 
@@ -97,17 +129,18 @@ export function migrateJsonToSqlite(opts: MigratorOptions): MigrationResult {
     if (configExists && (!config || typeof config !== 'object' || Array.isArray(config))) {
         return emptyResult(false, [{ source: 'config.json', message: 'Config JSON must be an object' }]);
     }
-    if (config && !secrets && [...SECRET_KEYS].some((key) => typeof config[key] === 'string' && config[key])) {
+    const clientSecret = config ? findLegacySecret(config, 'client_secret') : null;
+    const webhookUrl = config ? findLegacySecret(config, 'discord_webhook_url') : null;
+    if ((clientSecret || webhookUrl) && !secrets) {
         return emptyResult(false, [{ source: 'migration', message: 'Secure secret storage is required for plaintext secret migration' }]);
     }
-    if (config && requireEncryption && [...SECRET_KEYS].some((key) => typeof config[key] === 'string' && config[key]) && !secrets?.status().encryptionAvailable) {
+    if ((clientSecret || webhookUrl) && requireEncryption && !secrets?.status().encryptionAvailable) {
         return emptyResult(false, [{ source: 'migration', message: 'OS secret encryption is unavailable' }]);
     }
 
     const state = createAppStateStore(db);
     let downloadedVodsCount = 0;
     let streamersCount = 0;
-    let configScrubbed = false;
     try {
         db.transaction(() => {
             if (configExists && config) {
@@ -115,12 +148,8 @@ export function migrateJsonToSqlite(opts: MigratorOptions): MigrationResult {
                 downloadedVodsCount = Array.isArray(config.downloaded_vod_ids)
                     ? config.downloaded_vod_ids.filter((value) => typeof value === 'string' && value).length
                     : 0;
-                if (typeof config.client_secret === 'string' && config.client_secret) {
-                    secrets!.set('twitch_client_secret', config.client_secret);
-                }
-                if (typeof config.discord_webhook_url === 'string' && config.discord_webhook_url) {
-                    secrets!.set('discord_webhook_url', config.discord_webhook_url);
-                }
+                if (clientSecret) secrets!.set('twitch_client_secret', clientSecret);
+                if (webhookUrl) secrets!.set('discord_webhook_url', webhookUrl);
             }
             if (queueExists) state.saveQueue(queue as Array<Record<string, unknown>>);
             streamersCount = db.get<{ count: number }>('SELECT COUNT(*) AS count FROM streamers')?.count ?? 0;
@@ -129,18 +158,24 @@ export function migrateJsonToSqlite(opts: MigratorOptions): MigrationResult {
                 [MIGRATION_NAME, JSON.stringify({ configMigrated: configExists, queueMigrated: queueExists, downloadedVodsCount, streamersCount })]
             );
             if (queueExists) backupJson(queuePath, queue);
-            if (configExists && config) {
-                scrubConfigFiles(configPath, config);
-                configScrubbed = true;
-            }
         });
     } catch (error) {
-        if (configScrubbed && config) {
-            try {
-                writeJsonAtomic(configPath, config);
-            } catch { }
-        }
         return emptyResult(false, [{ source: 'migration', message: error instanceof Error ? error.message : String(error) }]);
+    }
+
+    if (configExists && config) {
+        try {
+            scrubConfigFiles(configPath, config);
+        } catch (error) {
+            return {
+                alreadyApplied: false,
+                configMigrated: true,
+                queueMigrated: queueExists,
+                downloadedVodsCount,
+                streamersCount,
+                errors: [{ source: 'legacy-config-scrub', message: error instanceof Error ? error.message : String(error) }],
+            };
+        }
     }
 
     return {

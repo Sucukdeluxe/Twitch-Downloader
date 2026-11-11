@@ -1,5 +1,6 @@
 let updateCheckInProgress = false;
 let updateDownloadInProgress = false;
+let updateDownloadOperation: { failureHandled: boolean } | null = null;
 let manualUpdateCheckPending = false;
 let manualUpdateOutcomeHandled = false;
 let latestUpdateVersion = '';
@@ -11,6 +12,44 @@ let shouldOpenUpdateModalOnAvailable = false;
 let workspaceUpdatePopoverPostponed = false;
 
 const SKIPPED_UPDATE_VERSION_KEY = 'twitch-vod-manager:skipped-update-version';
+
+const DEVELOPMENT_UPDATE_PREVIEW_KEY = 'twitch-downloader:development-update-preview';
+
+function getDevelopmentUpdatePreview(): UpdateInfo | null {
+    if (typeof location === 'undefined' || new URLSearchParams(location.search).get('development') !== '1') return null;
+    try {
+        const info: unknown = JSON.parse(safeLocalStorageGet(DEVELOPMENT_UPDATE_PREVIEW_KEY));
+        if (!info || typeof info !== 'object' || !('version' in info) || typeof info.version !== 'string') return null;
+        return info as UpdateInfo;
+    } catch {
+        return null;
+    }
+}
+
+function restoreDevelopmentUpdatePreview(): boolean {
+    const info = getDevelopmentUpdatePreview();
+    if (!info) return false;
+    updateCheckInProgress = false;
+    updateDownloadInProgress = false;
+    updateDownloadOperation = null;
+    setCheckButtonCheckingState(false);
+    setUpdateBannerAvailableUi(info);
+    return true;
+}
+
+function setDevelopmentUpdatePreview(info: UpdateInfo | null): void {
+    if (new URLSearchParams(location.search).get('development') !== '1') return;
+    if (info) {
+        safeLocalStorageSet(DEVELOPMENT_UPDATE_PREVIEW_KEY, JSON.stringify(info));
+        restoreDevelopmentUpdatePreview();
+    } else {
+        safeLocalStorageRemove(DEVELOPMENT_UPDATE_PREVIEW_KEY);
+        latestUpdateInfo = null;
+        latestUpdateVersion = '';
+        dismissUpdateModal();
+        hideUpdateBanner();
+    }
+}
 
 function getSkippedUpdateVersion(): string {
     return safeLocalStorageGet(SKIPPED_UPDATE_VERSION_KEY);
@@ -33,18 +72,19 @@ function notifyUpdate(message: string, type: 'info' | 'warn' = 'info'): void {
     }
 }
 
-function rememberUpdateInfo(info?: UpdateInfo | null): UpdateInfo {
-    const version = info?.version || latestUpdateVersion || latestUpdateInfo?.version || '?';
+function rememberUpdateInfo(info?: UpdateInfo | null): UpdateInfo | null {
+    const version = (info?.version || latestUpdateVersion || latestUpdateInfo?.version || '').trim();
+    if (!version) return null;
     latestUpdateVersion = version;
     latestUpdateInfo = {
-        ...(latestUpdateInfo || { version }),
+        ...(latestUpdateInfo?.version === version ? latestUpdateInfo : { version }),
         ...(info || {}),
         version
     };
     return latestUpdateInfo;
 }
 
-function getActiveUpdateInfo(): UpdateInfo {
+function getActiveUpdateInfo(): UpdateInfo | null {
     return rememberUpdateInfo();
 }
 
@@ -62,24 +102,10 @@ function formatReleaseDate(dateValue?: string): string {
         return '';
     }
 
-    return new Intl.DateTimeFormat(getIntlLocale(), { dateStyle: 'medium' }).format(parsed);
-}
-
-function getUpdateModalMetaText(info: UpdateInfo): string {
-    const parts: string[] = [];
-    const releaseName = (info.releaseName || '').trim();
-    const canonicalNames = new Set([info.version, `v${info.version}`]);
-
-    if (releaseName && !canonicalNames.has(releaseName)) {
-        parts.push(`${UI_TEXT.updates.releasedLabel}: ${releaseName}`);
-    }
-
-    const formattedDate = formatReleaseDate(info.releaseDate);
-    if (formattedDate) {
-        parts.push(formattedDate);
-    }
-
-    return parts.join(' | ');
+    const locale = getIntlLocale();
+    const date = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(parsed);
+    const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsed);
+    return `${date} · ${time}`;
 }
 
 function setCheckButtonCheckingState(enabled: boolean): void {
@@ -92,7 +118,7 @@ function setCheckButtonCheckingState(enabled: boolean): void {
     if (enabled) {
         byId('updateBanner').dataset.updateState = 'checking';
         byId('workspaceUpdateLabel').textContent = UI_TEXT.updates.checking;
-        workspaceButton.title = UI_TEXT.updates.checking;
+        workspaceButton.removeAttribute('title');
         workspaceButton.setAttribute('aria-label', UI_TEXT.updates.checking);
     } else {
         syncWorkspaceUpdateState(updateBannerState);
@@ -100,12 +126,10 @@ function setCheckButtonCheckingState(enabled: boolean): void {
 }
 
 function syncWorkspaceUpdateExpansion(): void {
-    const banner = byId('updateBanner');
-    const expanded = banner.classList.contains('show')
-        && !banner.classList.contains('popover-dismissed')
-        && !workspaceUpdatePopoverPostponed
-        && (banner.matches(':hover') || banner.matches(':focus-within'));
-    byId<HTMLButtonElement>('workspaceUpdateButton').setAttribute('aria-expanded', String(expanded));
+    const button = byId<HTMLButtonElement>('workspaceUpdateButton');
+    button.removeAttribute('aria-expanded');
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-controls', 'updateModal');
 }
 
 function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 'ready'): void {
@@ -118,14 +142,10 @@ function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 
     banner.hidden = state === 'idle';
     button.dataset.updateState = state;
     button.disabled = false;
-    if (state === 'downloading') {
-        button.setAttribute('aria-disabled', 'true');
-    } else {
-        button.removeAttribute('aria-disabled');
-    }
+    button.removeAttribute('aria-disabled');
     label.textContent = state === 'ready' ? UI_TEXT.updates.installNow : 'Update';
-    button.title = state === 'idle' ? UI_TEXT.static.checkUpdates : description;
-    button.setAttribute('aria-label', button.title);
+    button.removeAttribute('title');
+    button.setAttribute('aria-label', state === 'idle' ? UI_TEXT.static.checkUpdates : description);
     syncWorkspaceUpdateExpansion();
     byId<HTMLButtonElement>('workspaceUpdateLater').hidden = state === 'idle' || state === 'downloading';
     byId<HTMLButtonElement>('workspaceUpdateDismiss').hidden = state === 'idle';
@@ -134,6 +154,10 @@ function syncWorkspaceUpdateState(state: 'idle' | 'available' | 'downloading' | 
 function showUpdateBanner(): void {
     byId('updateBanner').classList.toggle('show', !workspaceUpdatePopoverPostponed);
     syncWorkspaceUpdateState(updateBannerState);
+}
+
+function focusWorkspaceAfterUpdateHidden(): void {
+    document.querySelector<HTMLElement>('.top-nav-item[aria-current="page"]')?.focus();
 }
 
 function hideUpdateBanner(): void {
@@ -162,12 +186,17 @@ function postponeWorkspaceUpdatePopover(): void {
     banner.classList.remove('show');
     banner.classList.add('popover-dismissed');
     byId<HTMLButtonElement>('workspaceUpdateButton').setAttribute('aria-expanded', 'false');
-    byId<HTMLButtonElement>('workspaceUpdateButton').focus();
+    focusWorkspaceAfterUpdateHidden();
 }
 
 function dismissWorkspaceUpdatePopover(): void {
+    if (updateBannerState === 'downloading') {
+        postponeWorkspaceUpdatePopover();
+        return;
+    }
+
     hideUpdateBanner();
-    byId<HTMLButtonElement>('workspaceUpdateButton').focus();
+    focusWorkspaceAfterUpdateHidden();
 }
 
 for (const eventName of ['mouseenter', 'mouseleave', 'focusin', 'focusout']) {
@@ -177,12 +206,13 @@ for (const eventName of ['mouseenter', 'mouseleave', 'focusin', 'focusout']) {
 }
 
 function handleWorkspaceUpdateAction(): void {
-    if (updateBannerState === 'downloading' || updateCheckInProgress) {
+    if (updateCheckInProgress) {
         return;
     }
 
-    if (updateBannerState === 'available' || updateBannerState === 'ready') {
-        openUpdateModal(getActiveUpdateInfo());
+    if (updateBannerState === 'available' || updateBannerState === 'ready' || updateBannerState === 'downloading') {
+        const info = getActiveUpdateInfo();
+        if (info) openUpdateModal(info);
         return;
     }
 
@@ -191,6 +221,7 @@ function handleWorkspaceUpdateAction(): void {
 
 function setUpdateBannerAvailableUi(info: UpdateInfo, reveal = true): void {
     const activeInfo = rememberUpdateInfo(info);
+    if (!activeInfo) return;
     updateReady = false;
     updateDownloadInProgress = false;
     latestDownloadProgress = null;
@@ -214,11 +245,13 @@ function setUpdateBannerAvailableUi(info: UpdateInfo, reveal = true): void {
     syncWorkspaceUpdateState('available');
 }
 
-function setDownloadPendingUi(): void {
+function setDownloadPendingUi(reveal = true): void {
     updateReady = false;
     updateBannerState = 'downloading';
-    workspaceUpdatePopoverPostponed = false;
-    byId('updateBanner').classList.remove('popover-dismissed');
+    if (reveal) {
+        workspaceUpdatePopoverPostponed = false;
+        byId('updateBanner').classList.remove('popover-dismissed');
+    }
 
     showUpdateBanner();
     const button = byId<HTMLButtonElement>('updateButton');
@@ -233,15 +266,20 @@ function setDownloadPendingUi(): void {
     byId('updateProgressGauge').setAttribute('aria-valuenow', String(Math.round(pendingPct)));
 
     if (!latestDownloadProgress) {
-        byId('updateText').textContent = `Version ${latestUpdateVersion || '?'} ${UI_TEXT.updates.downloading}`;
+        byId('updateText').textContent = latestUpdateVersion
+            ? `Version ${latestUpdateVersion} ${UI_TEXT.updates.downloading}`
+            : UI_TEXT.updates.downloading;
     }
     syncWorkspaceUpdateState('downloading');
+    refreshUpdateModalDownloadState();
 }
 
 function setDownloadReadyUi(info?: UpdateInfo): void {
     const activeInfo = rememberUpdateInfo(info);
+    if (!activeInfo) return;
     updateReady = true;
     updateDownloadInProgress = false;
+    updateDownloadOperation = null;
     updateBannerState = 'ready';
     workspaceUpdatePopoverPostponed = false;
     byId('updateBanner').classList.remove('popover-dismissed');
@@ -259,6 +297,7 @@ function setDownloadReadyUi(info?: UpdateInfo): void {
     button.textContent = UI_TEXT.updates.installNow;
     button.disabled = false;
     syncWorkspaceUpdateState('ready');
+    refreshUpdateModalDownloadState();
 }
 
 function appendInlineMarkdown(target: HTMLElement, text: string): void {
@@ -295,6 +334,7 @@ function renderUpdateChangelog(notes?: string): void {
         card.classList.add('is-hidden');
         panel.classList.remove('is-expanded');
         panel.setAttribute('aria-hidden', 'true');
+        panel.inert = true;
         updateChangelogExpanded = false;
         return;
     }
@@ -375,6 +415,7 @@ function renderUpdateChangelog(notes?: string): void {
 
     panel.classList.toggle('is-expanded', updateChangelogExpanded);
     panel.setAttribute('aria-hidden', String(!updateChangelogExpanded));
+    panel.inert = !updateChangelogExpanded;
 }
 
 function refreshUpdateChangelogToggleText(): void {
@@ -384,12 +425,13 @@ function refreshUpdateChangelogToggleText(): void {
         return;
     }
 
-    toggle.textContent = updateChangelogExpanded ? UI_TEXT.updates.hideChangelog : UI_TEXT.updates.showChangelog;
+    toggle.setAttribute('aria-label', updateChangelogExpanded ? UI_TEXT.updates.hideChangelog : UI_TEXT.updates.showChangelog);
     toggle.setAttribute('aria-expanded', String(updateChangelogExpanded));
 }
 
 function refreshUpdateModalTexts(): void {
     const info = getActiveUpdateInfo();
+    if (!info) return;
     const isReady = updateReady;
 
     byId('updateModalTitle').textContent = isReady
@@ -400,10 +442,10 @@ function refreshUpdateModalTexts(): void {
         info.version
     );
     byId('updateModalDismissBtn').textContent = UI_TEXT.updates.modalDismiss;
-    byId('updateModalConfirmBtn').textContent = isReady
+    byId('updateModalConfirmText').textContent = isReady
         ? UI_TEXT.updates.modalInstallConfirm
         : UI_TEXT.updates.modalDownloadConfirm;
-    // Skip-version only makes sense before the download. Once the .exe is
+    // Skip-version only makes sense before the download. Once the update is
     // already on disk and ready to install, hide the button.
     const skipBtn = byId<HTMLButtonElement>('updateModalSkipBtn');
     skipBtn.textContent = UI_TEXT.updates.modalSkipVersion;
@@ -411,20 +453,83 @@ function refreshUpdateModalTexts(): void {
     byId('updateChangelogLabel').textContent = UI_TEXT.updates.changelogLabel;
     byId('updateChangelogEmpty').textContent = UI_TEXT.updates.noChangelog;
 
-    const metaText = getUpdateModalMetaText(info);
-    const meta = byId('updateModalMeta');
+    byId('updateInstalledVersion').textContent = appVersion;
+    byId('updateAvailableVersion').textContent = info.version;
+    byId('updateReleaseVersion').textContent = `Version ${info.version}`;
+    byId('updatePreserveText').textContent = UI_TEXT.updates.preserveData;
+    const metaText = formatReleaseDate(info.releaseDate);
+    const meta = byId<HTMLTimeElement>('updateModalMeta');
     meta.textContent = metaText;
     meta.classList.toggle('is-hidden', !metaText);
+    if (metaText && info.releaseDate) meta.dateTime = new Date(info.releaseDate).toISOString();
+    else meta.removeAttribute('datetime');
 
     renderUpdateChangelog(info.releaseNotes);
     refreshUpdateChangelogToggleText();
+    refreshUpdateModalDownloadState();
+}
+
+function refreshUpdateModalDownloadState(): void {
+    const downloading = updateBannerState === 'downloading';
+    const confirm = byId<HTMLButtonElement>('updateModalConfirmBtn');
+    confirm.disabled = downloading;
+    byId('updateModalConfirmText').textContent = downloading
+        ? UI_TEXT.updates.downloading
+        : updateReady ? UI_TEXT.updates.modalInstallConfirm : UI_TEXT.updates.modalDownloadConfirm;
+    byId('updateModalSkipBtn').classList.toggle('is-hidden', downloading || updateReady);
+    byId('updateModalProgress').classList.toggle('is-hidden', !downloading);
+    byId('updateModalProgressLabel').textContent = UI_TEXT.updates.downloadLabel;
+    const percent = Math.max(0, Math.min(100, latestDownloadProgress?.percent || 0));
+    byId('updateModalProgressPercent').textContent = latestDownloadProgress ? `${Math.round(percent)} %` : '…';
+    byId('updateModalProgressFill').style.width = `${percent}%`;
+    const gauge = byId('updateModalProgressGauge');
+    gauge.setAttribute('aria-label', UI_TEXT.updates.downloadLabel);
+    if (latestDownloadProgress) gauge.setAttribute('aria-valuenow', String(Math.round(percent)));
+    else gauge.removeAttribute('aria-valuenow');
+}
+
+let updateModalAnchorTop = 24;
+let updateModalCollapsedHeight = 0;
+let updateModalResizeObserver: ResizeObserver | null = null;
+
+function positionUpdateModal(): void {
+    const overlay = byId<HTMLElement>('updateModal');
+    const dialog = overlay.querySelector<HTMLElement>('.update-modal');
+    if (!dialog || !overlay.classList.contains('show')) return;
+    const panel = byId<HTMLElement>('updateChangelogPanel');
+    const fixedHeight = dialog.offsetHeight - panel.offsetHeight;
+    dialog.style.setProperty('--update-fixed-height', `${fixedHeight}px`);
+    const top = Math.max(24, Math.min(updateModalAnchorTop, window.innerHeight - dialog.offsetHeight - 24));
+    dialog.style.top = `${top}px`;
+}
+
+function anchorUpdateModal(): void {
+    const dialog = byId<HTMLElement>('updateModal').querySelector<HTMLElement>('.update-modal');
+    if (!dialog) return;
+    const panel = byId<HTMLElement>('updateChangelogPanel');
+    panel.style.transition = 'none';
+    updateModalCollapsedHeight = dialog.offsetHeight;
+    dialog.style.setProperty('--update-fixed-height', `${updateModalCollapsedHeight}px`);
+    panel.style.removeProperty('transition');
+    updateModalAnchorTop = Math.max(24, (window.innerHeight - updateModalCollapsedHeight) / 2);
+    if (!updateModalResizeObserver) {
+        updateModalResizeObserver = new ResizeObserver(positionUpdateModal);
+        updateModalResizeObserver.observe(dialog);
+        window.addEventListener('resize', () => {
+            updateModalAnchorTop = Math.max(24, (window.innerHeight - updateModalCollapsedHeight) / 2);
+            positionUpdateModal();
+        });
+    }
+    positionUpdateModal();
 }
 
 function openUpdateModal(info?: UpdateInfo): void {
-    rememberUpdateInfo(info);
+    if (!rememberUpdateInfo(info)) return;
     updateChangelogExpanded = false;
     RendererAccessibility.openDialog('updateModal', { onEscape: dismissUpdateModal });
     refreshUpdateModalTexts();
+    anchorUpdateModal();
+    resetUpdateChangelogScroll();
 }
 
 function dismissUpdateModal(): void {
@@ -432,6 +537,7 @@ function dismissUpdateModal(): void {
 }
 
 function skipUpdateVersion(): void {
+    if (getDevelopmentUpdatePreview()) { dismissUpdateModal(); return; }
     const v = (latestUpdateInfo?.version || latestUpdateVersion || '').trim();
     if (v) {
         persistSkippedUpdateVersion(v);
@@ -445,14 +551,18 @@ function skipUpdateVersion(): void {
 }
 
 function confirmUpdateModal(): void {
-    dismissUpdateModal();
-
     if (updateReady) {
+        dismissUpdateModal();
         void installReadyUpdate();
         return;
     }
 
     downloadUpdate();
+}
+
+function resetUpdateChangelogScroll(): void {
+    const content = byId<HTMLElement>('updateChangelogPanel').querySelector<HTMLElement>('.update-changelog-panel-inner');
+    if (content) content.scrollTop = 0;
 }
 
 function toggleUpdateChangelog(): void {
@@ -462,9 +572,11 @@ function toggleUpdateChangelog(): void {
     }
 
     updateChangelogExpanded = !updateChangelogExpanded;
+    if (!updateChangelogExpanded) resetUpdateChangelogScroll();
     const panel = byId<HTMLElement>('updateChangelogPanel');
     panel.classList.toggle('is-expanded', updateChangelogExpanded);
     panel.setAttribute('aria-hidden', String(!updateChangelogExpanded));
+    panel.inert = !updateChangelogExpanded;
     refreshUpdateChangelogToggleText();
 }
 
@@ -492,7 +604,7 @@ function refreshUpdateUiTexts(): void {
             const totalMb = (latestDownloadProgress.total / 1024 / 1024).toFixed(1);
             byId('updateText').textContent = `${UI_TEXT.updates.downloadLabel}: ${mb} / ${totalMb} MB (${latestDownloadProgress.percent.toFixed(0)}%)`;
         } else {
-            setDownloadPendingUi();
+            setDownloadPendingUi(false);
         }
     } else if (updateBannerState === 'ready' && latestUpdateInfo) {
         setDownloadReadyUi(latestUpdateInfo);
@@ -510,6 +622,7 @@ function refreshUpdateUiTexts(): void {
 }
 
 async function checkUpdateSilent(): Promise<void> {
+    if (restoreDevelopmentUpdatePreview()) { openUpdateModal(); return; }
     try {
         shouldOpenUpdateModalOnAvailable = true;
         await window.api.checkUpdate();
@@ -520,6 +633,7 @@ async function checkUpdateSilent(): Promise<void> {
 }
 
 async function checkUpdate(): Promise<void> {
+    if (restoreDevelopmentUpdatePreview()) { openUpdateModal(); return; }
     manualUpdateCheckPending = true;
     manualUpdateOutcomeHandled = false;
     shouldOpenUpdateModalOnAvailable = true;
@@ -529,12 +643,13 @@ async function checkUpdate(): Promise<void> {
         const result = await window.api.checkUpdate();
 
         if (result?.error) {
+            const alreadyHandled = manualUpdateOutcomeHandled;
             shouldOpenUpdateModalOnAvailable = false;
             manualUpdateOutcomeHandled = true;
             manualUpdateCheckPending = false;
             updateCheckInProgress = false;
             setCheckButtonCheckingState(false);
-            notifyUpdate(UI_TEXT.updates.checkFailed, 'warn');
+            if (!alreadyHandled) notifyUpdate(UI_TEXT.updates.checkFailed, 'warn');
             return;
         }
 
@@ -546,10 +661,21 @@ async function checkUpdate(): Promise<void> {
             updateCheckInProgress = false;
             setCheckButtonCheckingState(false);
             if (latestUpdateInfo || updateReady) {
-                openUpdateModal(getActiveUpdateInfo());
+                const info = getActiveUpdateInfo();
+                if (info) openUpdateModal(info);
             } else {
                 notifyUpdate(UI_TEXT.updates.readyToInstall, 'info');
             }
+            return;
+        }
+
+        if (skippedReason === 'downloading') {
+            shouldOpenUpdateModalOnAvailable = false;
+            manualUpdateOutcomeHandled = true;
+            manualUpdateCheckPending = false;
+            updateCheckInProgress = false;
+            setCheckButtonCheckingState(false);
+            notifyUpdate(UI_TEXT.updates.downloadInProgress, 'info');
             return;
         }
 
@@ -583,7 +709,33 @@ async function checkUpdate(): Promise<void> {
     }
 }
 
+function handleUpdateDownloadFailure(operation: { failureHandled: boolean }): void {
+    if (operation.failureHandled) {
+        return;
+    }
+
+    operation.failureHandled = true;
+    if (operation !== updateDownloadOperation) {
+        return;
+    }
+
+    updateDownloadOperation = null;
+    updateDownloadInProgress = false;
+    latestDownloadProgress = null;
+    if (latestUpdateInfo) {
+        setUpdateBannerAvailableUi(latestUpdateInfo, false);
+    } else {
+        hideUpdateBanner();
+    }
+    refreshUpdateModalDownloadState();
+    notifyUpdate(UI_TEXT.updates.downloadFailed, 'warn');
+}
+
 function downloadUpdate(): void {
+    if (getDevelopmentUpdatePreview()) {
+        notifyUpdate(getIntlLocale().startsWith('de') ? 'Testvorschau: Es wird kein Update heruntergeladen.' : 'Test preview: No update will be downloaded.');
+        return;
+    }
     if (updateReady) {
         dismissUpdateModal();
         void installReadyUpdate();
@@ -596,23 +748,23 @@ function downloadUpdate(): void {
     }
 
     updateDownloadInProgress = true;
+    const operation = { failureHandled: false };
+    updateDownloadOperation = operation;
     latestDownloadProgress = null;
-    dismissUpdateModal();
     setDownloadPendingUi();
 
     void window.api.downloadUpdate().then((result) => {
         if (result?.error) {
-            updateDownloadInProgress = false;
-            if (latestUpdateInfo) {
-                setUpdateBannerAvailableUi(latestUpdateInfo);
-            }
-            notifyUpdate(UI_TEXT.updates.downloadFailed, 'warn');
+            handleUpdateDownloadFailure(operation);
             return;
         }
 
         if (result?.skipped === 'ready-to-install') {
-            setDownloadReadyUi(getActiveUpdateInfo());
-            openUpdateModal(getActiveUpdateInfo());
+            const info = getActiveUpdateInfo();
+            if (info) {
+                setDownloadReadyUi(info);
+                openUpdateModal(info);
+            }
             return;
         }
 
@@ -620,11 +772,7 @@ function downloadUpdate(): void {
             notifyUpdate(UI_TEXT.updates.downloadInProgress, 'info');
         }
     }).catch(() => {
-        updateDownloadInProgress = false;
-        if (latestUpdateInfo) {
-            setUpdateBannerAvailableUi(latestUpdateInfo);
-        }
-        notifyUpdate(UI_TEXT.updates.downloadFailed, 'warn');
+        handleUpdateDownloadFailure(operation);
     });
 }
 
@@ -642,6 +790,8 @@ async function installReadyUpdate(): Promise<void> {
 window.api.onUpdateInstallError(() => notifyUpdate(UI_TEXT.updates.installFailed, 'warn'));
 
 window.api.onUpdateChecking(() => {
+    if (getDevelopmentUpdatePreview()) return;
+    if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     updateCheckInProgress = true;
     if (manualUpdateCheckPending) {
         setCheckButtonCheckingState(true);
@@ -649,6 +799,8 @@ window.api.onUpdateChecking(() => {
 });
 
 window.api.onUpdateAvailable((info: UpdateInfo) => {
+    if (getDevelopmentUpdatePreview()) return;
+    if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     const activeInfo = rememberUpdateInfo(info);
     updateCheckInProgress = false;
     updateReady = false;
@@ -658,6 +810,11 @@ window.api.onUpdateAvailable((info: UpdateInfo) => {
     manualUpdateOutcomeHandled = true;
     latestDownloadProgress = null;
     setCheckButtonCheckingState(false);
+
+    if (!activeInfo) {
+        shouldOpenUpdateModalOnAvailable = false;
+        return;
+    }
 
     // If the user explicitly skipped this exact version, suppress the auto
     // notification entirely — banner stays hidden, no modal popup. A manual
@@ -680,6 +837,8 @@ window.api.onUpdateAvailable((info: UpdateInfo) => {
 
 
 window.api.onUpdateNotAvailable(() => {
+    if (getDevelopmentUpdatePreview()) return;
+    if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
     updateCheckInProgress = false;
     setCheckButtonCheckingState(false);
     manualUpdateOutcomeHandled = true;
@@ -696,6 +855,7 @@ window.api.onUpdateNotAvailable(() => {
 });
 
 window.api.onUpdateDownloadProgress((progress: UpdateDownloadProgress) => {
+    if (getDevelopmentUpdatePreview()) return;
     updateDownloadInProgress = true;
     updateBannerState = 'downloading';
     latestDownloadProgress = progress;
@@ -712,35 +872,46 @@ window.api.onUpdateDownloadProgress((progress: UpdateDownloadProgress) => {
     const totalMb = (progress.total / 1024 / 1024).toFixed(1);
     byId('updateText').textContent = `${UI_TEXT.updates.downloadLabel}: ${mb} / ${totalMb} MB (${progress.percent.toFixed(0)}%)`;
     syncWorkspaceUpdateState('downloading');
+    refreshUpdateModalDownloadState();
 });
 
 window.api.onUpdateDownloaded((info: UpdateInfo) => {
+    if (getDevelopmentUpdatePreview()) return;
     // Once a version is actually downloaded the user clearly stopped
     // skipping it — clear the skip flag so future updates aren't masked
     // by a stale entry.
     clearSkippedUpdateVersion();
     const activeInfo = rememberUpdateInfo(info);
+    if (!activeInfo) return;
     setDownloadReadyUi(activeInfo);
     openUpdateModal(activeInfo);
 });
 
-window.api.onUpdateError(() => {
+window.api.onUpdateError((payload) => {
+    if (getDevelopmentUpdatePreview()) return;
+    if (payload.kind === 'check') {
+        if (updateDownloadInProgress || updateBannerState === 'downloading' || updateReady || updateBannerState === 'ready') return;
+        const wasManual = manualUpdateCheckPending;
+        updateCheckInProgress = false;
+        manualUpdateCheckPending = false;
+        manualUpdateOutcomeHandled = true;
+        shouldOpenUpdateModalOnAvailable = false;
+        setCheckButtonCheckingState(false);
+        if (wasManual) notifyUpdate(UI_TEXT.updates.checkFailed, 'warn');
+        return;
+    }
+
+    const operation = updateDownloadOperation;
+    if (!updateDownloadInProgress || operation === null) return;
+    const activeVersion = (latestUpdateInfo?.version || latestUpdateVersion || '').trim();
+    if (payload.version && activeVersion && payload.version !== activeVersion) return;
     updateCheckInProgress = false;
-    const wasDownloading = updateDownloadInProgress;
-    const wasManual = manualUpdateCheckPending;
-    updateDownloadInProgress = false;
     manualUpdateCheckPending = false;
     manualUpdateOutcomeHandled = true;
     shouldOpenUpdateModalOnAvailable = false;
     setCheckButtonCheckingState(false);
 
-    if (!updateReady && latestUpdateInfo && wasDownloading) {
-        setUpdateBannerAvailableUi(latestUpdateInfo);
-    }
-
-    if (wasManual || wasDownloading) {
-        notifyUpdate(wasDownloading ? UI_TEXT.updates.downloadFailed : UI_TEXT.updates.checkFailed, 'warn');
-    }
+    handleUpdateDownloadFailure(operation);
 });
 
 document.addEventListener('keydown', (event) => {

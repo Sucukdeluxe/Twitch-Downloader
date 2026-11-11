@@ -3,10 +3,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
+import { execFileSync } from 'node:child_process';
 import axios from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { MAC_UPDATE_FEED, type MacUpdateManifest } from '../domain/mac-update-manifest';
-import { MacUpdater } from './mac-updater';
+import { MAC_UPDATE_BUNDLE_ID, MAC_UPDATE_FEED, type MacUpdateManifest } from '../domain/mac-update-manifest';
+import { assertMacOSVersionSupported, MacUpdater } from './mac-updater';
+import { UpdateLifecycle } from '../updates/update-lifecycle';
 
 const keys = generateKeyPairSync('ed25519');
 const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -56,7 +58,80 @@ afterEach(() => {
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
+describe('macOS update system compatibility', () => {
+    it.each([
+        [undefined, '13.0'], ['12.0', '13.0'], ['13', '13.0.0'], ['13.0.1', '13.0.1'], ['13.9', '13.10'],
+    ])('accepts requirement %s on macOS %s', (minimum, current) => {
+        expect(() => assertMacOSVersionSupported(minimum, current)).not.toThrow();
+    });
+
+    it.each([
+        ['13.0', '12.7.6'], ['13.1', '13.0.9'], ['13.0.1', '13.0'], ['13.10', '13.9'], ['999.0', '26.0'],
+    ])('rejects requirement %s on macOS %s', (minimum, current) => {
+        expect(() => assertMacOSVersionSupported(minimum, current)).toThrow(`Update requires macOS ${minimum}`);
+    });
+
+    it.each([null, 13, '', '13..0', '13.0-beta', '13.0.0.1', ' 13.0', '0.0'])('rejects malformed declared requirement %s', minimum => {
+        expect(() => assertMacOSVersionSupported(minimum, '13.0')).toThrow('Invalid macOS system version');
+    });
+
+    it.runIf(process.platform === 'darwin')('rejects an incompatible authenticated archive before staging or launching its helper', async () => {
+        const bundle = path.join(directory, 'Twitch VOD Manager.app');
+        fs.mkdirSync(path.join(bundle, 'Contents'), { recursive: true });
+        fs.writeFileSync(path.join(bundle, 'Contents', 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>${MAC_UPDATE_BUNDLE_ID}</string>
+<key>CFBundleShortVersionString</key><string>1.2.3</string>
+<key>CFBundleExecutable</key><string>Fixture</string>
+<key>LSMinimumSystemVersion</key><string>999.0</string>
+</dict></plist>`);
+        const zip = path.join(directory, 'unsupported.zip');
+        execFileSync('/usr/bin/ditto', ['-c', '-k', '--keepParent', bundle, zip]);
+        const bytes = fs.readFileSync(zip);
+        saveCached(release('1.2.3', bytes), bytes);
+        fs.writeFileSync(path.join(directory, 'Installed.app', 'unchanged'), 'installed application');
+        const state = updater();
+
+        await expect(state.instance.prepareInstall()).rejects.toThrow('Update requires macOS 999.0');
+
+        expect(fs.readFileSync(path.join(directory, 'Installed.app', 'unchanged'), 'utf8')).toBe('installed application');
+        expect(fs.readdirSync(directory).filter(name => name.startsWith('.twitch-vod-extract-') || name.startsWith('.Twitch-VOD-Manager-update-'))).toEqual([]);
+        expect(fs.readdirSync(path.join(directory, 'cache')).filter(name => name.startsWith('plan-') || name.startsWith('installer-'))).toEqual([]);
+    });
+});
+
 describe.skipIf(process.platform === 'win32')('macOS updater authenticated transport and cache', () => {
+    it('restores a verified cached download into the ready lifecycle without a new transfer', async () => {
+        saveCached();
+        get.mockRejectedValueOnce(notFound());
+        const state = updater();
+        const lifecycle = new UpdateLifecycle();
+        lifecycle.beginCheck();
+        state.instance.on('update-downloaded', info => {
+            if (!lifecycle.completeDownload(info.version)) lifecycle.restoreDownload(info.version);
+        });
+        state.instance.on('update-not-available', () => lifecycle.completeCheckNotAvailable());
+
+        await state.instance.checkForUpdates();
+
+        expect(lifecycle.snapshot).toEqual({ phase: 'ready', version: '1.2.3' });
+        expect(lifecycle.beginCheck()).toEqual({ started: false, reason: 'ready-to-install' });
+        expect(state.progress).not.toHaveBeenCalled();
+        expect(get).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let cached restoration replace a newer available or downloading version', () => {
+        const lifecycle = new UpdateLifecycle();
+        lifecycle.beginCheck();
+        lifecycle.completeCheckAvailable('1.3.0');
+        lifecycle.beginCheck();
+        expect(lifecycle.restoreDownload('1.2.3')).toBe(false);
+        lifecycle.failCheck();
+        lifecycle.beginDownload('1.3.0');
+        expect(lifecycle.restoreDownload('1.2.3')).toBe(false);
+        expect(lifecycle.snapshot).toEqual({ phase: 'downloading', version: '1.3.0' });
+    });
+
     it.each(['arm64', 'x64'] as const)('downloads the signed %s artifact and restores it after restart', async (arch) => {
         const value = release();
         get.mockResolvedValueOnce({ data: value.envelope }).mockResolvedValueOnce({ data: Readable.from([archive.subarray(0, 7), archive.subarray(7)]) });

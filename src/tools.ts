@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, execSync, spawnSync } from 'child_process';
+import { extractZipArchive } from './main/infra/extract-zip';
+import { execFile, type ChildProcess } from 'child_process';
 import axios from 'axios';
 import { createManagedToolInstaller, type ManagedToolInstaller, type ManagedToolStatus } from './main/domain/managed-tools';
 import { APPLICATION_TOOL_MANIFEST } from './main/domain/tool-manifest';
@@ -97,32 +98,64 @@ function getCommandCacheKey(command: string, args: string[]): string {
     return [command, ...args].join('\u0000');
 }
 
-export function canExecute(cmd: string): boolean {
-    try {
-        execSync(cmd, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
-        return true;
-    } catch {
-        return false;
-    }
+let managedToolExecutionObserver: ((command: string) => void) | null = null;
+
+export function setManagedToolExecutionObserver(observer: ((command: string) => void) | null): void {
+    managedToolExecutionObserver = observer;
 }
 
-export function canExecuteCommand(command: string, args: string[]): boolean {
-    try {
-        const result = spawnSync(command, args, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
-        return result.status === 0;
-    } catch {
-        return false;
+const pendingToolProcesses = new Set<ChildProcess>();
+const commandChecks = new Map<string, { expires: number; result: Promise<boolean> }>();
+
+export function canExecuteCommand(command: string, args: string[]): Promise<boolean> {
+    const key = getCommandCacheKey(command, args);
+    const cached = commandChecks.get(key);
+    if (cached && cached.expires > Date.now()) return cached.result;
+    const entry = { expires: Infinity, result: Promise.resolve(false) };
+    entry.result = new Promise<boolean>(resolve => {
+        let child: ChildProcess | undefined;
+        try {
+            managedToolExecutionObserver?.(command);
+            child = execFile(command, args, { windowsHide: true, timeout: process.platform === 'darwin' ? 30000 : 8000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 }, error => {
+                if (child) pendingToolProcesses.delete(child);
+                // The Mac runtime can be repaired in place, and permissions or
+                // Python dependencies may change without its command changing.
+                entry.expires = Date.now() + (process.platform === 'darwin' ? 0 : error ? 1000 : 10000);
+                resolve(!error);
+            });
+            if (child) pendingToolProcesses.add(child);
+        } catch {
+            entry.expires = Date.now() + 1000;
+            resolve(false);
+        }
+    });
+    commandChecks.set(key, entry);
+    return entry.result;
+}
+
+export function cancelPendingToolChecks(): void {
+    for (const child of pendingToolProcesses) child.kill();
+    pendingToolProcesses.clear();
+    commandChecks.clear();
+}
+
+async function findExecutable(name: string): Promise<string | null> {
+    const extensions = process.platform === 'win32' ? ['.exe', '.com'] : [''];
+    for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+        const cleanDirectory = directory.replace(/^"|"$/g, '');
+        if (!cleanDirectory || (process.platform === 'win32' && /[\\/]WindowsApps(?:[\\/]|$)/i.test(cleanDirectory))) continue;
+        for (const extension of extensions) {
+            const candidate = path.join(cleanDirectory, name + extension);
+            try { if ((await fs.promises.stat(candidate)).isFile()) return candidate; } catch { }
+        }
     }
+    return null;
 }
 
 // A cold private Python runtime or macOS security scan can take seconds. Keep
 // the main event loop responsive while checking it, and bound a stuck probe.
 export function canExecuteCommandAsync(command: string, args: string[]): Promise<boolean> {
-    return new Promise((resolve) => {
-        const child = spawn(command, args, { stdio: 'ignore', windowsHide: true, timeout: 30000, killSignal: 'SIGKILL' });
-        child.once('error', () => resolve(false));
-        child.once('close', (code) => resolve(code === 0));
-    });
+    return canExecuteCommand(command, args);
 }
 
 // ==========================================
@@ -154,12 +187,13 @@ export function isVerifiedFfmpegCommands(ffmpegCommand: string, ffprobeCommand: 
 export function invalidateVerifiedToolCaches(): void {
     verifiedStreamlinkCommandKey = null;
     verifiedFfmpegCommandKey = null;
+    commandChecks.clear();
 }
 
 // ==========================================
 // TOOL PATH DISCOVERY
 // ==========================================
-export function getStreamlinkPath(): string {
+export async function getStreamlinkPath(): Promise<string> {
     // The Mac app owns its runtime. Probing /usr/bin/python3 before the first
     // install can launch Apple's Command Line Tools installer on a clean Mac.
     if (process.platform === 'darwin') return path.join(TOOLS_STREAMLINK_DIR, 'streamlink');
@@ -175,20 +209,8 @@ export function getStreamlinkPath(): string {
         return streamlinkPathCache;
     }
 
-    try {
-        if (process.platform === 'win32') {
-            const result = execSync('where streamlink', { encoding: 'utf-8' });
-            const paths = result.trim().split('\n');
-            if (paths.length > 0) {
-                streamlinkPathCache = paths[0].trim();
-                return streamlinkPathCache;
-            }
-        } else {
-            const result = execSync('which streamlink', { encoding: 'utf-8' });
-            streamlinkPathCache = result.trim();
-            return streamlinkPathCache;
-        }
-    } catch { }
+    const executable = await findExecutable('streamlink');
+    if (executable) { streamlinkPathCache = executable; return executable; }
 
     const commonPaths = [
         'C:\\Program Files\\Streamlink\\bin\\streamlink.exe',
@@ -207,44 +229,37 @@ export function getStreamlinkPath(): string {
     return streamlinkPathCache;
 }
 
-export function getStreamlinkCommand(): { command: string; prefixArgs: string[] } {
-    if (streamlinkCommandCache) {
-        return streamlinkCommandCache;
-    }
+let streamlinkCommandPending: Promise<{ command: string; prefixArgs: string[] }> | null = null;
 
-    const directPath = getStreamlinkPath();
-    if (directPath !== 'streamlink' || canExecute('streamlink --version')) {
+export async function getStreamlinkCommand(): Promise<{ command: string; prefixArgs: string[] }> {
+    if (streamlinkCommandCache) return streamlinkCommandCache;
+    if (streamlinkCommandPending) return streamlinkCommandPending;
+    streamlinkCommandPending = resolveStreamlinkCommand();
+    try { return await streamlinkCommandPending; }
+    finally { streamlinkCommandPending = null; }
+}
+
+async function resolveStreamlinkCommand(): Promise<{ command: string; prefixArgs: string[] }> {
+    const directPath = await getStreamlinkPath();
+    if (directPath !== 'streamlink' || await canExecuteCommand(directPath, ['--version'])) {
         streamlinkCommandCache = { command: directPath, prefixArgs: [] };
         return streamlinkCommandCache;
     }
-
-    if (process.platform === 'win32') {
-        if (canExecute('py -3 -m streamlink --version')) {
-            streamlinkCommandCache = { command: 'py', prefixArgs: ['-3', '-m', 'streamlink'] };
-            return streamlinkCommandCache;
-        }
-
-        if (canExecute('python -m streamlink --version')) {
-            streamlinkCommandCache = { command: 'python', prefixArgs: ['-m', 'streamlink'] };
-            return streamlinkCommandCache;
-        }
-    } else {
-        if (canExecute('python3 -m streamlink --version')) {
-            streamlinkCommandCache = { command: 'python3', prefixArgs: ['-m', 'streamlink'] };
-            return streamlinkCommandCache;
-        }
-
-        if (canExecute('python -m streamlink --version')) {
-            streamlinkCommandCache = { command: 'python', prefixArgs: ['-m', 'streamlink'] };
+    const candidates = process.platform === 'win32'
+        ? [{ name: 'py', args: ['-3', '-m', 'streamlink'] }, { name: 'python', args: ['-m', 'streamlink'] }]
+        : [{ name: 'python3', args: ['-m', 'streamlink'] }, { name: 'python', args: ['-m', 'streamlink'] }];
+    for (const candidate of candidates) {
+        const command = await findExecutable(candidate.name);
+        if (command && await canExecuteCommand(command, [...candidate.args, '--version'])) {
+            streamlinkCommandCache = { command, prefixArgs: candidate.args };
             return streamlinkCommandCache;
         }
     }
-
     streamlinkCommandCache = { command: directPath, prefixArgs: [] };
     return streamlinkCommandCache;
 }
 
-export function getFFmpegPath(): string {
+export async function getFFmpegPath(): Promise<string> {
     if (process.platform === 'darwin') return path.join(TOOLS_FFMPEG_DIR, 'ffmpeg');
     if (ffmpegPathCache) {
         if (ffmpegPathCache === 'ffmpeg' || fs.existsSync(ffmpegPathCache)) {
@@ -258,20 +273,8 @@ export function getFFmpegPath(): string {
         return ffmpegPathCache;
     }
 
-    try {
-        if (process.platform === 'win32') {
-            const result = execSync('where ffmpeg', { encoding: 'utf-8' });
-            const paths = result.trim().split('\n');
-            if (paths.length > 0) {
-                ffmpegPathCache = paths[0].trim();
-                return ffmpegPathCache;
-            }
-        } else {
-            const result = execSync('which ffmpeg', { encoding: 'utf-8' });
-            ffmpegPathCache = result.trim();
-            return ffmpegPathCache;
-        }
-    } catch { }
+    const executable = await findExecutable('ffmpeg');
+    if (executable) { ffmpegPathCache = executable; return executable; }
 
     const commonPaths = [
         'C:\\ffmpeg\\bin\\ffmpeg.exe',
@@ -290,7 +293,7 @@ export function getFFmpegPath(): string {
     return ffmpegPathCache;
 }
 
-export function getFFprobePath(): string {
+export async function getFFprobePath(): Promise<string> {
     if (process.platform === 'darwin') return path.join(TOOLS_FFMPEG_DIR, 'ffprobe');
     if (ffprobePathCache) {
         if (ffprobePathCache === 'ffprobe' || ffprobePathCache === 'ffprobe.exe' || fs.existsSync(ffprobePathCache)) {
@@ -304,7 +307,7 @@ export function getFFprobePath(): string {
         return ffprobePathCache;
     }
 
-    const ffmpegPath = getFFmpegPath();
+    const ffmpegPath = await getFFmpegPath();
     const ffprobeExe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
 
     if (ffmpegPath === 'ffmpeg') {
@@ -367,6 +370,10 @@ async function downloadFile(url: string, destinationPath: string): Promise<boole
 
         await new Promise<void>((resolve, reject) => {
             const writer = fs.createWriteStream(destinationPath);
+            response.data.on('error', (err: Error) => {
+                writer.destroy();
+                reject(err);
+            });
             response.data.pipe(writer);
             writer.on('finish', () => resolve());
             writer.on('error', (err) => reject(err));
@@ -383,33 +390,7 @@ async function extractZip(zipPath: string, destinationDir: string): Promise<bool
     try {
         fs.mkdirSync(destinationDir, { recursive: true });
 
-        const command = `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destinationDir.replace(/'/g, "''")}' -Force`;
-
-        await new Promise<void>((resolve, reject) => {
-            const proc = process.platform === 'darwin'
-                ? spawn('/usr/bin/ditto', ['-x', '-k', zipPath, destinationDir])
-                : spawn('powershell', [
-                '-NoProfile',
-                '-ExecutionPolicy', 'Bypass',
-                '-Command',
-                command
-            ], { windowsHide: true });
-
-            let stderr = '';
-            proc.stderr?.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`Expand-Archive exit code ${code}: ${stderr.trim()}`));
-                }
-            });
-
-            proc.on('error', (err) => reject(err));
-        });
+        await extractZipArchive(zipPath, destinationDir);
 
         return true;
     } catch (e) {
@@ -450,14 +431,27 @@ function getManagedToolInstaller(toolId: 'streamlink' | 'ffmpeg'): ManagedToolIn
 }
 
 export interface ManagedToolStatuses {
-    streamlink: ManagedToolStatus;
-    ffmpeg: ManagedToolStatus;
+    streamlink: ManagedToolStatus & { fallbackRunnable: boolean };
+    ffmpeg: ManagedToolStatus & { fallbackRunnable: boolean };
 }
 
 export async function getManagedToolStatuses(): Promise<ManagedToolStatuses> {
+    refreshBundledToolPaths();
+    const streamlinkCommand = await getStreamlinkCommand();
+    const streamlinkVersionArgs = [...streamlinkCommand.prefixArgs, '--version'];
+    const ffmpegPath = await getFFmpegPath();
+    const ffprobePath = await getFFprobePath();
     return {
-        streamlink: await getManagedToolInstaller('streamlink').status(applicationToolManifest.streamlink),
-        ffmpeg: await getManagedToolInstaller('ffmpeg').status(applicationToolManifest.ffmpeg)
+        streamlink: {
+            ...(await getManagedToolInstaller('streamlink').status(applicationToolManifest.streamlink)),
+            fallbackRunnable: process.platform !== 'darwin' && (isVerifiedStreamlinkCommand(streamlinkCommand.command, streamlinkVersionArgs)
+                || await fallbackToRunnableStreamlink(streamlinkCommand.command, streamlinkVersionArgs))
+        },
+        ffmpeg: {
+            ...(await getManagedToolInstaller('ffmpeg').status(applicationToolManifest.ffmpeg)),
+            fallbackRunnable: process.platform !== 'darwin' && (isVerifiedFfmpegCommands(ffmpegPath, ffprobePath)
+                || await fallbackToRunnableFfmpeg(ffmpegPath, ffprobePath))
+        }
     };
 }
 
@@ -475,6 +469,7 @@ export async function repairManagedTools(): Promise<{ success: boolean; statuses
 }
 
 export async function resetManagedTools(): Promise<{ success: boolean; statuses: ManagedToolStatuses }> {
+    invalidateVerifiedToolCaches();
     const [streamlink, ffmpeg] = await Promise.all([
         getManagedToolInstaller('streamlink').reset(applicationToolManifest.streamlink),
         getManagedToolInstaller('ffmpeg').reset(applicationToolManifest.ffmpeg)
@@ -489,25 +484,43 @@ export async function resetManagedTools(): Promise<{ success: boolean; statuses:
 // ==========================================
 // AUTO-INSTALL TOOLS
 // ==========================================
+async function fallbackToRunnableStreamlink(command: string, versionArgs: string[]): Promise<boolean> {
+    if (process.platform === 'darwin') return false;
+    if (!await canExecuteCommand(command, versionArgs)) {
+        return false;
+    }
+    cacheVerifiedStreamlinkCommand(command, versionArgs);
+    return true;
+}
+
+async function fallbackToRunnableFfmpeg(ffmpegPath: string, ffprobePath: string): Promise<boolean> {
+    if (process.platform === 'darwin') return false;
+    if (!await canExecuteCommand(ffmpegPath, ['-version']) || !await canExecuteCommand(ffprobePath, ['-version'])) {
+        return false;
+    }
+    cacheVerifiedFfmpegCommands(ffmpegPath, ffprobePath);
+    return true;
+}
+
 export async function ensureStreamlinkInstalled(): Promise<boolean> {
     refreshBundledToolPaths();
 
     const manifest = applicationToolManifest.streamlink;
     const managedStatus = await getManagedToolInstaller('streamlink').status(manifest);
     const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledStreamlinkPath)) && !managedStatus.verified;
-    const current = getStreamlinkCommand();
+    const current = await getStreamlinkCommand();
     const versionArgs = [...current.prefixArgs, '--version'];
     if (process.platform !== 'darwin' && !requiresManagedRepair && isVerifiedStreamlinkCommand(current.command, versionArgs)) {
         return true;
     }
 
-    if (!requiresManagedRepair && await canExecuteCommandAsync(current.command, versionArgs)) {
+    if (!requiresManagedRepair && await canExecuteCommand(current.command, versionArgs)) {
         cacheVerifiedStreamlinkCommand(current.command, versionArgs);
         return true;
     }
 
     if (process.platform !== 'win32' && process.platform !== 'darwin') {
-        return false;
+        return fallbackToRunnableStreamlink(current.command, versionArgs);
     }
 
     _appendDebugLog('streamlink-install-start');
@@ -517,23 +530,24 @@ export async function ensureStreamlinkInstalled(): Promise<boolean> {
         const result = await getManagedToolInstaller('streamlink').repair(manifest);
         if (!result.success) {
             _appendDebugLog('streamlink-install-failed', { error: result.error, status: result.status });
-            return false;
+            return fallbackToRunnableStreamlink(current.command, versionArgs);
         }
 
+        invalidateVerifiedToolCaches();
         refreshBundledToolPaths(true);
         streamlinkCommandCache = null;
 
-        const cmd = getStreamlinkCommand();
+        const cmd = await getStreamlinkCommand();
         const installedVersionArgs = [...cmd.prefixArgs, '--version'];
-        const works = await canExecuteCommandAsync(cmd.command, installedVersionArgs);
+        const works = await canExecuteCommand(cmd.command, installedVersionArgs);
         if (works) {
             cacheVerifiedStreamlinkCommand(cmd.command, installedVersionArgs);
         }
         _appendDebugLog('streamlink-install-finished', { works, command: cmd.command, prefixArgs: cmd.prefixArgs });
-        return works;
+        return works || await fallbackToRunnableStreamlink(current.command, versionArgs);
     } catch (e) {
         _appendDebugLog('streamlink-install-failed', String(e));
-        return false;
+        return fallbackToRunnableStreamlink(current.command, versionArgs);
     }
 }
 
@@ -542,24 +556,24 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
     // These self-contained Mac binaries have already passed hash and runtime
     // verification. Avoid rehashing hundreds of MB for each editor load, while
     // revalidating immediately after any file, target or permission change.
-    if (process.platform === 'darwin' && isVerifiedFfmpegCommands(getFFmpegPath(), getFFprobePath())) return true;
+    if (process.platform === 'darwin' && isVerifiedFfmpegCommands(await getFFmpegPath(), await getFFprobePath())) return true;
 
     const manifest = applicationToolManifest.ffmpeg;
     const managedStatus = await getManagedToolInstaller('ffmpeg').status(manifest);
     const requiresManagedRepair = (process.platform === 'darwin' || Boolean(bundledFFmpegPath || bundledFFprobePath)) && !managedStatus.verified;
-    const ffmpegPath = getFFmpegPath();
-    const ffprobePath = getFFprobePath();
+    const ffmpegPath = await getFFmpegPath();
+    const ffprobePath = await getFFprobePath();
     if (process.platform !== 'darwin' && !requiresManagedRepair && isVerifiedFfmpegCommands(ffmpegPath, ffprobePath)) {
         return true;
     }
 
-    if (!requiresManagedRepair && await canExecuteCommandAsync(ffmpegPath, ['-version']) && await canExecuteCommandAsync(ffprobePath, ['-version'])) {
+    if (!requiresManagedRepair && await canExecuteCommand(ffmpegPath, ['-version']) && await canExecuteCommand(ffprobePath, ['-version'])) {
         cacheVerifiedFfmpegCommands(ffmpegPath, ffprobePath);
         return true;
     }
 
     if (process.platform !== 'win32' && process.platform !== 'darwin') {
-        return false;
+        return fallbackToRunnableFfmpeg(ffmpegPath, ffprobePath);
     }
 
     _appendDebugLog('ffmpeg-install-start');
@@ -567,21 +581,22 @@ export async function ensureFfmpegInstalled(): Promise<boolean> {
         const result = await getManagedToolInstaller('ffmpeg').repair(manifest);
         if (!result.success) {
             _appendDebugLog('ffmpeg-install-failed', { error: result.error, status: result.status });
-            return false;
+            return fallbackToRunnableFfmpeg(ffmpegPath, ffprobePath);
         }
 
+        invalidateVerifiedToolCaches();
         refreshBundledToolPaths(true);
 
-        const newFfmpegPath = getFFmpegPath();
-        const newFfprobePath = getFFprobePath();
-        const works = await canExecuteCommandAsync(newFfmpegPath, ['-version']) && await canExecuteCommandAsync(newFfprobePath, ['-version']);
+        const newFfmpegPath = await getFFmpegPath();
+        const newFfprobePath = await getFFprobePath();
+        const works = await canExecuteCommand(newFfmpegPath, ['-version']) && await canExecuteCommand(newFfprobePath, ['-version']);
         if (works) {
             cacheVerifiedFfmpegCommands(newFfmpegPath, newFfprobePath);
         }
         _appendDebugLog('ffmpeg-install-finished', { works, ffmpeg: newFfmpegPath, ffprobe: newFfprobePath });
-        return works;
+        return works || await fallbackToRunnableFfmpeg(ffmpegPath, ffprobePath);
     } catch (e) {
         _appendDebugLog('ffmpeg-install-failed', String(e));
-        return false;
+        return fallbackToRunnableFfmpeg(ffmpegPath, ffprobePath);
     }
 }
