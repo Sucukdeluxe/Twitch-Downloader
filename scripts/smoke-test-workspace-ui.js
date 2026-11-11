@@ -1,6 +1,7 @@
 const { _electron: electron } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const appVersion = require('../package.json').version;
 const {
   createE2eEnvironment,
   getElectronLaunchOptions,
@@ -483,7 +484,7 @@ async function run() {
       }));
       checks.availableDialog = availableDialog;
       check(availableDialog.confirmEnabled && availableDialog.skipVisible && availableDialog.shellInert, 'Available update dialog is not actionable or modal');
-      check(availableDialog.installed === '1.1.20' && availableDialog.available === '9.9.9', 'Update dialog shows incorrect installed/available versions');
+      check(availableDialog.installed === appVersion && availableDialog.available === '9.9.9', 'Update dialog shows incorrect installed/available versions');
       await win.locator('#updateModalDismissBtn').click();
       check(await win.evaluate(() => updateBannerState === 'available' && !document.getElementById('updateModal').classList.contains('show')), 'Later action discards the available update');
       await win.locator('#workspaceUpdateButton').click();
@@ -1274,7 +1275,7 @@ async function run() {
     });
     checks.streamerSidebarLayout = streamerSidebarLayout;
     check(streamerSidebarLayout.displayName === 'xRohat', 'Streamer sidebar does not preserve Twitch display casing');
-    check(streamerSidebarLayout.title === 'Twitch Downloader - VODs | v1.1.20', 'Window title does not identify the current workspace and version');
+    check(streamerSidebarLayout.title === `Twitch Downloader - VODs | v${appVersion}`, 'Window title does not identify the current workspace and version');
     check(!streamerSidebarLayout.hasInlineActions, 'Streamer row still renders inline automation actions');
     check(streamerSidebarLayout.nameBeforeRemove, 'Streamer name does not leave room for the remove action');
     check(streamerSidebarLayout.removeAtRightEdge, 'Streamer remove action is not aligned to the right edge of every row');
