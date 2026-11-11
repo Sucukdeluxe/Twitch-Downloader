@@ -110,8 +110,10 @@ async function run() {
       await win.evaluate(async () => {
         const input = await window.api.selectVideoFile();
         await window.loadCutterFromPath(input);
-        await window.recoverCutterProject();
       });
+      await win.waitForFunction(() => Boolean(cutterPendingProject) && cutterRecoveryDecisionPending);
+      await win.evaluate(() => window.recoverCutterProject());
+      await win.waitForFunction(() => !cutterRecoveryDecisionPending);
       const blockedTemporaryFile = path.join(environment.appDataDir, 'cutter-projects.json.tmp');
       fs.mkdirSync(blockedTemporaryFile);
       try {
