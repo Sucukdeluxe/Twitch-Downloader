@@ -87,6 +87,19 @@ async function run() {
           && box.y >= footer.y - 1 && box.y + box.height <= footer.y + footer.height + 1, 'Footer controls must stay in bounds');
       }
       assert(await win.locator('.vod-cut-footer').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Footer must not overflow');
+      if ((await win.viewportSize()).width > 1200) {
+        assert(footer.height <= 50, 'Desktop compact footer must stay one line high');
+        for (const side of ['Start', 'End']) {
+          const label = await win.locator(`#clipDialog${side}TimeLabel`).boundingBox();
+          const input = await win.locator(`#clip${side}Time`).boundingBox();
+          const setHere = await win.locator(`#clipMark${side} button`).boundingBox();
+          const aligned = Math.abs(label.y + label.height / 2 - input.y - input.height / 2) < 2
+            && Math.abs(setHere.y + setHere.height / 2 - input.y - input.height / 2) < 2;
+          if (!aligned) await screenshot('footer-alignment-failed');
+          assert(aligned, `Label, input and Set here must share a row: ${JSON.stringify({ label, input, setHere })}`);
+          assert(input.width < 110, 'Time entry must not stretch across the footer');
+        }
+      }
       assert(await win.locator('#clipModal').evaluate(element => {
         const ids = [...element.querySelectorAll('[id]')].map(node => node.id);
         return new Set(ids).size === ids.length;
