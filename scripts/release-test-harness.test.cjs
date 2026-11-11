@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
 const vm = require('node:vm');
-const { parseOptions, createEnvironment, createHttpFixture, createMediaFixture, assertIsolation, closeSession, launchElectron } = require('./release-test-harness.cjs');
+const { parseOptions, createEnvironment, createHttpFixture, createMediaFixture, assertIsolation, closeSession, launchElectron, waitForAsync } = require('./release-test-harness.cjs');
 const { readContract, createFixtureState, createDispatcher } = require('./release-browser-fixtures.cjs');
 const root = path.resolve(__dirname, '..');
 const contract = readContract(root);
@@ -239,4 +239,16 @@ if (process.platform !== 'win32') test('native launching is explicitly unsupport
   try {
     await assert.rejects(launchElectron(env), /require win32/);
   } finally { await closeSession(env); }
+});
+
+test('asynchronous IPC polling awaits false results and retries until complete', async () => {
+  let calls = 0;
+  const page = { evaluate: async (_predicate, arg) => { assert.equal(arg, 42); return ++calls === 3 ? 'completed' : false; } };
+  assert.equal(await waitForAsync(page, () => {}, 42, { polling: 1, timeout: 1000 }), 'completed');
+  assert.equal(calls, 3);
+});
+test('asynchronous IPC polling rejects failures and bounds hung or false requests', async () => {
+  await assert.rejects(waitForAsync({ evaluate: async () => { throw new Error('IPC failure'); } }, () => {}), /IPC failure/);
+  await assert.rejects(waitForAsync({ evaluate: () => new Promise(() => {}) }, () => {}, null, { timeout: 15, polling: 1 }), /timed out/);
+  await assert.rejects(waitForAsync({ evaluate: async () => false }, () => {}, null, { timeout: 15, polling: 1 }), /timed out/);
 });

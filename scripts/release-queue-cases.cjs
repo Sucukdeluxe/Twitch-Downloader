@@ -96,7 +96,7 @@ async function clipsEmptyReset(s) {
   assert.equal(await s.page.locator('#btnClip').isDisabled(), true);
   assert.equal(await s.page.locator('#clipsRetryBtn').isVisible(), false);
   assert.equal(await s.page.locator('#clipsBatchProgress').getAttribute('aria-valuenow'), '0');
-  await s.page.waitForFunction(async () => (await window.api.getWorkspaceSession()).clips.length === 0);
+  await h.waitForAsync(s.page, async () => (await window.api.getWorkspaceSession()).clips.length === 0);
   await s.page.reload();
   await readyClips(s);
   await countClips(s, 0);
@@ -161,7 +161,7 @@ async function queueMergeControls(s) {
   for (const index of [1, 0]) await s.page.locator(`.queue-item[data-id="${queue[index].id}"] [data-queue-action="merge-select"]`).click();
   assert.equal(await s.page.locator('#btnMergeGroup').isVisible(), true);
   await s.page.locator('#btnMergeGroup').click();
-  await s.page.waitForFunction(async () => (await window.api.getQueue()).length === 2);
+  await h.waitForAsync(s.page, async () => (await window.api.getQueue()).length === 2);
   const merged = (await s.page.evaluate(() => window.api.getQueue())).find(item => item.mergeGroup);
   assert.deepEqual(merged.mergeGroup.items.map(item => item.title), [rows[1].title, rows[0].title], 'Selection order must survive production merge creation');
   assert.equal(merged.mergeGroup.totalDurationSec, 24);
@@ -199,7 +199,7 @@ async function verifyContent(output, source, ranges, options) {
   await execFile(options.ffmpeg || 'ffmpeg', ['-v', 'error', '-i', output, '-f', 'null', '-'], { timeout: 30000, windowsHide: true });
 }
 async function waitJobs(s, ids) {
-  await s.page.waitForFunction(async ids => { const { jobs } = await window.api.listExportJobs(); return ids.every(id => jobs.some(job => job.id === id && ['completed', 'failed', 'cancelled'].includes(job.status))); }, ids, { timeout: 120000 });
+  await h.waitForAsync(s.page, async ids => { const { jobs } = await window.api.listExportJobs(); return ids.every(id => jobs.some(job => job.id === id && ['completed', 'failed', 'cancelled'].includes(job.status))); }, ids, { timeout: 120000 });
   const { jobs } = await s.page.evaluate(() => window.api.listExportJobs());
   return ids.map(id => jobs.find(job => job.id === id));
 }

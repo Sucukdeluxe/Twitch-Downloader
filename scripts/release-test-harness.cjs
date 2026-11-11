@@ -381,6 +381,25 @@ async function assertIsolation(session) {
   return { rootDir: env.rootDir, downloadPath: config.download_path, browser: true };
 }
 
+// Playwright waitForFunction treats a Promise as truthy before its result is
+// known. Poll asynchronous IPC from Node and await each result explicitly.
+async function waitForAsync(page, predicate, arg, { timeout = 30000, polling = 100 } = {}) {
+  if (!(timeout > 0 && polling > 0)) throw new Error('Invalid asynchronous polling timeout');
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    let timer;
+    try {
+      const result = await Promise.race([
+        page.evaluate(predicate, arg),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Asynchronous release condition timed out')), Math.max(1, deadline - Date.now())); }),
+      ]);
+      if (result) return result;
+    } finally { clearTimeout(timer); }
+    await new Promise(resolve => setTimeout(resolve, Math.min(polling, Math.max(1, deadline - Date.now()))));
+  }
+  throw new Error('Asynchronous release condition timed out');
+}
+
 async function closeSession(session) {
   const env = session.env || session;
   const record = owned.get(env);
@@ -395,4 +414,4 @@ async function closeSession(session) {
   record.closed = true;
 }
 
-module.exports = { parseOptions, createEnvironment, launchBrowser, launchElectron, createMediaFixture, createHttpFixture, assertIsolation, closeSession };
+module.exports = { parseOptions, createEnvironment, launchBrowser, launchElectron, createMediaFixture, createHttpFixture, assertIsolation, closeSession, waitForAsync };

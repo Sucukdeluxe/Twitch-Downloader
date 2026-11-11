@@ -182,26 +182,32 @@ async function selectMedia(s, filename) {
   return { ref, media };
 }
 const edit = duration => ({ trimStart: 0.2, trimEnd: duration - 0.2, cuts: [{ id: 'middle', start: 1, end: 1.4 }], profile: 'fast', encoder: 'software', audioStreamIndex: 0, colorMode: 'source' });
+function assertCutRanges(actual, expected) {
+  // Saving normalizes caller-supplied IDs; the edit ranges must survive exactly.
+  assert.deepEqual(actual.map(({ start, end }) => ({ start, end })), expected.map(({ start, end }) => ({ start, end })));
+  assert.ok(actual.every(cut => typeof cut.id === 'string' && cut.id.length > 0));
+  assert.equal(new Set(actual.map(cut => cut.id)).size, actual.length);
+}
 async function projects(s, mediaFile) {
   const selected = await selectMedia(s, mediaFile);
   const project = edit(selected.media.info.duration);
   assert.equal(await api(s, 'saveCutterProject', selected.ref.token, project), true);
   const recovered = await api(s, 'getCutterProjectRecovery', selected.ref.token);
-  assert.deepEqual(recovered.cuts, project.cuts); assert.equal(recovered.trimStart, project.trimStart);
+  assertCutRanges(recovered.cuts, project.cuts); assert.equal(recovered.trimStart, project.trimStart);
   const destination = path.join(s.env.mediaDir, 'release-project.tvmcut');
   await dialogs(s, mediaFile, destination);
   const saved = await api(s, 'saveNamedCutterProject', selected.ref.token, project, 'Release project', true);
   assert.equal(saved.success, true, JSON.stringify(saved));
   const document = JSON.parse(fs.readFileSync(destination, 'utf8'));
   assert.equal(document.format, 'twitch-vod-manager/cutter-project'); assert.match(document.source.sha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(document.edit.cuts, project.cuts);
+  assertCutRanges(document.edit.cuts, project.cuts);
   const listed = await api(s, 'listNamedCutterProjects'); assert.equal(listed.projects.length, 1);
   return { selected, project, id: listed.projects[0].id };
 }
 async function reopen(s, options) { await s.app.close(); return h.launchElectron(s.env, { packaged: options.packaged }); }
 async function verifyReopenedProject(s, id, file) {
   const opened = await api(s, 'openNamedCutterProject', id); assert.equal(opened.success, true, JSON.stringify(opened));
-  assert.equal(opened.name, 'Release project'); assert.deepEqual(opened.project.cuts, [{ id: 'middle', start: 1, end: 1.4 }]);
+  assert.equal(opened.name, 'Release project'); assertCutRanges(opened.project.cuts, [{ start: 1, end: 1.4 }]);
   assert.ok(opened.source.token);
   const selected = await selectMedia(s, file);
   assert.equal((await api(s, 'getCutterProjectRecovery', selected.ref.token)).trimStart, 0.2);
@@ -217,7 +223,7 @@ async function exportEdit(s, selected, project, name, o) {
   const queued = await api(s, 'enqueueCutterExport', selected.ref.token, project);
   assert.equal(queued.success, true, JSON.stringify(queued));
   assert.equal((await api(s, 'exportJobAction', 'start')).success, true);
-  await s.page.waitForFunction(async id => {
+  await h.waitForAsync(s.page, async id => {
     const jobs = await window.api.listExportJobs(); return jobs.jobs.some(job => job.id === id && ['completed', 'failed', 'cancelled'].includes(job.status));
   }, queued.job.id, { timeout: 120000, polling: 250 });
   const job = (await api(s, 'listExportJobs')).jobs.find(job => job.id === queued.job.id);
@@ -338,7 +344,7 @@ async function run(name) {
         const updated = await api(s, 'searchArchive', { query: 'release-library', refresh: true }); assert.equal(updated.hits[0].size, fs.statSync(file).size);
         fs.unlinkSync(file); assert.equal((await api(s, 'searchArchive', { query: 'release-library', refresh: true })).matchCount, 0);
       } else if (name === 'roadmap-cleanup' || name === 'roadmap-cleanup-ui') await cleanup(s, media.path, name.endsWith('-ui'));
-      else if (name === 'roadmap-clips') {
+      else if (name === 'roadmap-clips-native') {
         const folder = path.join(env.downloadsDir, 'Clips'); fs.mkdirSync(folder); const file = path.join(folder, 'release-clip.mp4'); fs.copyFileSync(media.path, file);
         const clips = await api(s, 'getClipLibrary', 0, true); assert.ok(clips.files.some(f => f.fullPath === file));
         const result = await api(s, 'searchArchive', { type: 'clip', query: 'release-clip', refresh: true }); assert.ok(result.hits.some(h => h.fullPath === file && h.type === 'clip'));

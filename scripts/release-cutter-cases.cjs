@@ -141,12 +141,23 @@ async function omission(page, start, end) {
   await page.waitForFunction(() => !cutterCutDraft);
 }
 
+async function stepFrame(page, name) {
+  const direct = page.locator('#cutterPlayerControls .local-frame-controls').getByRole('button', { name, exact: true });
+  if (await direct.isVisible()) await direct.click();
+  else {
+    // On smaller native displays these actions live in the playback menu.
+    await page.locator('#cutterPlayerControls .local-player-options').click();
+    await page.getByRole('button', { name, exact: true }).click();
+    await page.keyboard.press('Escape');
+  }
+}
+
 async function core(session) {
   const { page } = session;
   for (const time of [1.2, 9.4, .4, 5.2]) await seek(page, time);
-  await page.getByRole('button', { name: 'Next frame', exact: true }).click();
+  await stepFrame(page, 'Next frame');
   await page.waitForFunction(() => Math.abs(document.getElementById('cutterVideo').currentTime - 5.24) < .015);
-  await page.getByRole('button', { name: 'Previous frame', exact: true }).click();
+  await stepFrame(page, 'Previous frame');
   await page.waitForFunction(() => Math.abs(document.getElementById('cutterVideo').currentTime - 5.2) < .015);
   await trim(page);
   assert.deepEqual(await page.evaluate(() => [cutterEditorState.trimStart, cutterEditorState.trimEnd]), [1, 11]);

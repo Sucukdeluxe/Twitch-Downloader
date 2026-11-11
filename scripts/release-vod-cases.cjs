@@ -320,7 +320,7 @@ async function seekPreference(options) {
     const page = ctx.session.page;
     await page.locator('[data-tab="settings"]').click();
     await page.locator('[data-player-seek="30"]').click();
-    await page.waitForFunction(async () => (await window.api.getConfig()).player_seek_seconds === 30);
+    await harness.waitForAsync(page, async () => (await window.api.getConfig()).player_seek_seconds === 30);
     assert.equal(ctx.session.state.config.player_seek_seconds, 30);
     await page.reload();
     await page.waitForFunction(() => document.querySelector('[data-player-seek="30"]')?.getAttribute('aria-pressed') === 'true');
@@ -502,7 +502,7 @@ async function queueNative(ctx, source, name, start, length, expectedStatus) {
     if (!item || !await window.api.startDownload()) throw new Error('Production queue did not start');
     return item.id;
   }, { id, name, start, length, date: STARTED });
-  await ctx.session.page.waitForFunction(async ({ id, expectedStatus }) => {
+  await harness.waitForAsync(ctx.session.page, async ({ id, expectedStatus }) => {
     const item = (await window.api.getQueue()).find(item => item.id === id);
     if (item?.status === 'error' && expectedStatus !== 'error') throw new Error(item.last_error || 'Production download failed');
     return item?.status === expectedStatus;
