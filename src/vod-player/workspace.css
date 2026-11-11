@@ -325,7 +325,7 @@
 #clipFooterFields .clip-modal-time-input { min-height:0; height:100%; padding:2px 4px; font-size:14px; line-height:24px; }
 #clipFooterFields .clip-modal-duration { flex-direction:row; min-height:32px; padding:3px 8px; gap:8px; }
 #clipFooterFields .clip-modal-duration > .clip-modal-meta { font-size:11px; }
-#clipFooterFields .clip-modal-duration-value { font-size:16px; min-height:24px; }
+#clipFooterFields .clip-modal-duration-value { align-items:center; font-size:14px; line-height:24px; min-height:24px; }
 #clipModal.is-mac .vod-details-toggle { display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:6px 9px; font-size:12px; white-space:nowrap; }
 #clipModal.is-mac .vod-details-toggle svg { flex:none; transform:rotate(180deg); }
 #clipModal.is-mac.is-range-collapsed .vod-details-toggle svg { transform:none; }
