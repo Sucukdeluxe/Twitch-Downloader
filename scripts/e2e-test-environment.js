@@ -294,7 +294,10 @@ function cleanupE2eEnvironment(environment) {
     return;
   }
 
-  fs.rmSync(environment.rootDir, { recursive: true, force: true });
+  // Chromium helpers can finish writing after the main process has exited.
+  // Retry transient ENOTEMPTY/EBUSY errors, but still fail if cleanup cannot
+  // complete. Only the validated, test-owned directory is ever removed.
+  fs.rmSync(environment.rootDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }
 
 module.exports = {
