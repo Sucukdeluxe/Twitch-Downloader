@@ -17,6 +17,19 @@ const TARGETS = [
 
 const TABS = ['vods', 'clips', 'cutter', 'merge', 'stats', 'archive', 'settings'];
 
+async function waitForUpdatePopover(win) {
+  // Both the focus/hover listener and CSS transition need a rendered frame.
+  // A fixed sleep can expire before either runs on a busy native CI runner.
+  await win.waitForFunction(() => {
+    const button = document.getElementById('workspaceUpdateButton');
+    const popover = document.querySelector('.workspace-update-popover');
+    if (!popover) return false;
+    const style = getComputedStyle(popover);
+    return button?.getAttribute('aria-expanded') === 'true'
+      && style.visibility === 'visible' && Number(style.opacity) > 0;
+  }, null, { timeout: 3000 });
+}
+
 async function run() {
   const environment = createE2eEnvironment('workspace-ui', {
     language: 'en',
@@ -430,7 +443,7 @@ async function run() {
 
       await win.evaluate(() => window.setDownloadPendingUi());
       await win.locator('#workspaceUpdateButton').focus();
-      await win.waitForTimeout(80);
+      await waitForUpdatePopover(win);
       const downloadingKeyboardState = await win.evaluate(() => {
         const button = document.getElementById('workspaceUpdateButton');
         const popover = document.querySelector('.workspace-update-popover');
@@ -456,7 +469,7 @@ async function run() {
       await win.evaluate(() => window.setUpdateBannerAvailableUi({ version: '9.9.9' }));
       await win.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
       await win.locator('#workspaceUpdateButton').hover();
-      await win.waitForTimeout(80);
+      await waitForUpdatePopover(win);
       const popoverActions = await win.evaluate(() => {
         const popover = document.querySelector('.workspace-update-popover');
         const later = document.getElementById('workspaceUpdateLater');

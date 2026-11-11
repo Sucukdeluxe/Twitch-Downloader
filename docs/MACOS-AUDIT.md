@@ -90,6 +90,9 @@ check: a snapshot 70 ms after sending hover could precede delivery of that event
 The test now observes real intermediate animation frames and the fully opened/
 closed states. Geometry assertions and the animation itself are unchanged;
 reduced-motion emulation remains local to the test page.
+Update-popover checks likewise wait for the visible, expanded state after focus
+or hover rather than taking a snapshot after a fixed 80 ms delay. Keyboard
+focus, disabled-action semantics and popover visibility are still asserted.
 
 Window recovery tests wait for both Playwright's page-close event and the native
 BrowserWindow `closed` event before activation. They also reuse a window already
