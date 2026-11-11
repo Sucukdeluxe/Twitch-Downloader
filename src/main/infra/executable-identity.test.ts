@@ -19,8 +19,8 @@ describe('verified executable cache identity', () => {
         expect(identity).not.toBeNull();
         expect(executableIdentity(file)).toBe(identity);
     });
-    // The production identity cache is macOS-only. Windows exposes creation
-    // time through Node's ctime and cannot provide this POSIX change-time check.
+    // Exercise change-time semantics where this cache is used: macOS.
+    // Windows keeps the original verification path and does not use this cache.
     it.skipIf(process.platform !== 'darwin')('invalidates same-size changes even if mtime is restored', () => {
         const timestamp = new Date('2026-01-01T00:00:00Z');
         fs.utimesSync(file, timestamp, timestamp);
