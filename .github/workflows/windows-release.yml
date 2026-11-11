@@ -33,7 +33,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Provision Chromium and WebKit
-        run: npx playwright install chromium webkit
+        run: npx playwright install --with-deps chromium webkit
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

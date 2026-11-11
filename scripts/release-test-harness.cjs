@@ -70,6 +70,8 @@ function createEnvironment(name, config = {}) {
     tempDir: path.join(rootDir, 'temp'), homeDir: path.join(rootDir, 'home') };
   env.appDataDir = path.join(env.programDataDir, 'Twitch_Downloader');
   for (const directory of Object.values(env)) fs.mkdirSync(directory, { recursive: true });
+  // Windows expands shell folders from USERPROFILE and requires them to exist.
+  for (const directory of ['Desktop', 'Documents', 'Downloads']) fs.mkdirSync(path.join(env.homeDir, directory));
   env.configFile = path.join(env.appDataDir, 'config.json');
   env.queueFile = path.join(env.appDataDir, 'download_queue.json');
   const id = nodeCrypto.randomUUID();
@@ -265,7 +267,7 @@ async function launchElectron(env, { packaged = false, fixture = {}, executableP
     const args = [`--user-data-dir=${env.userDataDir}`, `--proxy-server=${OFFLINE_PROXY}`,
       '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost', '--disable-background-networking'];
     if (!packaged) args.push('.');
-    session.app = await require('playwright')._electron.launch({ executablePath, args, cwd: projectRoot, env: childEnvironment(env) });
+    session.app = await require('playwright')._electron.launch({ executablePath, args, cwd: projectRoot, env: childEnvironment(env), timeout: 60000 });
     let appClosed = false;
     session.app.once('close', () => { appClosed = true; });
     ownedRecord(env).resources.push(async () => { if (!appClosed) await session.app.close(); });

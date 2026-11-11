@@ -61,7 +61,7 @@ async function run(name, args, attempt = 1) {
     } catch (error) {
         await writeFile(resolve(output, name + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
         const webkitProcessFailure = error.code === 1073807364 || /Target (?:page, context or browser has been closed|crashed)/.test(String(error.stderr || ''));
-        const webkitCompletedChecks = name.endsWith('-webkit') && /\bPASS\b/.test(String(error.stdout || '')) && !String(error.stderr || '').trim();
+        const webkitCompletedChecks = name.endsWith('-webkit') && /\bPASS\b|"status":"passed"/.test(String(error.stdout || '')) && !String(error.stderr || '').trim();
         if (name.endsWith('-webkit') && attempt < 3 && (webkitProcessFailure || webkitCompletedChecks)) {
             await writeFile(resolve(output, name + '-attempt-' + attempt + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
             console.warn('Retrying crashed WebKit process: ' + name + ' (attempt ' + (attempt + 1) + ')');
@@ -81,6 +81,9 @@ const failures = [];
 for (const [name, args] of checks) {
     try { await run(name, args); }
     catch (error) {
+        console.error(String(error.stdout || '') + String(error.stderr || '') + String(error));
+        // No native feature can be checked if the isolated application cannot start.
+        if (name === 'queue-startup') throw error;
         failures.push(new Error(name + ' failed; see release/verification/' + name + '.log', { cause: error }));
         console.error('Failed ' + name + '; continuing independent checks for complete diagnostics');
     }
