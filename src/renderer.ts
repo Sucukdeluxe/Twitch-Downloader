@@ -1725,6 +1725,23 @@ let clipSavedNaming: { format: CustomClip['filenameFormat']; template: string } 
 
 let clipQueueInFlight = false;
 let clipQueueError = '';
+let clipDetailsCollapsedPreference: boolean | null = null;
+
+function refreshClipDetailsToggle(): void {
+    const modal = byId('clipModal');
+    const toggle = byId<HTMLButtonElement>('clipDetailsToggle');
+    const collapsed = modal.classList.contains('is-range-collapsed');
+    toggle.hidden = window.api.platform !== 'darwin';
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    byId('clipDetailsToggleLabel').textContent = collapsed ? UI_TEXT.clips.showDetails : UI_TEXT.clips.hideDetails;
+}
+
+function toggleClipDetails(): void {
+    const modal = byId('clipModal');
+    clipDetailsCollapsedPreference = !modal.classList.contains('is-range-collapsed');
+    modal.classList.toggle('is-range-collapsed', clipDetailsCollapsedPreference);
+    refreshClipDetailsToggle();
+}
 
 function getClipStartPart(): number {
     const value = byId<HTMLInputElement>('clipStartPart').value.trim();
@@ -1754,6 +1771,12 @@ function updateClipOmissionState(): void {
     if (invalidPart) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Startnummer: 1–100.000.' : 'Starting number: 1–100,000.';
     else if (clipOmissionState?.editing) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Bereich bestätigen oder abbrechen.' : 'Confirm or cancel the range.';
     else if (clipQueueError) byId('clipQueueHint').textContent = clipQueueError;
+    // Keep invalid inputs visible instead of hiding the reason queueing is blocked.
+    if (!validRange || invalidPart) {
+        byId('clipModal').classList.remove('is-range-collapsed');
+        refreshClipDetailsToggle();
+    }
+    byId<HTMLButtonElement>('clipDetailsToggle').disabled = !validRange || invalidPart;
 }
 
 function formatClipOutputSummary(fileCount: number, durationSec: number, partSeconds: number): string {
@@ -1800,6 +1823,10 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
 
     updateClipDuration();
     updateFilenameExamples();
+    byId('clipModal').classList.toggle('is-mac', window.api.platform === 'darwin');
+    byId('clipModal').classList.toggle('is-range-collapsed', window.api.platform === 'darwin' && !byId<HTMLButtonElement>('clipDetailsToggle').disabled
+        && (clipDetailsCollapsedPreference ?? window.innerHeight <= 1000));
+    refreshClipDetailsToggle();
     RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog, onBackdrop: closeClipDialog });
     clipPlayer = window.VodPlayer.mount(byId('clipPlayer'), {
         url, title, date, duration: clipTotalSeconds, language: config.language || 'de', start: 0, end: clipTotalSeconds,

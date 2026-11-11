@@ -51,6 +51,7 @@
     "scripts/smoke-test-file-capability-contract.js",
     "scripts/smoke-test-installer.js",
     "scripts/smoke-test-macos-recovery.js",
+    "scripts/smoke-test-macos-trim-layout.js",
     "scripts/smoke-test-macos-update.js",
     "scripts/smoke-test-macos.js",
     "scripts/smoke-test-merge-split-logic.js",

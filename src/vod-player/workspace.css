@@ -297,6 +297,45 @@
 .vod-excerpt-dim { position:absolute; inset-block:0; background:#0e1116b8; }
 .vod-excerpt-dim.is-before { left:0; }
 .vod-excerpt-dim.is-after { right:0; }
+
+/* Keep the preview useful on MacBook-sized workspaces. The full editing
+   controls remain one click away; the range timeline is always available. */
+#clipModal.is-mac { padding:8px; }
+#clipModal.is-mac .clip-modal { width:min(1800px,100%); height:calc(100dvh - 16px); max-height:calc(100dvh - 16px); }
+#clipModal.is-mac .vod-cut-header { padding:8px 12px; gap:12px; }
+#clipModal.is-mac .vod-cut-header .clip-modal-title { font-size:18px; margin-bottom:2px; }
+#clipModal.is-mac .vod-cut-header p { font-size:12px; }
+#clipModal.is-mac .vod-cut-footer { padding:6px 12px; gap:8px; }
+#clipModal.is-mac .vod-cut-footer > span { font-size:13px; }
+#clipModal.is-mac .vod-cut-footer button { min-height:34px; padding:6px 12px; }
+#clipModal.is-mac .vod-details-toggle { display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:6px 9px; font-size:12px; white-space:nowrap; }
+#clipModal.is-mac .vod-details-toggle svg { flex:none; transform:rotate(180deg); }
+#clipModal.is-mac.is-range-collapsed .vod-details-toggle svg { transform:none; }
+#clipModal.is-mac.is-omitting .vod-details-toggle { display:none; }
+#clipModal.is-mac .vod-details-toggle:focus-visible { outline:2px solid var(--text); outline-offset:2px; }
+#clipModal.is-mac #clipPlayer .vod-player-source { margin:4px 2px 0; font-size:11px; }
+#clipModal.is-mac #clipPlayer .archive-player:not(.cinema):not(:fullscreen) .archive-controls { padding:6px 10px; }
+#clipModal.is-mac #clipPlayer .archive-player:not(.cinema):not(:fullscreen) .archive-control-row .player-button { height:34px; padding-block:4px; }
+#clipModal.is-mac:not(.is-omitting) #clipPlayer .archive-player:not(.cinema):not(:fullscreen) .archive-timeline-track,
+#clipModal.is-mac:not(.is-omitting) #clipPlayer .archive-player:not(.cinema):not(:fullscreen) .archive-timeline-row > .archive-clock { margin-bottom:8px; }
+#clipModal.is-mac #clipPlayer .archive-player:not(.cinema):not(:fullscreen) .archive-timeline-row { margin-bottom:2px; }
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipRangeFields,
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipBoundaryActions,
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipRangeActions,
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipFilenameOptions { display:none; }
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-heading { margin-bottom:6px; }
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-controls { margin-top:0; }
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-selection-labels { margin-top:5px; }
+@media(min-width:801px) {
+  #clipModal.is-mac .vod-cut-layout { grid-template-rows:minmax(230px,1fr) 278px; grid-template-columns:minmax(0,1fr) clamp(260px,23vw,330px); padding:8px 12px; gap:8px; }
+  #clipModal.is-mac #clipCutPanel { padding:8px 10px; }
+  #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-layout { grid-template-rows:minmax(230px,1fr) auto; }
+  #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-heading h3 { display:none; }
+  #clipModal.is-mac .vod-cut-heading { gap:8px; }
+}
+@media(max-width:800px) {
+  #clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipCutPanel { min-height:0; }
+}
 .vod-omission-actions .vod-omission-scope { border-color:#aa8cea; }
 .vod-omission-scope svg { color:#bda5ef; }
 

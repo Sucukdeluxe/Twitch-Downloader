@@ -54,7 +54,8 @@
     "tools:mac": "python3 scripts/prepare-macos-tools.py",
     "pack:mac": "npm run build && electron-builder --mac --dir",
     "dist:mac": "npm run build && electron-builder --mac dmg zip",
-    "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js",
+    "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js && node scripts/smoke-test-macos-trim-layout.js",
+    "test:e2e:mac-trim": "npm run build && node scripts/smoke-test-macos-trim-layout.js",
     "test:mac-update": "npm run build && node --test scripts/test-macos-update-manifest.js && node scripts/test-macos-updater.js",
     "rebuild:electron": "electron-builder install-app-deps"
   },
