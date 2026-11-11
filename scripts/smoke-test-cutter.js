@@ -304,6 +304,11 @@ async function run() {
     await win.getByRole('slider', { name: 'Playback speed', exact: true }).press('ArrowRight');
     await win.waitForFunction(() => document.getElementById('cutterVideo').playbackRate === 1.5);
     check(await win.evaluate(() => document.getElementById('cutterVideo').playbackRate === 1.5), 'React playback rate control did not update video');
+    // Consecutive inputs must not depend on the delayed native ratechange event.
+    const speed = win.getByRole('slider', { name: 'Playback speed', exact: true });
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']) await speed.press(key);
+    await win.waitForFunction(() => document.getElementById('cutterVideo').playbackRate === 1.5
+      && document.querySelector('input[aria-label="Playback speed"]').getAttribute('aria-valuetext') === '1.5×');
     await win.keyboard.press('Escape');
     await win.evaluate(() => { document.getElementById('cutterVideo').playbackRate = 1; });
 
@@ -320,13 +325,24 @@ async function run() {
     await win.locator('#cutterTrimStartHandle').press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+Shift+z');
     check(await win.evaluate(() => Math.abs(cutterEditorState.trimStart - 1.04) < .001), 'Native redo did not restore the trim');
     await win.evaluate(() => undoCutterEdit());
-    const handle = await win.locator('#cutterTrimStartHandle').boundingBox();
-    await win.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    // Undo updates the model before React commits the marker position. Hover
+    // waits for the actual rendered target, including scrolling and hit testing.
+    const trimHandle = win.locator('#cutterTrimStartHandle');
+    await win.waitForFunction(() => cutterEditorState.trimStart === 1
+      && Number(document.getElementById('cutterTrimStartHandle').getAttribute('aria-valuenow')) === 1);
+    await trimHandle.hover();
+    const handle = await trimHandle.boundingBox();
     await win.mouse.down();
+    await win.waitForFunction(() => cutterRangeDrag !== null
+      && document.getElementById('cutterTrimStartHandle').parentElement.dataset.dragging === 'true');
     await win.mouse.move(handle.x + handle.width / 2 + 45, handle.y + handle.height / 2, { steps: 8 });
     await win.mouse.up();
-    check(await win.evaluate(() => cutterEditorState.trimStart > 1.04), 'Pointer dragging the React trim marker did not change the range');
+    await win.waitForFunction(() => cutterRangeDrag === null && cutterEditorState.trimStart > 1.04);
+    checks.pointerTrim = await win.evaluate(() => ({ start: cutterEditorState.trimStart, end: cutterEditorState.trimEnd }));
+    check(checks.pointerTrim.start > 1.04 && checks.pointerTrim.end === 9, 'Pointer dragging the React trim marker did not change the range');
     await win.evaluate(() => undoCutterEdit());
+    await win.waitForFunction(() => cutterEditorState.trimStart === 1 && cutterEditorState.trimEnd === 9
+      && Number(document.getElementById('cutterTrimStartHandle').getAttribute('aria-valuenow')) === 1);
 
     await win.locator('#cutterOmitMode').click();
     await win.locator('#cutterNewCutBtn').click();

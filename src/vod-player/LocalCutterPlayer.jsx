@@ -99,7 +99,12 @@ function LocalCutterPlayer({ options, bind }) {
   function toggleCinema() { root.current.classList.toggle('cinema'); }
   if (!state.active) return null;
   const rate = <PlayerPanel root={root} label={t('playbackSpeed')} className="player-rate-button" trigger={<>{media.rate}×<ChevronDown size={14}/></>}>
-    <RateControl value={String(media.rate)} onChange={value => { video.playbackRate = Number(value); }} t={t}/>
+    <RateControl value={String(media.rate)} onChange={value => {
+      video.playbackRate = Number(value);
+      // Commit the control value with this input event. The native ratechange
+      // event can arrive after another keypress and would lose that increment.
+      setMedia(previous => ({ ...previous, rate: video.playbackRate }));
+    }} t={t}/>
   </PlayerPanel>;
   return <><LocalCutterRanges state={state} options={options} root={root} t={t}/><div className="archive-controls local-cutter-controls" hidden={!state.active}>
     <div className="archive-control-row">
