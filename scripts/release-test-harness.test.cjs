@@ -10,7 +10,7 @@ const { parseOptions, createEnvironment, createHttpFixture, createMediaFixture, 
 const { readContract, createFixtureState, createDispatcher } = require('./release-browser-fixtures.cjs');
 const root = path.resolve(__dirname, '..');
 const contract = readContract(root);
-const get = url => new Promise((resolve, reject) => http.get(url, response => {
+const get = (url, options = {}) => new Promise((resolve, reject) => http.get(url, options, response => {
   let body = ''; response.on('data', chunk => { body += chunk; }); response.on('end', () => resolve({ status: response.statusCode, body }));
 }).on('error', reject));
 
@@ -144,7 +144,13 @@ test('HTTP fixtures serve explicit routes, track calls, and close active sockets
     assert.equal((await get(`${fixture.url}/outside`)).status, 500);
     assert.deepEqual(fixture.calls.map(call => call.path), ['/json', '/file', '/missing', '/outside']);
   } finally { await closeSession(env); }
-  await assert.rejects(get(fixture.url), /ECONNREFUSED/);
+  assert.equal(fixture.server.listening, false);
+  assert.equal(fixture.server.address(), null);
+  const connections = await new Promise((resolve, reject) => fixture.server.getConnections((error, count) => error ? reject(error) : resolve(count)));
+  assert.equal(connections, 0);
+  // A pooled keep-alive socket may report ECONNRESET after closeAllConnections on
+  // Windows. Probe a fresh connection to verify the listener actually closed.
+  await assert.rejects(get(fixture.url, { agent: false }), { code: 'ECONNREFUSED', syscall: 'connect' });
 });
 
 test('media generation rejects escaping output names before launching a process', async () => {

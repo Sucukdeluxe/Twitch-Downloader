@@ -77,7 +77,15 @@ await run('unit', ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=2', '-
 const units = JSON.parse(await readFile(resolve(output, 'unit.json'), 'utf8'));
 if (!units.success || !(units.numTotalTests > 0) || units.numFailedTests > 0 || units.numPendingTests > 0) throw new Error('Unit test suite is incomplete');
 await run('electron-native-dependencies', ['node_modules/electron-builder/cli.js', 'install-app-deps']);
-for (const [name, args] of checks) await run(name, args);
+const failures = [];
+for (const [name, args] of checks) {
+    try { await run(name, args); }
+    catch (error) {
+        failures.push(new Error(name + ' failed; see release/verification/' + name + '.log', { cause: error }));
+        console.error('Failed ' + name + '; continuing independent checks for complete diagnostics');
+    }
+}
+if (failures.length) throw new AggregateError(failures, 'Release verification failed: ' + failures.length + ' required checks');
 if (fingerprint !== await releaseFingerprint(root)) throw new Error('Sources changed during verification');
 const commit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: root, windowsHide: true })).stdout.trim();
 await writeFile(resolve(output, 'receipt.json'), JSON.stringify({ version: 1, commit, fingerprint, tests: units.numTotalTests, success: true, completedAt: new Date().toISOString(), checks: results }, null, 2));
