@@ -1540,28 +1540,32 @@ async function run() {
     check(Math.abs(dockWithOneSelection.width - dockWithTwoSelections.width) <= 0.25, `VOD bulk dock width changes between one and two selections: ${dockWithOneSelection.width}/${dockWithTwoSelections.width}`);
     check(Math.abs(dockWithOneSelection.left - dockWithTwoSelections.left) <= 0.25, `VOD bulk dock shifts between one and two selections: ${dockWithOneSelection.left}/${dockWithTwoSelections.left}`);
     await secondDockCard.locator('.vod-thumbnail').click();
-    await hoverCard.locator('.vod-thumbnail').click();
-    await win.waitForTimeout(80);
-    const dockDuringExit = await win.locator('#vodBulkBar').evaluate((dock) => {
-      const style = getComputedStyle(dock);
-      return {
-        display: style.display,
-        opacity: Number(style.opacity),
-        visibility: style.visibility,
-        pointerEvents: style.pointerEvents,
-        animationCount: dock.getAnimations().length,
-        translateY: new DOMMatrix(style.transform).m42
+    const { during: dockDuringExit, after: dockAfterExit } = await win.evaluate(async () => {
+      const dock = document.getElementById('vodBulkBar');
+      const capture = () => {
+        const style = getComputedStyle(dock);
+        return {
+          display: style.display,
+          opacity: Number(style.opacity),
+          visibility: style.visibility,
+          pointerEvents: style.pointerEvents,
+          animationCount: dock.getAnimations().length,
+          translateY: new DOMMatrix(style.transform).m42
+        };
       };
-    });
-    await win.waitForFunction(() => getComputedStyle(document.getElementById('vodBulkBar')).visibility === 'hidden', null, { timeout: 1000 });
-    const dockAfterExit = await win.locator('#vodBulkBar').evaluate((dock) => {
-      const style = getComputedStyle(dock);
-      return {
-        display: style.display,
-        opacity: Number(style.opacity),
-        visibility: style.visibility,
-        pointerEvents: style.pointerEvents
-      };
+      // Advance the real CSS transitions, independent of the runner's frame
+      // scheduling and the time spent sending clicks across process boundaries.
+      document.querySelector('.vod-card[data-vod-id="hover-hd-fixture"] .vod-thumbnail').click();
+      const transitions = dock.getAnimations();
+      for (const transition of transitions) {
+        transition.pause();
+        transition.currentTime = 80;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const during = capture();
+      for (const transition of transitions) transition.finish();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return { during, after: capture() };
     });
     checks.vodBulkDockExit = { during: dockDuringExit, after: dockAfterExit };
     check(dockDuringExit.display === 'flex' && dockDuringExit.visibility === 'visible', `VOD bulk dock disappears before its exit motion: ${JSON.stringify(dockDuringExit)}`);
