@@ -56,6 +56,22 @@ async function run() {
     });
 
     await win.waitForFunction(() => typeof window.showTab === 'function');
+    await win.evaluate(() => {
+      window.__sampleWorkspaceMotion = async (element, milliseconds) => {
+        // Indicator positions are assigned in requestAnimationFrame. Wait for
+        // that assignment, then sample real animations at a known point.
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        for (const animation of element.getAnimations({ subtree: true })) {
+          if (!Number.isFinite(animation.effect.getComputedTiming().endTime)) continue;
+          if (milliseconds >= 300) animation.finish();
+          else {
+            animation.pause();
+            animation.currentTime = milliseconds;
+          }
+        }
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      };
+    });
 
     const shell = await win.evaluate(() => ({
       topbar: Boolean(document.querySelector('.app-topbar')),
@@ -1403,7 +1419,7 @@ async function run() {
     await win.keyboard.press('Escape');
 
     const streamerSelectionMotion = await win.evaluate(async () => {
-      const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+      const pause = (milliseconds) => window.__sampleWorkspaceMotion(document.getElementById('streamerList'), milliseconds);
       config.streamers = ['xrohat', 'fibii', 'montanablack88'];
       currentStreamer = 'xrohat';
       renderStreamers();
@@ -1698,7 +1714,7 @@ async function run() {
     const contextSwitcherMotion = await win.evaluate(async () => {
       const switcher = document.querySelector('.context-switcher');
       const readX = () => new DOMMatrixReadOnly(getComputedStyle(switcher, '::before').transform).m41;
-      const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+      const pause = (milliseconds) => window.__sampleWorkspaceMotion(switcher, milliseconds);
       window.setVodsWorkspace('streamers');
       await pause(460);
       const start = readX();
@@ -1750,7 +1766,7 @@ async function run() {
     const languageSwitcherMotion = await win.evaluate(async () => {
       const picker = document.getElementById('languagePicker');
       const readX = () => new DOMMatrixReadOnly(getComputedStyle(picker, '::before').transform).m41;
-      const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+      const pause = (milliseconds) => window.__sampleWorkspaceMotion(picker, milliseconds);
       window.changeLanguage('en');
       await pause(460);
       const start = readX();
@@ -1819,7 +1835,7 @@ async function run() {
       const designButton = list.querySelector('[data-settings-pane="design"]') || buttons[0];
       const updatesButton = list.querySelector('[data-settings-pane="updates"]') || buttons[3];
       const readY = () => new DOMMatrixReadOnly(getComputedStyle(list, '::before').transform).m42;
-      const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+      const pause = (milliseconds) => window.__sampleWorkspaceMotion(list, milliseconds);
       designButton.click();
       await pause(460);
       const start = readY();
@@ -1874,7 +1890,7 @@ async function run() {
     const topNavMotion = await win.evaluate(async () => {
       const nav = document.querySelector('.top-nav');
       const readX = () => new DOMMatrixReadOnly(getComputedStyle(nav, '::before').transform).m41;
-      const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+      const pause = (milliseconds) => window.__sampleWorkspaceMotion(nav, milliseconds);
       window.showTab('vods');
       await pause(520);
       const start = readX();
