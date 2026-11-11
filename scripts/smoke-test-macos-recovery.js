@@ -167,8 +167,9 @@ async function run() {
       axios.get = async (url, ...args) => String(url).includes('/helix/clips')
         ? { data: { data: [{ broadcaster_name: 'audit', title: 'Local fixture' }] } } : original.get.call(axios, url, ...args);
       childProcess.spawn = (command, args, spawnOptions) => {
-        if (args.some((arg) => String(arg).startsWith('https://clips.twitch.tv/'))) {
-          args = args.map((arg) => String(arg).startsWith('https://clips.twitch.tv/') ? `hls://http://localhost:${port}/${String(arg).endsWith('AuditInvalid') ? 'invalid' : String(arg).endsWith('AuditMuxed') ? 'muxed' : 'index'}.m3u8` : arg);
+        const isFixture = (arg) => String(arg).startsWith('https://clips.twitch.tv/') || arg === 'https://www.twitch.tv/videos/2222222';
+        if (args.some(isFixture)) {
+          args = args.map((arg) => isFixture(arg) ? `hls://http://localhost:${port}/${String(arg).endsWith('AuditInvalid') ? 'invalid' : String(arg).endsWith('AuditMuxed') ? 'muxed' : 'index'}.m3u8` : arg);
           spawnOptions = { ...spawnOptions, env: { ...process.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
         }
         return original.spawn(command, args, spawnOptions);
@@ -206,6 +207,28 @@ async function run() {
       assert.equal(result.success, false, 'Streamlink exit 0 published bytes that FFprobe cannot parse');
       const files = fs.readdirSync(path.join(environment.downloadsDir, 'Clips', 'audit'));
       assert(!files.some((file) => file.includes('.part')));
+      return true;
+    });
+    await check('vod-excerpt-as-first-download', async () => {
+      await win.evaluate(async () => {
+        await window.api.resetManagedTools();
+        await window.api.addToQueue({ url: 'https://www.twitch.tv/videos/2222222', title: 'First VOD excerpt', date: '2026-11-11', streamer: 'audit', duration_str: '3s', customClip: { startSec: 0, durationSec: 3, startPart: 1, filenameFormat: 'simple' } });
+      });
+      assert.equal(fs.existsSync(ffprobe), false);
+      await win.evaluate(() => window.api.startDownload());
+      const deadline = Date.now() + 90000;
+      let item;
+      do {
+        item = (await win.evaluate(() => window.api.getQueue()))[0];
+        if (item && ['completed', 'error'].includes(item.status)) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+      assert.equal(item?.status, 'completed', JSON.stringify(item));
+      assert(fs.existsSync(ffprobe));
+      assert(item.outputFiles?.length > 0);
+      const probe = await execute(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', item.outputFiles[0]]);
+      assert(Number(probe.stdout.trim()) >= 2.9);
+      await win.evaluate((id) => window.api.removeFromQueue(id), item.id);
       return true;
     });
     await win.evaluate(() => window.api.clearClientSecret());

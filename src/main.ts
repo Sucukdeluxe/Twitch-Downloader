@@ -4024,7 +4024,7 @@ async function splitMergedFile(
 // ==========================================
 // DOWNLOAD FUNCTIONS
 // ==========================================
-function downloadVODPart(
+async function downloadVODPart(
     url: string,
     filename: string,
     startTime: string | null,
@@ -4039,6 +4039,12 @@ function downloadVODPart(
         damit der Bar nicht in indeterminate haengt. 0 = unknown. */
     expectedTotalSec: number = 0
 ): Promise<DownloadResult> {
+    // Every path (full VOD, excerpt, split and live recording) needs FFprobe
+    // for validation, and Streamlink may need FFmpeg to combine audio/video.
+    if (!await ensureFfmpegInstalled()) return { success: false, error: tBackend('ffmpegMissing') };
+    if (appShutdownStarted || queueProcessRegistry.isCancelled(itemId)) {
+        return { success: false, error: tBackend('downloadCancelled') };
+    }
     return new Promise((resolve) => {
         const streamlinkCmd = getStreamlinkCommand();
         const args = [...streamlinkCmd.prefixArgs, url, getStreamlinkStreamArg(), '--stdout'];

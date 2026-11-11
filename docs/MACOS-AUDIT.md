@@ -13,7 +13,7 @@ real local HLS playlists and FFmpeg/FFprobe process the resulting media.
 | --- | --- | --- |
 | Remove FFmpeg's executable permission | Automatic repair leaves it unusable | Probe the real executable and force verified bundle extraction on failure |
 | Corrupt a private Python module while retaining launcher hashes | Tool status passes, automatic repair fails | Probe the complete runtime rather than trusting an old command cache |
-| Download a clip before using any other feature | Streamlink missing | Install both Streamlink and the FFmpeg integrity checker before starting |
+| Download a clip or VOD before using any other feature | Clip fails; ordinary VOD paths skip integrity checks because FFprobe is missing | Install both Streamlink and FFmpeg before first use, including the common VOD/live download path |
 | HLS with separate audio and video | Video-only output when no host FFmpeg exists | Pass the absolute managed FFmpeg path to Streamlink; inspect both output streams |
 | HLS containing invalid media bytes | Successful download despite FFprobe failure | Fail integrity validation and discard partial output |
 | Native Cmd-Z / Edit → Undo in the cutter | No edit is undone, despite passing synthetic key tests | Route native menu actions to cutter history; preserve normal text-field undo |
