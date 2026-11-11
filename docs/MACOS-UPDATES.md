@@ -187,6 +187,11 @@ restores the previous bundle and reopens the same profile. The app reports a fai
 installation on the next startup. Both bundles remain available if the operating
 system's Launch Services callback itself stalls.
 
+Only one Mac process uses a given profile. The helper also checks for other profiles
+running the same app bundle. Such an instance prevents replacement; if independently
+launched during recovery, it prevents rollback and the original backup is retained.
+The updater never terminates an independent app instance.
+
 Rollback restores application files, not arbitrary database migrations. Future
 releases must keep on-disk changes compatible with the previous version or add a
 separately tested data migration backup. Ad-hoc signing may cause macOS to ask

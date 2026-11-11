@@ -5,7 +5,7 @@
 
   A macOS port of the Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
 
-  [![Mac preview](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader-macos?include_prereleases&display_name=tag)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
+  [![Mac release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader-macos?display_name=tag)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
   [![macOS](https://img.shields.io/badge/platform-macOS_12%2B-333333?logo=apple)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
   [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-Downloader-macos)](LICENSE)
 
@@ -69,6 +69,19 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 
 ## Installation
 
+### macOS
+
+1. Open the [Mac releases](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases).
+2. Download the DMG for `arm64` (Apple Silicon) or `x64` (Intel).
+3. Drag Twitch VOD Manager into Applications and open it.
+
+The free distribution is ad-hoc signed. If macOS blocks the initial launch, follow
+[Apple's instructions for an app you trust](https://support.apple.com/en-us/102445).
+Version 1.0.10 introduces the authenticated in-app updater; older previews need
+this version installed once from the DMG.
+
+### Windows (upstream)
+
 1. Open the [latest GitHub release](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest).
 2. Download `Twitch-VOD-Manager-Setup-1.0.9.exe`.
 3. Run the installer and choose the installation directory.
@@ -94,7 +107,14 @@ Public mode does not require a Twitch login. It supports public VOD discovery an
 
 ## Updates
 
-The application checks GitHub Releases for newer versions. The Update control only appears when an update is actually available. Every release includes `latest.yml`, the Windows installer and its blockmap for the desktop updater.
+The application checks GitHub Releases after startup and every ten minutes. The
+Update control downloads a newer release and installs it after confirmation.
+On Mac, an Ed25519 signature and SHA-256 checksum authenticate the architecture-specific
+ZIP. A native helper waits for saved state and orderly shutdown, exchanges the app,
+and verifies startup. Failed startup restores the previous app; independently running
+copies prevent unsafe replacement or rollback. Apple Developer membership is not
+required for this update path. See [Mac update and release details](docs/MACOS-UPDATES.md).
+Windows keeps its existing `latest.yml`/NSIS updater.
 
 ## Development
 
