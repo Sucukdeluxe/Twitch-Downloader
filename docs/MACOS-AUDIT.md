@@ -116,6 +116,13 @@ additionally requires monotonic presentation and the exact first/final targets.
 It waits for those rendered targets with a bounded timeout. Pointer speed and
 the application's existing latest-target coalescing are unchanged.
 
+Playback pacing is measured between successive animation callbacks. The former
+first sample also included the asynchronous `video.play()` startup, which could
+incorrectly attribute startup latency to steady playback. Startup is reported
+separately; pacing thresholds remain unchanged. Scrub diagnostics retain both
+delivered pointer events and video-frame callback metadata to distinguish input
+coalescing, missed observations and delayed presentation on hosted runners.
+
 Window recovery tests wait for both Playwright's page-close event and the native
 BrowserWindow `closed` event before activation. They also reuse a window already
 reopened by macOS. This avoids treating the ordering of Cocoa and test-protocol

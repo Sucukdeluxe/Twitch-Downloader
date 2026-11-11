@@ -1142,10 +1142,39 @@ async function run() {
       const video = document.getElementById('cutterVideo');
       video.pause();
       window.__cutterLongScrubFrames = [];
+      window.__cutterLongScrubPresentations = [];
+      window.__cutterLongScrubPointers = [];
       window.__cutterLongScrubRecording = true;
-      const recordFrame = (_now, metadata) => {
+      window.__cutterRecordLongScrubPointer = (event) => {
+        if (!window.__cutterLongScrubRecording) return;
+        const startsTimelineDrag = event.type === 'pointerdown' && event.button === 0
+          && event.target instanceof Element && event.target.closest('#timeline');
+        if (!startsTimelineDrag && (cutterDragState?.kind !== 'playhead' || event.pointerId !== cutterDragState.pointerId)) return;
+        window.__cutterLongScrubPointers.push({
+          type: event.type,
+          deliveredAt: performance.now(),
+          eventTimeStamp: event.timeStamp,
+          clientX: event.clientX,
+          targetTime: cutterPointerTimeAt(event.clientX)
+        });
+      };
+      for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+        document.addEventListener(type, window.__cutterRecordLongScrubPointer, { capture: true });
+      }
+      const recordFrame = (now, metadata) => {
         if (!window.__cutterLongScrubRecording) return;
         window.__cutterLongScrubFrames.push(metadata.mediaTime);
+        window.__cutterLongScrubPresentations.push({
+          callbackTime: now,
+          observedAt: performance.now(),
+          mediaTime: metadata.mediaTime,
+          presentedFrames: metadata.presentedFrames,
+          presentationTime: metadata.presentationTime,
+          expectedDisplayTime: metadata.expectedDisplayTime,
+          processingDuration: metadata.processingDuration ?? null,
+          pendingTargetTime: cutterScrubTargetTime,
+          seekInFlight: cutterScrubSeekInFlight
+        });
         video.requestVideoFrameCallback(recordFrame);
       };
       video.requestVideoFrameCallback(recordFrame);
@@ -1174,14 +1203,24 @@ async function run() {
       window.__cutterLongScrubRecording = false;
       const frames = [...new Set(window.__cutterLongScrubFrames.map((value) => Number(value.toFixed(3))))];
       const gaps = frames.slice(1).map((value, index) => Math.abs(value - frames[index]));
+      const deliveredPointers = window.__cutterLongScrubPointers;
+      const presentations = window.__cutterLongScrubPresentations;
+      for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+        document.removeEventListener(type, window.__cutterRecordLongScrubPointer, { capture: true });
+      }
+      delete window.__cutterRecordLongScrubPointer;
       delete window.__cutterLongScrubFrames;
+      delete window.__cutterLongScrubPointers;
+      delete window.__cutterLongScrubPresentations;
       delete window.__cutterLongScrubRecording;
       return {
         frames: frames.length,
         first: frames[0] ?? null,
         last: frames.at(-1) ?? null,
         monotonic: frames.every((value, index) => index === 0 || value >= frames[index - 1]),
-        maximumGap: gaps.length ? Math.max(...gaps) : null
+        maximumGap: gaps.length ? Math.max(...gaps) : null,
+        deliveredPointers,
+        presentations
       };
     });
     check(
@@ -1501,19 +1540,29 @@ async function run() {
       const video = document.getElementById('cutterVideo');
       const results = [];
       for (const rate of [0.5, 2]) {
+        const startupStarted = performance.now();
         video.currentTime = 7.1;
         video.playbackRate = rate;
         const frameDeltas = [];
         const timecodes = new Set();
-        let previous = performance.now();
+        let previous = null;
+        let firstFrameAt = null;
+        let startupMs = null;
         await video.play();
+        const playResolvedMs = performance.now() - startupStarted;
         await new Promise((resolve) => {
-          const started = performance.now();
           const sample = (now) => {
-            frameDeltas.push(now - previous);
+            // The first callback includes seek/play startup, not a frame interval.
+            // Start the pacing window here and report that startup separately.
+            if (previous === null) {
+              firstFrameAt = now;
+              startupMs = performance.now() - startupStarted;
+            } else {
+              frameDeltas.push(now - previous);
+            }
             previous = now;
             timecodes.add(document.getElementById('cutterCurrentTime').textContent);
-            if (now - started >= 900) {
+            if (now - firstFrameAt >= 900) {
               video.pause();
               resolve();
               return;
@@ -1525,6 +1574,9 @@ async function run() {
         frameDeltas.sort((left, right) => left - right);
         results.push({
           rate,
+          startupMs,
+          playResolvedMs,
+          frameSamples: frameDeltas.length,
           timecodes: timecodes.size,
           p95FrameMs: frameDeltas[Math.min(frameDeltas.length - 1, Math.floor(frameDeltas.length * 0.95))],
           maxFrameMs: frameDeltas[frameDeltas.length - 1]
