@@ -1734,6 +1734,18 @@ function refreshClipDetailsToggle(): void {
     toggle.hidden = window.api.platform !== 'darwin';
     toggle.setAttribute('aria-expanded', String(!collapsed));
     byId('clipDetailsToggleLabel').textContent = collapsed ? UI_TEXT.clips.showDetails : UI_TEXT.clips.hideDetails;
+    // Reuse the actual inputs and their player portals so both layouts edit
+    // exactly the same range, including sub-second boundaries and validation.
+    const fields = byId('clipRangeFields');
+    const inFooter = window.api.platform === 'darwin' && collapsed && !modal.classList.contains('is-omitting');
+    const parent = byId(inFooter ? 'clipFooterFields' : 'clipCutPanel');
+    if (fields.parentElement !== parent) {
+        const focused = document.activeElement instanceof HTMLElement && fields.contains(document.activeElement) ? document.activeElement : null;
+        const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
+        parent.insertBefore(fields, inFooter ? null : byId('clipOmissionPanel'));
+        focused?.focus({ preventScroll: true });
+        if (focused instanceof HTMLInputElement && selection) focused.setSelectionRange(selection[0], selection[1]);
+    }
 }
 
 function toggleClipDetails(): void {
@@ -1771,12 +1783,13 @@ function updateClipOmissionState(): void {
     if (invalidPart) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Startnummer: 1–100.000.' : 'Starting number: 1–100,000.';
     else if (clipOmissionState?.editing) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Bereich bestätigen oder abbrechen.' : 'Confirm or cancel the range.';
     else if (clipQueueError) byId('clipQueueHint').textContent = clipQueueError;
-    // Keep invalid inputs visible instead of hiding the reason queueing is blocked.
-    if (!validRange || invalidPart) {
+    // Range inputs stay visible in either layout. Only hidden filename options
+    // need expansion; partial time entry must not move or blur the active input.
+    if (invalidPart) {
         byId('clipModal').classList.remove('is-range-collapsed');
         refreshClipDetailsToggle();
     }
-    byId<HTMLButtonElement>('clipDetailsToggle').disabled = !validRange || invalidPart;
+    byId<HTMLButtonElement>('clipDetailsToggle').disabled = invalidPart;
 }
 
 function formatClipOutputSummary(fileCount: number, durationSec: number, partSeconds: number): string {
@@ -1825,7 +1838,7 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
     updateFilenameExamples();
     byId('clipModal').classList.toggle('is-mac', window.api.platform === 'darwin');
     byId('clipModal').classList.toggle('is-range-collapsed', window.api.platform === 'darwin' && !byId<HTMLButtonElement>('clipDetailsToggle').disabled
-        && (clipDetailsCollapsedPreference ?? window.innerHeight <= 1000));
+        && (clipDetailsCollapsedPreference ?? true));
     refreshClipDetailsToggle();
     RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog, onBackdrop: closeClipDialog });
     clipPlayer = window.VodPlayer.mount(byId('clipPlayer'), {
@@ -1833,6 +1846,11 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
         partMinutes: config.part_minutes || 60, downloadMode: config.download_mode,
         outputSettings: () => ({ startPart: getClipStartPart() }),
         filename: previewEditedFilename,
+        onMode(active) {
+            if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
+            byId('clipModal').classList.toggle('is-omitting', active);
+            refreshClipDetailsToggle();
+        },
         onOmissions(state) {
             if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
             const changed = Boolean(state) !== Boolean(clipOmissionState);

@@ -75,16 +75,41 @@ async function run() {
       await win.locator('.vod-selection-track').waitFor();
       await settle();
     };
+    const assertFooter = async () => {
+      await settle();
+      assert.equal(await win.locator('#clipFooterFields > #clipRangeFields').count(), 1);
+      const controls = win.locator('#clipRangeFields input[type="text"], #clipRangeFields button, #clipDurationDisplay, #clipCancelBtn, #clipDialogConfirmBtn');
+      const footer = await win.locator('.vod-cut-footer').boundingBox();
+      for (const control of await controls.all()) {
+        assert(await control.isVisible(), 'Compact time and queue controls must stay visible');
+        const box = await control.boundingBox();
+        assert(box.x >= footer.x - 1 && box.x + box.width <= footer.x + footer.width + 1
+          && box.y >= footer.y - 1 && box.y + box.height <= footer.y + footer.height + 1, 'Footer controls must stay in bounds');
+      }
+      assert(await win.locator('.vod-cut-footer').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Footer must not overflow');
+      assert(await win.locator('#clipModal').evaluate(element => {
+        const ids = [...element.querySelectorAll('[id]')].map(node => node.id);
+        return new Set(ids).size === ids.length;
+      }), 'Moving fields must not duplicate IDs');
+    };
+    const assertLabels = async language => {
+      const labels = language === 'de' ? ['Startzeit', 'Endzeit', 'Videolänge', 'Hier setzen'] : ['Start time', 'End time', 'Video length', 'Set here'];
+      for (const [index, id] of ['clipDialogStartTimeLabel', 'clipDialogEndTimeLabel', 'clipDialogDurationLabel'].entries()) {
+        assert.equal((await win.locator(`#${id}`).textContent()).trim(), labels[index]);
+      }
+      assert.deepEqual(await win.locator('#clipRangeFields .vod-set-boundary').allTextContents(), [labels[3], labels[3]]);
+    };
     await win.waitForFunction(() => typeof window.openClipDialog === 'function');
     for (const [width, height] of [[1280, 800], [1000, 700], [800, 700], [1512, 950], [1920, 1080], [1400, 868]]) {
       await win.setViewportSize({ width, height });
       await open();
       const state = await geometry();
       checks[`${width}x${height}`] = state;
-      assert.equal(state.collapsed, height <= 1000);
+      assert.equal(state.collapsed, true, 'Mac defaults to compact at every viewport height');
+      await assertFooter();
       assert(state.footer.bottom <= height && state.footer.y > 0, 'Queue actions must stay visible');
       assert(state.panel.scrollWidth <= state.panel.clientWidth + 1, 'No horizontal scrolling in range controls');
-      if (width > 800 && height <= 1000) {
+      if (width > 800) {
         assert(state.timeline.bottom < state.footer.y, 'Marking timeline must stay visible');
         assert(state.video.height >= 300, `Preview too small at ${width}x${height}`);
       }
@@ -95,19 +120,34 @@ async function run() {
     checks.compact = await geometry();
     await screenshot('compact');
     const video = await win.locator('#clipPlayer video.active').elementHandle();
+    const fields = await win.locator('#clipRangeFields').elementHandle();
+    const markStart = await win.locator('#clipMarkStart button').elementHandle();
     const toggle = win.locator('#clipDetailsToggle');
+    await assertLabels('en');
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     await toggle.click();
+    assert(await fields.evaluate(element => element.parentElement.id === 'clipCutPanel' && element.nextElementSibling.id === 'clipOmissionPanel'));
     checks.expanded = await geometry();
     assert(checks.compact.video.height > checks.expanded.video.height + 100);
     await screenshot('expanded');
-    await win.locator('#clipStartTime').fill('00:00:10');
-    await win.locator('#clipEndTime').fill('00:01:40');
     await toggle.click();
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    await assertFooter();
+    assert(await fields.evaluate(element => element === document.getElementById('clipRangeFields')), 'Toggling must move the same fields');
+    assert(await markStart.evaluate(element => element === document.querySelector('#clipMarkStart button')), 'React portal controls must survive moving');
     assert(await video.evaluate(element => element === document.querySelector('#clipPlayer video')), 'Toggling must not reload playback');
+    await win.locator('#clipStartTime').fill('00:00:10');
+    await win.locator('#clipEndTime').fill('00:01:40');
     assert.equal(await win.locator('#clipStartTime').inputValue(), '00:00:10');
     assert.equal(await win.locator('#clipEndTime').inputValue(), '00:01:40');
+    for (const [id, input, expected] of [
+      ['clipStartLater', 'clipStartTime', '00:00:11'], ['clipStartEarlier', 'clipStartTime', '00:00:10'],
+      ['clipEndEarlier', 'clipEndTime', '00:01:39'], ['clipEndLater', 'clipEndTime', '00:01:40']
+    ]) {
+      await win.locator(`#${id}`).click();
+      assert.equal(await win.locator(`#${input}`).inputValue(), expected);
+    }
+    assert.equal(await win.locator('#clipDurationTime').textContent(), '00:01:30');
     const start = win.locator('.vod-selection .vod-range-handle.is-start');
     const end = win.locator('.vod-selection .vod-range-handle.is-end');
     await start.press('ArrowRight');
@@ -122,7 +162,16 @@ async function run() {
     assert.equal(await win.locator('#clipEndTime').inputValue(), '00:01:29', 'Pointer marking works while compact');
     await win.locator('.vod-selection-track').click({ position: { x: track.width * .3, y: track.height / 2 } });
     await win.waitForFunction(() => Math.abs(document.querySelector('#clipPlayer video').currentTime - 36) < 1);
-    checks.compactInput = { keyboard: true, pointer: true, seek: true, playbackPreserved: true };
+    await win.locator('#clipMarkStart button').click();
+    assert.equal(await win.locator('#clipStartTime').inputValue(), '00:00:36', 'Set start here uses playback position');
+    await win.locator('.vod-selection-track').click({ position: { x: track.width * .6, y: track.height / 2 } });
+    await win.waitForFunction(() => Math.abs(document.querySelector('#clipPlayer video').currentTime - 72) < 1);
+    await win.locator('#clipMarkEnd button').click();
+    assert.equal(await win.locator('#clipEndTime').inputValue(), '00:01:12', 'Set end here uses playback position');
+    assert.equal(await win.locator('#clipDurationTime').textContent(), '00:00:36');
+    await win.locator('#clipStartTime').fill('00:00:11');
+    await win.locator('#clipEndTime').fill('00:01:29');
+    checks.compactInput = { keyboard: true, pointer: true, seek: true, nudge: true, setHere: true, duration: true, playbackPreserved: true };
 
     await win.getByRole('button', { name: 'Cinema mode', exact: true }).click();
     await win.locator('.archive-player.cinema').waitFor();
@@ -130,6 +179,7 @@ async function run() {
     await win.getByRole('button', { name: 'Cinema mode', exact: true }).click();
     await win.getByRole('button', { name: 'Exclude ranges', exact: true }).click();
     await win.locator('#clipModal.is-omitting').waitFor();
+    assert(await fields.evaluate(element => element.parentElement.id === 'clipCutPanel' && element.nextElementSibling.id === 'clipOmissionPanel'));
     assert(!(await toggle.isVisible()));
     await win.locator('.vod-omission-new').click();
     await win.locator('.vod-omission-times input').nth(0).fill('00:00:40');
@@ -140,26 +190,37 @@ async function run() {
     await win.locator('.vod-omission-modes button').first().click();
     await win.locator('#clipModal:not(.is-omitting)').waitFor();
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    await assertFooter();
+    assert(await fields.evaluate(element => element === document.querySelector('#clipFooterFields > #clipRangeFields')), 'Returning from omissions reuses the footer fields');
     assert.equal(await win.locator('#clipStartTime').inputValue(), '00:00:11');
     assert.equal(await win.locator('#clipEndTime').inputValue(), '00:01:29');
     assert((await win.locator('#clipQueueHint').textContent()).includes('00:01:13'));
+    assert.equal(await win.locator('#clipDurationTime').textContent(), '00:01:13');
     checks.omissions = { selectionPreserved: true, correctOutputDuration: true };
 
-    await toggle.click();
     await win.locator('#clipEndTime').fill('invalid');
-    assert(await toggle.isDisabled());
+    assert(await toggle.isEnabled());
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     assert(await win.locator('#clipDialogConfirmBtn').isDisabled());
-    assert(await win.locator('#clipEndTime').isVisible());
+    assert(await win.locator('#clipEndTime').evaluate(element => element === document.activeElement && Boolean(element.closest('#clipFooterFields'))), 'Invalid typing must retain focus in the footer');
+    await assertFooter();
     await win.locator('#clipEndTime').fill('00:01:29');
     assert(await toggle.isEnabled());
-    await win.locator('#clipFilenameOptions summary').click();
-    await win.locator('#clipStartPart').fill('0');
+    assert(!(await win.locator('#clipStartPart').isVisible()));
+    await win.locator('#clipStartPart').evaluate(element => { element.value = '0'; element.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'Invalid hidden filename controls must expand details');
+    assert(await win.locator('#clipFilenameOptions summary').isVisible());
     assert(await toggle.isDisabled());
     assert(await win.locator('#clipDialogConfirmBtn').isDisabled());
+    await win.locator('#clipFilenameOptions summary').click();
     await win.locator('#clipStartPart').fill('1');
     await win.locator('#clipFilenameOptions summary').click();
     await toggle.click();
-    await win.evaluate(() => window.setLanguage('de'));
+    await win.evaluate(() => { window.closeClipDialog(); config.language = 'de'; window.setLanguage('de'); });
+    await open();
+    await assertLabels('de');
+    await assertFooter();
+    await screenshot('compact-de');
     assert.equal((await toggle.textContent()).trim(), 'Details einblenden');
     await toggle.press('Space');
     assert.equal((await toggle.textContent()).trim(), 'Details ausblenden');
@@ -175,6 +236,7 @@ async function run() {
 
     // Reproduce the unmodified layout to record the gain at the same viewport.
     await win.evaluate(() => {
+      document.getElementById('clipCutPanel').insertBefore(document.getElementById('clipRangeFields'), document.getElementById('clipOmissionPanel'));
       document.getElementById('clipModal').classList.remove('is-mac', 'is-range-collapsed');
       document.getElementById('clipDetailsToggle').hidden = true;
     });
