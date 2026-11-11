@@ -175,3 +175,20 @@ BrowserWindow `closed` event before activation. They also reuse a window already
 reopened by macOS. This avoids treating the ordering of Cocoa and test-protocol
 events as an application failure; the save-failure assertion still requires the
 window to remain open until saving succeeds.
+
+
+### Post-merge cutter input regression
+
+The release was held after additional native CI exposed two cutter input races.
+A local event trace reproduced two ArrowRight inputs arriving before the native
+`ratechange` event: the media was at 1.25× while the React control still read 1×,
+so the second increment was lost. The cutter now updates its React rate state
+within the input handler, retaining the native event listener for external
+changes. The UI suite exercises consecutive increments and decrements.
+
+The pointer fixture also read marker geometry immediately after an imperative
+undo, before React committed the new marker. The event trace confirmed that
+the model and rendered marker could temporarily differ. The fixture now waits
+for the rendered undo state, uses Playwright's stable-target hover/hit testing,
+checks that pointer capture started, and verifies the committed range and undo.
+It still sends real mouse events; application drag behavior is unchanged.
