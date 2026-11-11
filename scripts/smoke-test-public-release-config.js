@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..');
 const pkg = require('../package.json');
 const lock = require('../package-lock.json');
 const manifest = require('./public-release-files.json');
-assert.equal(pkg.version, '1.1.20');
+assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
 assert.equal(lock.version, pkg.version);
 assert.equal(lock.packages[''].version, pkg.version);
 assert.equal(pkg.build.appId, 'io.github.sucukdeluxe.twitch-vod-manager');
@@ -36,6 +36,6 @@ function checkTree(directory) {
 }
 for (const directory of ['src', 'build', 'scripts', 'native']) checkTree(directory);
 const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
-assert(html.includes('Version: v1.1.20'));
+assert(html.includes(`Version: v${pkg.version}`));
 assert(html.includes('renderer-vod-player.js'), 'New React/HLS workspace is not loaded');
-console.log('Release contracts passed: actual 1.1.20 renderer, stable Mac identity, tools and signed updater');
+console.log(`Release contracts passed: ${pkg.version} renderer, stable Mac identity, tools and signed updater`);
