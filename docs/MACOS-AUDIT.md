@@ -1,6 +1,9 @@
 # macOS fault and recovery audit
 
-Baseline: `7ce2ae2` / `v1.0.9-macos-preview.1`.
+Original audit baseline: `7ce2ae2` / `v1.0.9-macos-preview.1`.
+The 1.1.20 integration uses the actual upstream `v1.1.20` tag (`9a814180`),
+not upstream's older default branch. The findings below are retained as
+regression coverage for the current Mac app.
 
 The audit uses isolated app-data directories, actual Electron processes and the
 bundled macOS executables. It never reuses the user's settings or downloads.
@@ -72,8 +75,43 @@ their identities can change between releases. A consistent Developer ID is
 still required to make production Keychain identity stable across releases.
 
 This does not establish absence of every possible defect. Developer ID signing,
-notarization, a signed update installation and account-specific subscriber/live
-workflows remain separate acceptance checks.
+notarization and account-specific subscriber/live workflows remain separate
+acceptance checks. Update authentication and installation have their own tests,
+described in [MACOS-UPDATES.md](MACOS-UPDATES.md).
+
+## 1.1.20 integration coverage
+
+- Preserve the Mac bundle identity, application-data directory and pinned update
+  key while importing the new workspace, player, export queue and history.
+- Reattach active clip progress and cancellation to a reopened Mac window; send
+  merge completion to the current window rather than its destroyed predecessor.
+- Flush settings, deferred clip metadata and pending workspace saves before
+  closing. A failed final save vetoes update installation.
+- Accept portable cutter projects across platforms and handle unavailable
+  hardware encoders in queued exports. Retain native Mac editing shortcuts.
+- Restore a verified cached update to the ready state after restart. Reject a
+  staged app whose minimum macOS version is newer than the current system.
+- Keep the runtime dependency security fixes when merging the upstream lockfile.
+
+The local 1.1.20 suite passes 526 unit tests; the Windows-only executable test is
+skipped on Mac and is run by Windows CI. Real-media source and packaged tests
+exercise tool repair, separate audio/video streams, first-use downloads,
+window recovery, cancellation, merging and SQLite persistence. Workspace and
+cutter UI suites exercise the new interface rather than the retired UI.
+CI must pass for the final commit on both native Mac architectures and Windows
+before merging; local Apple Silicon results alone are not an Intel claim.
+
+Local automated windows run without a Dock entry or foreground activation only
+inside the strictly validated isolated test environment. The normal application's
+identity, window behavior and Keychain provider are unchanged. The upgrade from
+the original 1.0.10 application runs on CI because that older code can activate
+its window. The local updater test explicitly reports its synthetic older-version
+fixture instead of claiming it is the original release.
+
+Clip cancellation tests wait independently for the main-process session to end
+and for the renderer to receive the terminal `stopped` event. A session IPC reply
+can arrive before the corresponding progress-event callback; both outcomes must
+still occur within the test deadline.
 
 ## Editor-load regression check
 

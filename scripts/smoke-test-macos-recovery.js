@@ -263,6 +263,10 @@ async function run() {
       await win.waitForFunction((id) => window.__reopenedClipProgress.some(progress => progress.requestId === id), requestId);
       assert.equal(await win.evaluate((id) => window.api.cancelClipDownload(id), requestId), true);
       await win.waitForFunction(async () => !(await window.api.getWorkspaceSession()).activeClip);
+      // The session reply and progress event travel through separate IPC calls.
+      // An empty main-process session does not mean the renderer has received
+      // its final progress event yet; verify both observable outcomes.
+      await win.waitForFunction((id) => window.__reopenedClipProgress.some(progress => progress.requestId === id && progress.state === 'stopped'), requestId);
       assert.equal((await win.evaluate(() => window.__reopenedClipProgress)).at(-1).state, 'stopped');
       return true;
     });
