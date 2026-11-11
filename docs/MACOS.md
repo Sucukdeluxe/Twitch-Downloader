@@ -11,6 +11,8 @@ choose `arm64` for Apple Silicon (M1 and newer) or `x64` for Intel, and drag the
 The preview is ad-hoc signed, without Apple Developer ID signing or notarization.
 If macOS blocks its first launch, follow [Apple's instructions for a trusted app](https://support.apple.com/en-us/102445).
 No system-wide security settings need to be disabled. The preview is not offered as a stable automatic update.
+Switching between development and differently signed preview builds can also cause
+a Keychain permission prompt; [Electron documents why a consistent signature is needed](https://www.electronjs.org/docs/latest/api/safe-storage).
 
 ## Build
 
@@ -61,8 +63,10 @@ first install; it never probes a system Python or triggers the developer-tools i
 ## Validation and release boundary
 
 `macos-ci.yml` runs on separate native Apple Silicon and Intel runners, including the
-upstream release suite and real packaged-app tests. The macOS-specific test removes
-Homebrew from PATH, provisions the bundled tools offline, downloads a generated HLS
+upstream release suite and real packaged-app tests.
+The source and packaged-app jobs use separate fresh runners so their differently
+signed executables do not compete for the same login Keychain item.
+The macOS-specific test removes Homebrew from PATH, provisions the bundled tools offline, downloads a generated HLS
 stream with Streamlink, probes it, trims video through the app's real IPC, repairs a
 corrupted executable, resets/reinstalls tools, and closes/reopens the Mac window.
 It also builds a fragmented MP4 with a two-minute timestamp offset and verifies the

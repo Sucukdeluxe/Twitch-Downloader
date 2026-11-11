@@ -41,6 +41,37 @@ jobs:
       - run: npm run test:mac
         timeout-minutes: 10
       - run: PATH="$PWD/.cache/macos-tools/stage-${{ matrix.arch }}/ffmpeg:$PATH" npm run test:e2e:release
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: macos-${{ matrix.arch }}-diagnostics
+          path: artifacts/
+
+  # A fresh runner also gives the packaged app a fresh login Keychain. Running
+  # source Electron first can leave a Safe Storage key owned by another code
+  # signature and block the packaged app on an interactive permission dialog.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            folder: mac-arm64
+          - runner: macos-15-intel
+            arch: x64
+            folder: mac
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run tools:mac -- ${{ matrix.arch }}
       - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
       - name: Test the actual application bundle
         run: npm run test:mac
@@ -56,8 +87,3 @@ jobs:
             release/*.zip
             release/*mac*.yml
             release/*.blockmap
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: macos-${{ matrix.arch }}-diagnostics
-          path: artifacts/
