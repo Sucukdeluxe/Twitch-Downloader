@@ -47,6 +47,26 @@ async function run() {
     const toolRoot = path.join(environment.appDataDir, 'tools');
     const ffmpeg = path.join(toolRoot, 'ffmpeg', 'ffmpeg');
     const ffprobe = path.join(toolRoot, 'ffmpeg', 'ffprobe');
+    await check('diagnostic-probe-does-not-bypass-integrity-verification', async () => {
+      const original = fs.readFileSync(ffmpeg);
+      // A runnable replacement passes --version but is not the bundled binary.
+      // Diagnostic checks alone must never authorize the integrity fast path.
+      fs.unlinkSync(ffmpeg);
+      fs.writeFileSync(ffmpeg, '#!/bin/sh\nprintf "isolated diagnostic fixture\\n"\n', { mode: 0o755 });
+      try {
+        const diagnostic = await win.evaluate(() => window.api.runPreflight(false));
+        assert.equal(diagnostic.checks.ffmpeg, true, 'The fixture must pass the runtime-only probe');
+        const repaired = await app.evaluate(({ app: nativeApp }) => {
+          const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+          return appRequire('./dist/tools.js').ensureFfmpegInstalled();
+        });
+        assert.equal(repaired, true);
+        assert(fs.readFileSync(ffmpeg).equals(original), 'A runtime-only probe bypassed bundled-tool integrity verification');
+      } finally {
+        await win.evaluate(() => window.api.repairManagedTools());
+      }
+      return true;
+    });
     await check('lost-executable-permission-auto-repair', async () => {
       fs.chmodSync(ffmpeg, 0o644);
       const result = await win.evaluate(() => window.api.runPreflight(true));

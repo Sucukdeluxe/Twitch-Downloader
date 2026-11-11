@@ -22,6 +22,8 @@ real local HLS playlists and FFmpeg/FFprobe process the resulting media.
 | Reopen a Mac window with startup-resume enabled | Unexpected queue processing scheduled | Run startup auto-resume only on the first renderer load |
 | Stored secret cannot be decrypted | Ordinary preferences, queue and database access disappear | Isolate secret read failures; keep stored ciphertext and ordinary data intact |
 | Cancel a process with a child that ignores SIGTERM | Child remains and shutdown can hang | Own a separate Mac process group, escalate the whole group, await termination before cleanup |
+| Repeatedly load a clip in the cutter | Rehashing unchanged FFmpeg files exceeds the existing waveform latency budget | Reuse verification only while executable identity is unchanged |
+| Diagnose a runnable replacement before first use | The initial cache optimization accepted a runtime-only probe as integrity verification | Keep diagnostic results out of the Mac integrity cache; assert exact bundle restoration |
 
 ## Verification commands
 
@@ -84,6 +86,12 @@ invalidate the cache. Unit tests and a real binary-corruption recovery test
 cover those cases. Python still receives a runtime probe, because a launcher
 identity cannot detect damage to imported modules. The existing strict local
 waveform latency budget is unchanged.
+
+A runtime-only diagnostic must not populate the Mac integrity cache. A further
+fault test replaces FFmpeg with a harmless executable that passes `--version`,
+runs diagnostics without repair, then checks that first use restores the exact
+bundled binary. This reproduced an integrity bypass introduced by the fast path;
+only successful bundle verification may now populate that cache on macOS.
 
 The native CI run also exposed a test timing assumption in the volume animation
 check: a snapshot 70 ms after sending hover could precede delivery of that event.

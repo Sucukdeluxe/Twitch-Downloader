@@ -955,7 +955,9 @@ async function runPreflight(autoFix = false): Promise<PreflightResult> {
     const ffprobePath = getFFprobePath();
     checks.ffmpeg = await canExecuteCommandAsync(ffmpegPath, ['-version']);
     checks.ffprobe = await canExecuteCommandAsync(ffprobePath, ['-version']);
-    if (checks.ffmpeg && checks.ffprobe) {
+    // On Mac the fast path certifies both bundle integrity and execution.
+    // A diagnostic --version probe alone must not populate that cache.
+    if (process.platform !== 'darwin' && checks.ffmpeg && checks.ffprobe) {
         cacheVerifiedFfmpegCommands(ffmpegPath, ffprobePath);
     }
 
