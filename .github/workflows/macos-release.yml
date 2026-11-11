@@ -153,6 +153,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run tools:mac -- ${{ matrix.arch }}
       - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
+      - name: Verify the packaged code signature
+        run: codesign --verify --deep --strict "release/${{ matrix.folder }}/Twitch VOD Manager.app"
       - name: Test the actual application bundle on a fresh runner
         run: npm run test:mac
         timeout-minutes: 10

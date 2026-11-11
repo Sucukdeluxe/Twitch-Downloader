@@ -113,6 +113,15 @@ and for the renderer to receive the terminal `stopped` event. A session IPC repl
 can arrive before the corresponding progress-event callback; both outcomes must
 still occur within the test deadline.
 
+The original-release update test exposed unsigned PR artifacts: electron-builder
+skips code signing for pull requests by default, even with an ad-hoc identity.
+The old updater correctly rejected these packages. PR packaging now explicitly
+enables ad-hoc signing with certificate discovery disabled; CI and release builds
+verify the complete app signature immediately after packaging. No release signing
+key or Apple certificate is available to the PR job. Installer diagnostics also
+retain the actual system-command failure. Temporary-directory cleanup retries
+transient errors and cannot replace the original preparation error.
+
 ## Editor-load regression check
 
 Loading a 58-second clip repeatedly rehashed the large FFmpeg binaries; profiling

@@ -18,6 +18,12 @@ for (const name of ['macos-ci.yml', 'macos-release.yml']) {
     assert(source.includes(required), `${name} is missing ${required}`);
   }
   assert(!source.includes('continue-on-error: true'), `${name} must fail closed`);
+  assert(source.includes('codesign --verify --deep --strict'), `${name} must verify the built app before update tests`);
+  if (name === 'macos-ci.yml') {
+    for (const required of ["CSC_FOR_PULL_REQUEST: 'true'", "CSC_IDENTITY_AUTO_DISCOVERY: 'false'", '-c.mac.identity=-']) {
+      assert(source.includes(required), `PR packages must use explicit ad-hoc signing without credentials: ${required}`);
+    }
+  }
 }
 for (const directory of ['.github', '.gitea']) {
   const source = fs.readFileSync(path.join(root, directory, 'workflows/windows-ci.yml'), 'utf8');

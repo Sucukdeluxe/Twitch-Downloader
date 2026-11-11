@@ -79,7 +79,15 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run tools:mac -- ${{ matrix.arch }}
-      - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
+      - name: Build ad-hoc signed Mac packages
+        run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
+        env:
+          # PR builds need the same ad-hoc seal as releases. No signing
+          # certificates, release keys or credential discovery are used here.
+          CSC_FOR_PULL_REQUEST: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify the packaged code signature
+        run: codesign --verify --deep --strict "release/${{ matrix.folder }}/Twitch VOD Manager.app"
       - name: Test the actual application bundle
         run: npm run test:mac
         timeout-minutes: 10
