@@ -260,6 +260,7 @@ async function run() {
 
     // Reproduce the unmodified layout to record the gain at the same viewport.
     await win.evaluate(() => {
+      document.querySelector('.vod-cut-footer').insertBefore(document.getElementById('clipCancelBtn'), document.getElementById('clipDialogConfirmBtn'));
       for (const side of ['Start', 'End']) {
         const mark = document.getElementById(`clipMark${side}`);
         mark.closest('.clip-modal-time-row').querySelector('.vod-time-heading').appendChild(mark);

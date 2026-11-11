@@ -1851,6 +1851,10 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
     updateClipDuration();
     updateFilenameExamples();
     byId('clipModal').classList.toggle('is-mac', window.api.platform === 'darwin');
+    if (window.api.platform === 'darwin') {
+        const close = byId('clipCancelBtn');
+        if (close.parentElement?.firstElementChild !== close) close.parentElement?.prepend(close);
+    }
     byId('clipModal').classList.toggle('is-range-collapsed', window.api.platform === 'darwin' && !byId<HTMLButtonElement>('clipDetailsToggle').disabled
         && (clipDetailsCollapsedPreference ?? true));
     refreshClipDetailsToggle();

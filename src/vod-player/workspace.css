@@ -305,11 +305,11 @@
 #clipModal.is-mac .vod-cut-header { padding:8px 12px; gap:12px; }
 #clipModal.is-mac .vod-cut-header .clip-modal-title { font-size:18px; margin-bottom:2px; }
 #clipModal.is-mac .vod-cut-header p { font-size:12px; }
-#clipModal.is-mac .vod-cut-footer { padding:6px 12px; gap:8px; }
+#clipModal.is-mac .vod-cut-footer { display:grid; grid-template-columns:auto minmax(0,1fr) auto; padding:6px 12px; gap:8px; }
 #clipModal.is-mac .vod-cut-footer > span { font-size:13px; }
 #clipModal.is-mac .vod-cut-footer > button { min-height:34px; padding:6px 12px; }
 #clipFooterFields { display:none; }
-#clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-footer { display:grid; grid-template-columns:minmax(90px,.7fr) minmax(800px,3fr) auto auto; gap:12px; }
+#clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-footer { grid-template-columns:auto minmax(90px,.7fr) minmax(800px,3fr) auto; gap:12px; }
 #clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipQueueHint { font-size:12px; }
 #clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipFooterFields { display:block; min-width:0; }
 #clipFooterFields .vod-cut-fields { grid-template-columns:max-content max-content max-content; justify-content:space-between; gap:12px; align-items:center; }
@@ -352,7 +352,7 @@
   #clipModal.is-mac .vod-cut-heading { gap:8px; }
 }
 @media(max-width:1200px) {
-  #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-footer { grid-template-columns:minmax(0,1fr) auto auto; gap:4px 8px; }
+  #clipModal.is-mac.is-range-collapsed:not(.is-omitting) .vod-cut-footer { grid-template-columns:auto minmax(0,1fr) auto; gap:4px 8px; }
   #clipModal.is-mac.is-range-collapsed:not(.is-omitting) #clipFooterFields { grid-column:1 / -1; grid-row:1; }
 }
 @media(max-width:900px) {
