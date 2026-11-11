@@ -7,7 +7,7 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 const execute = promisify(require('node:child_process').execFile);
 const h = require('./release-test-harness.cjs');
-const browserCases = new Set(['layout-consistency', 'insights-integrated', 'full-workspace-audit', 'audit-regressions', 'sidebar-layout']);
+const browserCases = new Set(['layout-consistency', 'insights-integrated', 'full-workspace-audit', 'audit-regressions', 'sidebar-layout', 'roadmap-archive', 'roadmap-clips']);
 const tabs = ['vods', 'clips', 'cutter', 'merge', 'stats', 'archive', 'settings'];
 const api = (s, method, ...args) => s.page.evaluate(({ method, args }) => window.api[method](...args), { method, args });
 async function nav(s, tab) {
@@ -111,6 +111,61 @@ async function refined(s) {
   const style = await s.page.evaluate(() => ({ topbar: document.querySelector('.app-topbar').getBoundingClientRect().height, nav: getComputedStyle(document.querySelector('.top-nav')).display }));
   assert.equal(style.topbar, 58); assert.equal(style.nav, 'grid');
   await localization(s); await sidebar(s);
+}
+async function archiveBrowser(s) {
+  const hits = ['vod', 'clip'].map((type, i) => ({ fullPath: path.join(s.env.downloadsDir, `release-${type}.mp4`),
+    relativePath: `release-${type}.mp4`, fileName: `release-${type}.mp4`, streamer: 'fixture_streamer', type,
+    size: 10000 + i, mtimeMs: Date.now() - i * 1000 }));
+  await s.replaceIpc('searchArchive', filter => {
+    const selected = hits.filter(hit => (filter.type === 'all' || hit.type === filter.type)
+      && (!filter.query || hit.fileName.includes(filter.query)));
+    return { totalScanned: hits.length, matchCount: selected.length, truncated: false, hits: selected,
+      scannedAt: new Date().toISOString(), rootExists: true, streamers: ['fixture_streamer'], offset: 0 };
+  });
+  await nav(s, 'archive');
+  await s.page.waitForFunction(() => document.querySelectorAll('.archive-result-row').length === 2);
+  await s.page.locator('#archiveSelectPage').check();
+  assert.equal(await s.page.locator('.archive-row-select:checked').count(), 2);
+  assert.equal(await s.page.locator('#archiveMergeSelected').isDisabled(), false);
+  await s.page.locator('#archiveClearSelection').click();
+  assert.equal(await s.page.locator('.archive-row-select:checked').count(), 0);
+  await s.page.locator('#archiveSearchType').selectOption('clip');
+  await s.page.waitForFunction(() => document.querySelectorAll('.archive-result-row').length === 1);
+  assert.match(await s.page.locator('#archiveSearchResults').textContent(), /release-clip/);
+  assert.ok(s.calls.some(call => call.method === 'searchArchive' && call.args[0].type === 'clip'));
+  await s.page.locator('#archiveSearchQuery').fill('missing-file');
+  await s.page.waitForFunction(() => document.querySelector('#archiveSearchResults .archive-empty'));
+  await s.page.locator('#archiveSearchQuery').fill('release');
+  await s.page.locator('#btnArchiveSearch').click();
+  await s.page.waitForFunction(() => document.querySelectorAll('.archive-result-row').length === 1);
+  assert.ok(s.calls.some(call => call.method === 'searchArchive' && call.args[0].query === 'release' && call.args[0].refresh));
+  await geometry(s, 'archive');
+}
+async function clipsBrowser(s) {
+  const files = Array.from({ length: 101 }, (_, i) => ({ fullPath: path.join(s.env.downloadsDir, `saved-${i}.mp4`),
+    fileName: `saved-${i}.mp4`, streamer: 'fixture_streamer', size: 10000, mtimeMs: Date.now() }));
+  await s.replaceIpc('getClipLibrary', (offset = 0) => ({ directory: s.env.downloadsDir, rootExists: true,
+    total: files.length, offset, files: files.slice(offset, offset + 100) }));
+  await nav(s, 'clips');
+  await s.page.locator('#clipsSavedTitle').click();
+  await s.page.waitForFunction(() => document.querySelectorAll('#clipsSavedList .clip-result-row').length === 100);
+  assert.equal(await s.page.locator('#clipsLibraryPrevious').isDisabled(), true);
+  await s.page.locator('#clipsLibraryNext').click();
+  await s.page.waitForFunction(() => document.querySelectorAll('#clipsSavedList .clip-result-row').length === 1);
+  assert.match(await s.page.locator('#clipsSavedList').textContent(), /saved-100/);
+  assert.equal(await s.page.locator('#clipsLibraryNext').isDisabled(), true);
+  assert.ok(s.calls.some(call => call.method === 'getClipLibrary' && call.args[0] === 100));
+  await s.page.locator('#clipsLibraryPrevious').click();
+  await s.page.waitForFunction(() => document.querySelectorAll('#clipsSavedList .clip-result-row').length === 100);
+  await s.page.locator('#clipsLibraryRefresh').click();
+  await s.page.waitForFunction(() => !document.getElementById('clipsLibraryRefresh').disabled);
+  assert.ok(s.calls.some(call => call.method === 'getClipLibrary' && call.args[1] === true));
+  await s.replaceIpc('getClipLibrary', { directory: s.env.downloadsDir, rootExists: true, total: 0, offset: 0, files: [] });
+  await s.page.locator('#clipsLibraryRefresh').click();
+  await s.page.waitForFunction(() => document.querySelector('#clipsSavedList .clips-list-empty'));
+  assert.equal(await s.page.locator('#clipsLibraryNext').isDisabled(), true);
+  assert.equal(await s.page.locator('#clipsLibraryPrevious').isDisabled(), true);
+  await geometry(s, 'clips');
 }
 async function dialogs(s, openFile, saveFile) {
   for (const file of [openFile, saveFile].filter(Boolean)) assert.ok(path.resolve(file).startsWith(s.env.rootDir + path.sep), 'Dialog fixture escaped owned directory');
@@ -262,6 +317,8 @@ async function run(name) {
       if (name === 'layout-consistency') await layout(s);
       else if (name === 'insights-integrated') await insights(s);
       else if (name === 'sidebar-layout') await sidebar(s);
+      else if (name === 'roadmap-archive') await archiveBrowser(s);
+      else if (name === 'roadmap-clips') await clipsBrowser(s);
       else if (name === 'audit-regressions') { await localization(s); await insights(s); await sidebar(s); }
       else { await layout(s); await insights(s); if (o.expectRefined) await refined(s); }
       assert.deepEqual(s.errors, [], 'Renderer or fixture runtime errors');
@@ -293,7 +350,7 @@ async function run(name) {
         const p = await projects(s, media.path); const marker = await libraryMarker(s);
         s = await reopen(s, o); const selected = await verifyReopenedProject(s, p.id, media.path);
         assert.deepEqual((await api(s, 'getVodLibrary')).markers, [marker]); await exportEdit(s, selected, p.project, 'packaged-export.mp4', o);
-      } else if (name === 'roadmap-archive') {
+      } else if (name === 'roadmap-archive-native') {
         const file = await inventory(s, media.path); const marker = await libraryMarker(s); const backup = path.join(env.mediaDir, 'release.tvmbackup');
         await dialogs(s, undefined, backup); const saved = await api(s, 'exportApplicationBackup'); assert.equal(saved.success, true, JSON.stringify(saved)); assert.ok(fs.statSync(backup).size > 0);
         await api(s, 'changeVodLibrary', { collection: 'markers', remove: marker.id });
