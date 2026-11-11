@@ -69,9 +69,15 @@ export function getMergeGroupPhaseText(phase: string, language: MergeGroupLangua
     const isEnglish = language === 'en';
     switch (phase) {
         case 'downloading': return isEnglish ? 'Downloading VOD' : 'VOD wird heruntergeladen';
-        case 'merging': return isEnglish ? 'Merging...' : 'Zusammenfugen...';
+        case 'merging': return isEnglish ? 'Merging...' : 'Zusammenfügen...';
         case 'splitting': return isEnglish ? 'Splitting Part' : 'Part wird erstellt';
-        case 'cleanup': return isEnglish ? 'Cleaning up...' : 'Aufraumen...';
+        case 'cleanup': return isEnglish ? 'Cleaning up...' : 'Aufräumen...';
         default: return phase;
     }
+}
+
+export function sanitizeClipFilename(input: string, fallback = 'clip'): string {
+    const cleaned = Array.from(sanitizeFilenamePart(input.normalize('NFC'), fallback)).slice(0, 80).join('').replace(/[. ]+$/g, '');
+    const name = cleaned || fallback;
+    return /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(name) ? '_' + name : name;
 }

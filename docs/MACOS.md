@@ -1,6 +1,9 @@
 # macOS port
 
-Baseline: `Sucukdeluxe/Twitch-Downloader` at `5113089`, version **1.0.9**.
+Baseline: `Sucukdeluxe/Twitch-Downloader` release tag **`v1.1.20`**, commit
+`9a814180291547e456f059eadf4b0a9bba518014` (the `public-v1` release line).
+The baseline follows the published release tag because the original repository's
+`main` still points to 1.0.9. The Mac version is **1.1.20**.
 The complete upstream history is retained. `upstream` points to the Windows repository;
 `origin` points to `Sucukdeluxe/Twitch-Downloader-macos`. No upstream merge has been made.
 
@@ -10,13 +13,13 @@ Download the DMG from [Releases](https://github.com/Sucukdeluxe/Twitch-Downloade
 choose `arm64` for Apple Silicon (M1 and newer) or `x64` for Intel, and drag the app to Applications.
 The preview is ad-hoc signed, without Apple Developer ID signing or notarization.
 If macOS blocks its first launch, follow [Apple's instructions for a trusted app](https://support.apple.com/en-us/102445).
-No system-wide security settings need to be disabled. The preview is not offered as a stable automatic update.
+No system-wide security settings need to be disabled. Updates from version 1.0.10 onward use the authenticated Mac updater described in [MACOS-UPDATES.md](MACOS-UPDATES.md). Older previews need this bootstrap version installed once.
 Switching between development and differently signed preview builds can also cause
 a Keychain permission prompt; [Electron documents why a consistent signature is needed](https://www.electronjs.org/docs/latest/api/safe-storage).
 
 ## Build
 
-macOS 12 or later, Apple Silicon or Intel. Node.js 24 and the Xcode Command Line Tools
+macOS 13 or later, Apple Silicon or Intel. Node.js 24 and the Xcode Command Line Tools
 are needed to build; end users need neither Node, Python, Homebrew nor FFmpeg.
 
 ```sh
@@ -24,6 +27,8 @@ npm ci
 node node_modules/electron/install.js
 npm run tools:mac -- arm64
 npm run tools:mac -- x64
+npm run test:unit
+npm run rebuild:electron
 PATH="$PWD/.cache/macos-tools/stage-$(node -p process.arch)/ffmpeg:$PATH" npm run test:e2e:release
 npm run test:mac
 npm run dist:mac -- --arm64 --x64 -c.mac.identity=- --publish never
@@ -37,12 +42,14 @@ Never put credentials into the repository.
 `npm run dev` preserves the original hot reload workflow. It uses `.dev-program-data`
 and `.dev-user-data`, isolated from the installed app. Tests use unique temporary directories.
 The installed Mac app stores its database, configuration and managed tools under
-`~/Library/Application Support/Twitch VOD Manager/`. Windows keeps its existing data path.
+`~/Library/Application Support/Twitch VOD Manager/`. Windows uses the 1.1.20 `Twitch_Downloader` data path with the upstream legacy-directory migration.
 
 ## Scope
 
 All upstream screens, translations, queue, archive, statistics, trimming, merging,
 splitting, Twitch access, chat replay and automatic recording logic remain shared.
+This includes the 1.1.20 VOD player, quality selection, range exclusions, persistent
+editing workspaces, export queue, live-VOD snapshots and lifetime download history.
 Changes are restricted to OS paths, native menus, Apple hardware encoding,
 portable tool packaging, process argument safety and macOS test/build support.
 Window closing follows macOS behavior: the app and background downloads stay alive;
@@ -63,7 +70,15 @@ first install; it never probes a system Python or triggers the developer-tools i
 ## Validation and release boundary
 
 `macos-ci.yml` runs on separate native Apple Silicon and Intel runners, including the
-upstream release suite and real packaged-app tests.
+restored regression suite and real packaged-app tests. The public upstream
+release excludes its private tests; this Mac repository commits its own tests
+and fails required checks if their test sources are absent.
+The maintained source suite is `npm run test:e2e:release`. The legacy
+`test:e2e` alias runs the focused workspace suite, `test:e2e:full` runs that
+release suite, and `test:e2e:guide` runs the workspace checks that include the
+filename guide. Unpublished upstream private-check commands fail explicitly
+when their files are absent; they are not counted as passing Mac checks.
+
 The source and packaged-app jobs use separate fresh runners so their differently
 signed executables do not compete for the same login Keychain item.
 The macOS-specific test removes Homebrew from PATH, provisions the bundled tools offline, downloads a generated HLS
@@ -80,10 +95,10 @@ delivery, playback resumption and asynchronous focus restoration awaited explici
 
 A preview is not a declaration that every Twitch account-specific scenario is accepted.
 Subscriber-only Twitch access and long-running live recording require an eligible
-account/live stream. Final distribution also requires Developer ID signing and Apple
-notarization. No valid Developer ID identity was present during initial local setup.
-The normal updater uses this public repository and architecture-specific Mac ZIPs plus
-`latest-mac.yml`. Never label an unsigned preview as a signed, updater-validated release.
+account/live stream. Developer ID signing and Apple notarization remain optional distribution improvements;
+the free update path authenticates releases with a separately pinned Ed25519 key.
+It uses this public repository, architecture-specific ZIPs and `mac-update.json`.
+This is release authentication, not Apple notarization. See [MACOS-UPDATES.md](MACOS-UPDATES.md).
 
 Before merging upstream: run Windows and both Mac jobs from the same commit, test the
-signed update from an older installed version, and confirm authenticated Twitch workflows.
+authenticated update from an older installed version, and confirm authenticated Twitch workflows.

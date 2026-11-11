@@ -53,7 +53,7 @@ describe('download policy integration contract', () => {
         const section = source.slice(start, end);
 
         expect(section).toContain('createDownloadThrottleTransform()');
-        expect(section).toContain("const args = [...streamlinkCmd.prefixArgs, url, getStreamlinkStreamArg(), '--stdout'];");
+        expect(section).toContain("const args = [...streamlinkCmd.prefixArgs, ...TWITCH_VIDEO_CODEC_ARGS, url, getStreamlinkStreamArg(quality), '--stdout', '--ffmpeg-ffmpeg', ffmpegPath!];");
         expect(section).not.toMatch(/args\.push\([^\n]*(?:bandwidth|rate-limit|max-rate|throttle)/i);
     });
 

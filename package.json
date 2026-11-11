@@ -1,7 +1,7 @@
 {
-  "name": "twitch-vod-manager",
-  "version": "1.0.9",
-  "description": "Twitch VOD Manager - Download Twitch VODs easily",
+  "name": "twitch-downloader",
+  "version": "1.1.20",
+  "description": "Twitch Downloader - Download Twitch VODs easily",
   "main": "dist/main.js",
   "author": "Sucukdeluxe",
   "license": "MIT",
@@ -9,20 +9,22 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/build.mjs",
     "lint": "eslint .",
-    "security:check": "node scripts/security-check.js && node scripts/smoke-test-public-release-config.js",
+    "security:check": "node scripts/security-check.js",
     "start": "node scripts/dev.mjs --once",
     "dev": "node scripts/dev.mjs",
-    "test:unit": "vitest run --passWithNoTests",
+    "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e:update-logic": "node scripts/smoke-test-update-version-logic.js",
     "test:e2e:public-release": "node scripts/smoke-test-public-release-config.js",
-    "test:e2e": "node scripts/smoke-test.js",
-    "test:e2e:guide": "node scripts/smoke-test-template-guide.js",
-    "test:e2e:full": "node scripts/smoke-test-full.js",
+    "test:e2e": "npm run test:e2e:focused",
+    "test:e2e:guide": "npm run test:e2e:workspace-ui",
+    "test:e2e:full": "npm run test:e2e:release",
     "test:e2e:workspace-ui": "npm run build && node scripts/smoke-test-workspace-ui.js",
+    "test:e2e:queue-cards": "npm run build && node scripts/run-local-check.mjs scripts/smoke-test-queue-cards.js",
     "test:e2e:cutter": "npm run build && node scripts/smoke-test-cutter.js",
+    "test:e2e:cutter-matrix": "npm run build && node scripts/run-local-check.mjs scripts/smoke-test-cutter-media-matrix.js",
     "test:e2e:isolation": "node scripts/smoke-test-e2e-isolation-contract.js",
     "test:capability-contract": "node scripts/smoke-test-file-capability-contract.js",
     "test:e2e:settings-autosave": "node scripts/smoke-test-settings-autosave.js",
@@ -30,19 +32,31 @@
     "test:security": "node --test scripts/security-check.test.js",
     "test:lint-config": "node --test scripts/lint-config.test.mjs",
     "test:ci-contract": "node scripts/smoke-test-ci-contract.js",
+    "test:installer-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-installer.test.js",
+    "test:managed-tools-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-managed-tools-live.test.js",
+    "test:cutter-matrix-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-cutter-media-matrix.test.js",
+    "test:managed-tools-live": "node scripts/run-local-check.mjs scripts/smoke-test-managed-tools-live.js",
+    "test:live-integration-contract": "npm run build && node scripts/run-local-check.mjs --test scripts/smoke-test-live-integration.test.js",
+    "test:live:twitch": "node scripts/run-local-check.mjs scripts/smoke-test-live-integration.js twitch",
+    "test:live:updater-postpublish": "node scripts/run-local-check.mjs scripts/smoke-test-live-integration.js updater",
     "test:packaged-launch": "node scripts/smoke-test-packaged-launch.js",
     "test:installer": "node scripts/smoke-test-installer.js",
-    "test:e2e:release": "npm run build && npm run test:unit && npm run test:capability-contract && npm run test:e2e:update-logic && npm run test:merge-split && npm run test:e2e:public-release && npm run test:e2e:workspace-ui && node scripts/smoke-test-cutter.js && npm run test:e2e:isolation && npm run test:e2e && npm run test:e2e:guide && npm run test:e2e:full && npm run test:e2e:settings-autosave",
+    "test:e2e:release": "npm run build && npm run test:security && npm run test:lint-config && npm run test:ci-contract && npm run test:capability-contract && npm run test:e2e:update-logic && npm run test:merge-split && npm run test:e2e:public-release && npm run test:e2e:isolation && node scripts/smoke-test-workspace-ui.js && node scripts/smoke-test-cutter.js && npm run test:e2e:settings-autosave",
     "test:e2e:stress": "npm run test:e2e:release && npm run test:e2e:release && npm run test:e2e:release",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run test:e2e:release && electron-builder --win",
-    "dist:ci": "electron-builder --win nsis",
+    "dist": "npm run release:build",
+    "dist:win": "npm run release:build",
+    "dist:ci": "node scripts/package-release.mjs --ci-candidate",
     "test:merge-split": "node scripts/smoke-test-merge-split-logic.js",
+    "release:verify": "node scripts/release-gate.mjs",
+    "release:package": "node scripts/package-release.mjs",
+    "release:build": "npm run release:verify && npm run release:package",
     "tools:mac": "python3 scripts/prepare-macos-tools.py",
     "pack:mac": "npm run build && electron-builder --mac --dir",
     "dist:mac": "npm run build && electron-builder --mac dmg zip",
-    "test:mac": "npm run build && node scripts/smoke-test-macos.js"
+    "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js",
+    "test:mac-update": "npm run build && node --test scripts/test-macos-update-manifest.js && node scripts/test-macos-updater.js",
+    "rebuild:electron": "electron-builder install-app-deps"
   },
   "dependencies": {
     "axios": "^1.21.1",
@@ -51,14 +65,20 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@floating-ui/react": "0.27.20",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.10.0",
-    "electron": "^43.3.0",
+    "electron": "44.10.0",
     "electron-builder": "^26.15.7",
+    "esbuild": "0.28.2",
     "eslint": "^10.4.0",
     "eslint-plugin-security": "^4.0.0",
     "globals": "^16.4.0",
+    "hls.js": "1.7.3",
+    "lucide-react": "1.50.0",
     "playwright": "^1.60.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.6"
@@ -68,11 +88,31 @@
     "productName": "Twitch VOD Manager",
     "files": [
       "dist/**/*",
+      "!dist/**/*.test.js",
+      "!dist/main/dev-executable.js",
+      "!dist/main/index.js",
+      "!dist/types.js",
       "src/index.html",
       "src/styles.css",
+      "src/styles-workflows.css",
+      "src/styles-overlays.css",
       "src/workspace.css",
+      "src/workspace-refinements.css",
+      "src/editing-workflows.css",
+      "src/workspace-insights.css",
       "build/icon.png",
-      "package.json"
+      "package.json",
+      "!node_modules/better-sqlite3/build/**",
+      "!node_modules/better-sqlite3/deps/**",
+      "!node_modules/better-sqlite3/src/**",
+      "!node_modules/{agent-base,axios,builder-util-runtime,electron-updater,https-proxy-agent,js-yaml,lazy-val}/**/*.map",
+      "!node_modules/agent-base/src/{index,promisify}.ts",
+      "!node_modules/{call-bind-apply-helpers,dunder-proto,es-define-property,es-set-tostringtag,function-bind,get-intrinsic,get-proto,has-symbols,has-tostringtag,hasown}/.nycrc",
+      "!node_modules/delayed-stream/Makefile",
+      "!node_modules/node-addon-api/{common,except,noexcept}.gypi",
+      "!node_modules/node-addon-api/{node_addon_api,node_api}.gyp",
+      "!node_modules/node-addon-api/nothing.c",
+      "!node_modules/node-addon-api/{napi-inl.deprecated,napi-inl,napi}.h"
     ],
     "extraResources": [
       {
@@ -86,22 +126,24 @@
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico",
-      "artifactName": "Twitch-VOD-Manager-Setup-${version}.${ext}"
+      "artifactName": "Twitch-Downloader-Setup-${version}.${ext}"
     },
     "nsis": {
+      "guid": "08429788-303d-53b6-a4f9-894401712c7e",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Twitch VOD Manager",
+      "shortcutName": "Twitch Downloader",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh"
     },
     "publish": {
       "provider": "generic",
-      "url": "https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest/download/"
+      "url": "https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest/download/",
+      "useMultipleRangeRequest": false
     },
     "mac": {
       "target": [
@@ -110,7 +152,7 @@
       ],
       "category": "public.app-category.video",
       "icon": "build/icon.png",
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "13.0",
       "hardenedRuntime": true,
       "artifactName": "Twitch-VOD-Manager-${version}-mac-${arch}.${ext}",
       "extraResources": [
@@ -121,6 +163,14 @@
             "*.zip",
             "manifest.json"
           ]
+        },
+        {
+          "from": "build/macos-updater-${arch}",
+          "to": "macos-updater"
+        },
+        {
+          "from": "build/mac-update-public-key.pem",
+          "to": "mac-update-public-key.pem"
         }
       ],
       "publish": {
@@ -142,6 +192,7 @@
           "path": "/Applications"
         }
       ]
-    }
+    },
+    "beforePack": "scripts/before-pack-macos.js"
   }
 }

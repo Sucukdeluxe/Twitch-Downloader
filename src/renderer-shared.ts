@@ -29,18 +29,21 @@ function applyHtml(el: HTMLElement, html: string): void {
     (el as unknown as Record<string, string>)[key] = html;
 }
 
-/* Generic file-size formatter for the renderer. Scales B -> KB -> MB
-   -> GB -> TB; returns '0 B' for zero / negative / non-finite input.
-   Used by the archive search results and the stats card. Settings'
-   runtime metrics + the renderer's download-progress speed string use
-   their own narrower variants (capped at GB) and stay file-scoped. */
+const byteNumberFormats = new Map<string, Intl.NumberFormat>();
+
 function formatBytes(bytes: number): string {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    if (bytes < 1024 * 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-    return `${(bytes / (1024 * 1024 * 1024 * 1024)).toFixed(2)} TB`;
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const unit = Math.min(4, Math.floor(Math.log(bytes) / Math.log(1024)));
+    const index = Math.max(0, unit);
+    const digits = index === 0 ? 0 : index < 3 ? 1 : 2;
+    const key = getIntlLocale() + ':' + digits;
+    let format = byteNumberFormats.get(key);
+    if (!format) {
+        format = new Intl.NumberFormat(getIntlLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        byteNumberFormats.set(key, format);
+    }
+    return format.format(bytes / 1024 ** index) + ' ' + units[index];
 }
 
 /* localStorage helpers — every renderer module that persists state was
@@ -72,7 +75,7 @@ let cutterFile: FileCapabilityReference | null = null;
 let cutterVideoInfo: VideoInfo | null = null;
 let isCutting = false;
 
-let mergeFiles: FileCapabilityReference[] = [];
+let mergeFiles: MergeFileReference[] = [];
 let isMerging = false;
 
 let clipDialogData: ClipDialogData | null = null;

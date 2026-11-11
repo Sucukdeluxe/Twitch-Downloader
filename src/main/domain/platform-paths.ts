@@ -13,6 +13,6 @@ export function resolveApplicationDataDirectory(
         return environment.TWITCH_VOD_MANAGER_DATA_DIR;
     }
     return platform === 'win32'
-        ? path.win32.join(environment.PROGRAMDATA || 'C:\\ProgramData', 'Twitch_VOD_Manager')
+        ? path.win32.join(environment.PROGRAMDATA || 'C:\\ProgramData', 'Twitch_Downloader')
         : userData;
 }

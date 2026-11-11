@@ -2,7 +2,7 @@
 
 export type PerformanceMode = 'stability' | 'balanced' | 'speed';
 
-export const VALID_STREAMLINK_QUALITIES = ['best', 'source', '1080p60', '720p60', '720p', '480p', 'audio_only'] as const;
+export const VALID_STREAMLINK_QUALITIES = ['source'] as const;
 
 const AUTO_RECORD_POLL_MIN_SECONDS = 30;
 const AUTO_RECORD_POLL_MAX_SECONDS = 1800;
@@ -35,11 +35,8 @@ export function normalizeAutoRecordList(value: unknown): string[] {
     return out;
 }
 
-export function normalizeStreamlinkQuality(value: unknown): string {
-    if (typeof value === 'string' && (VALID_STREAMLINK_QUALITIES as readonly string[]).includes(value)) {
-        return value;
-    }
-    return 'best';
+export function normalizeStreamlinkQuality(_value: unknown): 'source' {
+    return 'source';
 }
 
 export function normalizeFilenameTemplate(template: string | undefined, fallback: string): string {

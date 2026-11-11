@@ -35,7 +35,7 @@ describe.runIf(process.platform === 'win32')('prepareWindowsDevExecutable', () =
         const strings = versionInfo.getStringValues(versionInfo.getAllLanguagesForStringValues()[0]);
 
         expect(iconGroups[0].icons).toHaveLength(6);
-        expect(strings.ProductName).toBe('Twitch VOD Manager');
-        expect(strings.FileDescription).toBe('Twitch VOD Manager');
+        expect(strings.ProductName).toBe('Twitch Downloader Development');
+        expect(strings.FileDescription).toBe('Twitch Downloader Development');
     });
 });

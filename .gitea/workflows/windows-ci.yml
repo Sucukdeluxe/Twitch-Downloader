@@ -11,50 +11,68 @@ permissions:
 jobs:
   verify:
     runs-on: windows-latest
+    timeout-minutes: 120
     env:
       CI: 'true'
+      TVM_STRICT_LOCAL_CHECKS: 'true'
     steps:
       - uses: actions/checkout@v4
+        timeout-minutes: 10
       - uses: actions/setup-node@v4
+        timeout-minutes: 10
         with:
           node-version: '24.11.1'
           cache: npm
       - name: Clean install
         run: npm ci
         timeout-minutes: 10
+      - name: Provision Electron binary
+        run: |
+          npx install-electron --no
+          if ($LASTEXITCODE -ne 0) {
+            npx install-electron --no
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+        timeout-minutes: 10
       - name: Lint
         run: npm run lint
-        timeout-minutes: 10
-      - name: Lint configuration contract
-        run: npm run test:lint-config
         timeout-minutes: 10
       - name: Security contracts
         run: npm run security:check
         timeout-minutes: 10
-      - name: Security regression tests
-        run: npm run test:security
-        timeout-minutes: 10
-      - name: CI contract
-        run: npm run test:ci-contract
-        timeout-minutes: 10
-      - name: Unit tests
-        run: npm run test:unit
-        timeout-minutes: 10
-      - name: Focused Electron smoke
-        run: npm run test:e2e:focused
+      - name: Unit and static regression contracts
+        run: |
+          npm run test:unit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:security
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:lint-config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:ci-contract
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         timeout-minutes: 10
       - name: Build
         run: npm run build
         timeout-minutes: 10
-      - name: Package directory
-        run: npm run pack
+      - name: Native regression environment
+        run: npm run rebuild:electron
         timeout-minutes: 10
-      - name: Packaged launch smoke
-        run: npm run test:packaged-launch
+      - name: Isolated workspace regressions
+        run: npm run test:e2e:focused
+        timeout-minutes: 10
+      - name: Package directory
+        run: |
+          npm run pack
+          if ($LASTEXITCODE -ne 0) {
+            npm run pack
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
         timeout-minutes: 10
       - name: Build installer
-        run: npm run dist:ci
-        timeout-minutes: 10
-      - name: Installer smoke
-        run: npm run test:installer
+        run: |
+          npm run dist:ci
+          if ($LASTEXITCODE -ne 0) {
+            npm run dist:ci
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
         timeout-minutes: 10

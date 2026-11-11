@@ -1,0 +1,31 @@
+.editing-project-toolbar{display:flex;align-items:end;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:12px 0}.editing-project-toolbar label{display:grid;gap:5px;margin-right:auto;font-size:13px;min-width:160px;max-width:280px;flex:1}.editing-project-toolbar input{width:100%;min-width:0;box-sizing:border-box}.editing-jobs-panel{border:1px solid var(--border-soft);border-radius:10px;padding:16px;margin-top:16px;font-size:14px}.editing-jobs-header{display:flex;gap:12px;align-items:center}.editing-jobs-header h3{font-size:15px;margin:0}.editing-jobs-header button{margin-left:auto}.editing-job-list{max-height:340px;overflow:auto;scrollbar-gutter:stable}.editing-job{display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:8px 16px;padding:14px 0;border-bottom:1px solid var(--border-soft)}.editing-job-title{overflow-wrap:anywhere}.editing-job-state{align-self:center}.editing-job progress{width:100%;grid-column:1/-1;height:6px;accent-color:var(--accent)}.editing-job-actions{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1;justify-content:flex-end}.editing-job details{grid-column:1/-1}.editing-job pre,#editingWorkflowError pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;max-height:160px;overflow:auto}.editing-recent-dialog{margin:auto;box-sizing:border-box;font-size:14px;overflow:auto;background:var(--bg-card);color:var(--text);border:1px solid var(--border-soft);border-radius:12px;padding:20px;width:min(540px,calc(100vw - 56px));max-height:calc(100vh - 64px)}.editing-recent-dialog::backdrop{background:#0008}.editing-recent-dialog h2{font-size:18px;margin:0 0 16px}.editing-recent-list{display:grid;gap:8px;max-height:min(460px,60vh);overflow:auto;margin-bottom:16px}.editing-recent-list button{display:grid;gap:5px;text-align:left;min-width:0;white-space:normal;overflow-wrap:anywhere}.editing-recent-list button span{font-size:12px;font-weight:normal;opacity:.85}@media(max-width:700px){.editing-project-toolbar label{max-width:none;flex-basis:100%}.editing-job{grid-template-columns:minmax(0,1fr)}.editing-job-state{font-size:13px}}
+#editingMergeMode>button{margin:4px}.editing-recent-dialog[open]{animation:editing-dialog-open 130ms ease-out}@keyframes editing-dialog-open{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.editing-recent-dialog[open]{animation:none}}
+
+.editing-merge-sources { display: grid; gap: 12px; max-height: 320px; overflow: auto; margin: 16px 0; }
+.editing-merge-sources > div { display: grid; gap: 4px; overflow-wrap: anywhere; font-size: 12px; }
+.editing-merge-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+.cutter-audio-processing { min-width:0; border:0; padding:12px 0; display:grid; gap:12px; }
+.cutter-audio-processing legend { font-weight:600; }
+.cutter-audio-fades { display:flex; flex-wrap:wrap; gap:12px; }
+.cutter-audio-fades label { display:grid; gap:6px; flex:1 1 90px; min-width:0; }
+.cutter-audio-fades input { width:100%; max-width:120px; box-sizing:border-box; }
+#cutterAudioError { color:var(--text-primary); padding:10px; border:1px solid var(--border-color); border-radius:6px; }
+#cutterAudioError[hidden] { display:none; }
+
+.editing-merge-queue-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+#mergeTab .merge-actions { flex-wrap: wrap; }
+
+.editing-jobs-header{flex-wrap:wrap}.editing-jobs-header #editingJobsClear{margin-left:0}.editing-job-percentage{grid-column:1/-1;font-variant-numeric:tabular-nums;text-align:right;font-size:13px}.editing-job-percentage[hidden]{display:none}
+
+#editingRecentProjects{height:min(650px,calc(100dvh - 48px));overflow:hidden}
+#editingRecentProjects[open]{display:flex;flex-direction:column;gap:14px}
+#editingRecentProjects h2{margin:0}
+.editing-recent-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;flex-shrink:0}
+.editing-recent-filters label{display:grid;gap:6px;min-width:0;flex:1 1 160px}
+.editing-recent-filters input,.editing-recent-filters select{width:100%;height:38px;box-sizing:border-box;font-size:14px}
+.editing-recent-filters select{padding-right:36px;user-select:none}
+#editingProjectCount{font-size:12px;font-variant-numeric:tabular-nums}
+#editingRecentProjects .editing-recent-list{min-height:0;flex:1;margin:0;max-height:none;align-content:start}
+.editing-recent-list time{font-size:12px;font-weight:normal;color:var(--text-secondary)}
+#editingRecentProjects>button{align-self:flex-end;flex-shrink:0}

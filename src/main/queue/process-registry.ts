@@ -1,19 +1,47 @@
 import type { ChildProcess } from 'node:child_process';
+import { waitForDownloadProcessExit } from '../infra/download-process';
 
 export type QueueProcessPhase = 'streamlink' | 'merge' | 'split' | 'post-processing';
 
-export function waitForChildProcessExit(process: ChildProcess | null, forceKillAfterMs = 5000): Promise<void> {
+export function waitForChildProcessExit(process: ChildProcess | null, forceKillAfterMs = 5000, confirmExitAfterKillMs = forceKillAfterMs): Promise<void> {
+    if (process) {
+        const groupExit = waitForDownloadProcessExit(process, forceKillAfterMs, confirmExitAfterKillMs);
+        if (groupExit) return groupExit;
+    }
     if (!process || process.exitCode !== null || process.signalCode !== null) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+        let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+        let settleTimer: ReturnType<typeof setTimeout> | null = null;
+        let settled = false;
+        const release = (): void => {
+            if (forceKillTimer) clearTimeout(forceKillTimer);
+            if (settleTimer) clearTimeout(settleTimer);
+            process.removeListener('close', finish);
+            process.removeListener('exit', finish);
+        };
         const finish = (): void => {
-            clearTimeout(timer);
+            if (settled) return;
+            settled = true;
+            release();
             resolve();
         };
-        const timer = setTimeout(() => {
-            if (process.exitCode !== null || process.signalCode !== null) return;
+        const fail = (): void => {
+            if (settled) return;
+            settled = true;
+            release();
+            reject(new Error('Child process did not exit after forced termination'));
+        };
+        process.once('close', finish);
+        process.once('exit', finish);
+        forceKillTimer = setTimeout(() => {
+            forceKillTimer = null;
+            if (process.exitCode !== null || process.signalCode !== null) {
+                finish();
+                return;
+            }
+            settleTimer = setTimeout(fail, confirmExitAfterKillMs);
             try { process.kill('SIGKILL'); } catch { }
         }, forceKillAfterMs);
-        process.once('close', finish);
     });
 }
 
@@ -29,6 +57,20 @@ export interface QueueProcessResource {
 export interface QueueProcessRegistration {
     accepted: boolean;
     release: () => void;
+}
+
+async function waitForSettlementWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+    return await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finish = (completed: boolean): void => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(completed);
+        };
+        const timer = setTimeout(() => finish(false), Math.max(0, timeoutMs));
+        promise.then(() => finish(true), () => finish(true));
+    });
 }
 
 interface RegisteredResource {
@@ -150,9 +192,11 @@ export class QueueProcessRegistry {
     }
 
     activeItemIds(): string[] {
-        return [...this.groups.entries()]
+        const active = new Set([...this.groups.entries()]
             .filter(([, entries]) => entries.size > 0)
-            .map(([itemId]) => itemId);
+            .map(([itemId]) => itemId));
+        for (const itemId of this.pausedItems) active.add(itemId);
+        return [...active];
     }
 
     private async invokeItem(itemId: string, operation: 'pause' | 'resume'): Promise<void> {
@@ -167,8 +211,11 @@ export class QueueProcessRegistry {
         entry.stopping = (async () => {
             try { entry.resource.kill?.(); } catch { }
             try { await entry.resource.cancel?.(); } catch { }
-            try { await entry.resource.wait?.(); } catch { }
-            try { await entry.resource.cleanup?.(); } catch { }
+            let exited = true;
+            try { await entry.resource.wait?.(); } catch { exited = false; }
+            if (exited) {
+                try { await entry.resource.cleanup?.(); } catch { }
+            }
             this.release(entry);
         })();
         return entry.stopping;
@@ -180,13 +227,17 @@ export class QueueProcessRegistry {
     }
 
     private enqueuePause(itemId: string, entries: RegisteredResource[]): Promise<void> {
-        const previous = this.pauseRuns.get(itemId) || Promise.resolve();
+        const previous = this.pauseRuns.get(itemId)?.catch(() => undefined) || Promise.resolve();
         const pauseRun = Promise.allSettled([
             previous,
             ...entries.map(async ({ resource }) => {
                 await resource.pause?.();
             }),
-        ]).then(() => undefined);
+        ]).then((results) => {
+            for (const result of results) {
+                if (result.status === 'rejected') throw result.reason;
+            }
+        });
         this.pauseRuns.set(itemId, pauseRun);
         return pauseRun;
     }
@@ -221,7 +272,10 @@ export class QueueRunLifecycle {
     private currentRun: Promise<void> | null = null;
     private shutdownRun: Promise<void> | null = null;
 
-    constructor(private readonly registry: QueueProcessRegistry) { }
+    constructor(
+        private readonly registry: QueueProcessRegistry,
+        private readonly currentRunShutdownTimeoutMs = 5000,
+    ) { }
 
     schedule(run: () => Promise<void>, onError?: (error: unknown) => void): boolean {
         if (this.shutdownRun || this.currentRun) return false;
@@ -235,15 +289,27 @@ export class QueueRunLifecycle {
         return true;
     }
 
-    shutdown(beforeCancel: () => unknown | Promise<unknown>, persist: () => unknown | Promise<unknown>): Promise<void> {
+    shutdown(
+        beforeCancel: () => unknown | Promise<unknown>,
+        persist: () => unknown | Promise<unknown>,
+        onPersistError?: (error: unknown) => void,
+        onRunTimeout?: (error: unknown) => void,
+    ): Promise<void> {
         if (this.shutdownRun) return this.shutdownRun;
         this.registry.beginShutdown();
         this.shutdownRun = (async () => {
             try { await beforeCancel(); } catch { }
             await this.registry.cancelAll();
-            if (this.currentRun) await this.currentRun;
+            const currentRun = this.currentRun;
+            if (currentRun && !(await waitForSettlementWithin(currentRun, this.currentRunShutdownTimeoutMs))) {
+                onRunTimeout?.(new Error('Queue run did not settle after process cancellation'));
+            }
             await this.registry.waitForIdle();
-            await persist();
+            try {
+                await persist();
+            } catch (error) {
+                onPersistError?.(error);
+            }
         })();
         return this.shutdownRun;
     }

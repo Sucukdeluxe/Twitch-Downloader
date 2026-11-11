@@ -1,31 +1,22 @@
 <div align="center">
-  <img src="build/icon.png" alt="Twitch VOD Manager icon" width="128" height="128">
+  <img src="build/icon.png" alt="Twitch Downloader icon" width="128" height="128">
 
-  # Twitch VOD Manager — macOS
+  # Twitch Downloader
 
-  A macOS port of the Windows desktop app for browsing, downloading, trimming, merging and organizing Twitch VODs and clips.
+  The macOS port of Twitch Downloader 1.1.20 for browsing, downloading, trimming, merging and organizing Twitch VODs and clips. Based on the Windows `v1.1.20` release, with native Mac controls and authenticated automatic updates.
 
-  [![Mac preview](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader-macos?include_prereleases&display_name=tag)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
-  [![macOS](https://img.shields.io/badge/platform-macOS_12%2B-333333?logo=apple)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases)
-  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-Downloader-macos)](LICENSE)
+  [![Latest Mac release](https://img.shields.io/github/v/release/Sucukdeluxe/Twitch-Downloader-macos?display_name=tag&sort=semver)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest)
+  [![macOS](https://img.shields.io/badge/platform-macOS-222222?logo=apple)](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest)
+  [![License](https://img.shields.io/github/license/Sucukdeluxe/Twitch-Downloader)](LICENSE)
 
-  [Download for Mac](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases) · [Original Windows release](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest)
+  [Download for Mac](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest) · [Original Windows version](https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest)
 </div>
 
-![Twitch VOD Manager workspace](docs/images/twitch-vod-manager-overview.png)
-
-## macOS development
-
-This public repository preserves the original Windows interface and shared source history.
-Native Apple Silicon and Intel builds, bundled offline tools and automated Mac tests are
-available in this port. See [macOS build and validation details](docs/MACOS.md).
-
-The port is undergoing validation; a preview is not final 1:1 acceptance. The Windows
-installation instructions below describe the upstream release.
+![Twitch Downloader workspace](docs/images/twitch-vod-manager-overview.png)
 
 ## Overview
 
-Twitch VOD Manager brings the complete VOD workflow into one desktop workspace. Add streamers, browse their public broadcasts, queue complete videos or precise ranges, and keep downloaded files organized without switching between separate tools.
+Twitch Downloader brings the complete VOD workflow into one desktop workspace. Add streamers, browse their public broadcasts, queue complete videos or precise ranges, and keep downloaded files organized without switching between separate tools.
 
 The application works in public mode without a Twitch login. Connecting a Twitch account is optional and enables access to content available to that account, including eligible subscriber-only or channel-management VODs.
 
@@ -37,14 +28,18 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 - Refresh content quietly in the background every five minutes
 - Search, sort and filter VODs with stable cards and localized metadata
 - Preview high-resolution frames without leaving the application
-- Track completed downloads in the archive and review aggregate statistics
+- Search recordings in the archive and keep lifetime download statistics even after local files are removed
 
 ### Download and process
 
-- Download complete VODs or selected time ranges
+- Download complete VODs or selected time ranges with per-VOD quality selection (Source by default)
+- Paste up to 200 clip links with title previews, duplicate detection and retry controls
+- Search Twitch clips, inspect their duration and preview them before importing a selection
 - Edit local videos with frame-accurate trimming, removable ranges, timeline zoom, waveform guidance and undo or redo
 - Split and merge recordings with dedicated tools
 - Queue multiple jobs and follow real progress, speed and remaining time
+- Reorder waiting video exports and clear saved export entries without removing output files
+- Search saved editing projects by project or source name and sort by date or name
 - Pause and continue an active download without restarting it
 - Save optional chat replays and stream events alongside recordings
 - Record live streams automatically with retry and merge controls
@@ -52,7 +47,7 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 ### Desktop experience
 
 - Compact navigation with animated selection states
-- Separate settings pages for appearance, Twitch, downloads, automation, storage, maintenance, updates and diagnostics
+- Six settings groups for general preferences, Twitch, downloads, automation, storage and diagnostics
 - Light, Dark and System themes
 - English and German interface languages
 - Optional split Streamer and Queue sidebar
@@ -69,12 +64,11 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 
 ## Installation
 
-1. Open the [latest GitHub release](https://github.com/Sucukdeluxe/Twitch-VOD-Manager/releases/latest).
-2. Download `Twitch-VOD-Manager-Setup-1.0.9.exe`.
-3. Run the installer and choose the installation directory.
-4. Start Twitch VOD Manager and add a streamer.
+1. Open the [Mac releases](https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases).
+2. Choose the DMG for Apple Silicon (`arm64`) or Intel (`x64`), then drag **Twitch VOD Manager.app** to Applications.
+3. Start the app and add a streamer. macOS 13 or newer is required.
 
-The current Windows installer is not code-signed, so Microsoft Defender SmartScreen may ask for confirmation before the first installation.
+The application keeps its existing Mac bundle name and data directory so updates preserve settings and downloads. The interface and feature baseline are Twitch Downloader 1.1.20. Signed update metadata and package hashes are verified before an in-app installation; see [Mac updates](docs/MACOS-UPDATES.md). These builds use ad-hoc code signing, not Apple notarization. Older Mac previews before 1.0.10 require a one-time manual installation.
 
 ## Getting started
 
@@ -88,13 +82,15 @@ Public VODs are available immediately. Twitch authentication can be configured u
 
 ## Data and privacy
 
-Twitch VOD Manager stores its configuration, local database, queue state and history on the computer where it runs. OAuth credentials are handled through the local application flow and are never included in this repository or in release files.
+Twitch Downloader stores its configuration, local database, queue state and history on the computer where it runs. OAuth credentials are handled through the local application flow and are never included in this repository or in release files.
 
 Public mode does not require a Twitch login. It supports public VOD discovery and downloads, while authenticated access depends on the permissions of the connected Twitch account.
 
 ## Updates
 
 The application checks GitHub Releases for newer versions. The Update control only appears when an update is actually available. Every release includes `latest.yml`, the Windows installer and its blockmap for the desktop updater.
+
+Local **Video Cutter** uses the same playback controls as VOD trimming, with exact seeking, playback speed, volume, frame stepping, cinema mode, picture-in-picture and fullscreen. Its single timeline combines uniform thumbnails and a peak-preserving waveform with the same I/O markers and fine-seek preview used by VOD trimming. The playhead and time displays share the presented video-frame timestamp; zoomed ruler labels include frames, and exact seeking accepts frame timecodes. Fractional frame rates use non-drop-frame timecode. Waveform channels remain separate and are redrawn at the display resolution when zooming or scrolling. Purple markers delimit the excerpt; red markers edit excluded ranges. Add or edit exclusions, then confirm or cancel them; export and project saving remain unavailable while an exclusion is being edited. The compact editing panel keeps start time, output length and end time together. Exclusions remain visible in both editing modes. The export panel shows output length, profile and audio track; additional encoding options can be expanded. Space toggles playback after control clicks without activating the focused button or changing its setting. Text fields and confirmation dialogs keep their normal keyboard behavior.
 
 ## Development
 
@@ -111,30 +107,52 @@ npm ci
 npm run dev
 ```
 
-Renderer changes reload automatically. Main-process changes restart the development application.
+Stylesheet changes apply live in the development application, including player styles, without reloading the page or resetting editing state. Invalid stylesheet updates leave the previous styles active. Logic and HTML changes take effect after the next restart; they never automatically interrupt an active session. The development badge tooltip shows whether a restart is pending or an update failed.
+
+On Windows, double-click `scripts/start-development.vbs` to build and open the current development version without a terminal window. It uses the separate development data directories and exits when the application closes. Live stylesheet updates also work through this launcher.
+
+Adding an individual VOD or trimmed range to the queue opens the quality selection. The list comes from the available Twitch streams, including 1440p when provided. Labels include frame rates and codecs when supplied by the playlist; repeated requests for the same VOD are cached for two minutes. H.264, HEVC and AV1 are requested for downloads; a selected resolution is retained across restarts and does not silently fall back to another quality. Bulk and automatic downloads continue to use Source. Availability depends on Twitch and the current playback access.
+
+The VOD trim workspace uses the Streamrecorder player to play and seek through the complete VOD without downloading it in full. It includes fine seeking, exact timestamps, speed and volume controls, cinema mode, fullscreen and picture-in-picture. The history stays beside the player, with a full-width cut workspace below. Set the range using synchronized in/out markers on either timeline, time inputs (HH:MM:SS.mmm or seconds), or the I/O shortcuts. Zoom the lower timeline to the selection for finer adjustments and preview the selection before adding it to the queue. The history sidebar shows Twitch game chapters with cover images, time ranges and direct seeking. Hovering over the player timeline shows the category, VOD position and original broadcast date/time. Select a category to use its complete range for trimming. Title changes are shown when matching local live-recording event logs are available; the stored VOD title is displayed separately and is not treated as a historical title timeline. Filename and continuation settings are available beneath the cut timeline. Downloads preserve the selected stream quality and are remuxed into MP4 without re-encoding. The local video cutter re-encodes edited exports according to the selected export profile.
+
+To remove multiple sections, choose **Exclude ranges** in **Trim VOD**, mark each section with I/O and select **Exclude selection**. Edit or restore exclusions individually in the list. Remaining content is joined in order and split into the selected number of minutes per part; only the final part can be shorter. The file preview shows each part's duration and original VOD ranges. Completely excluded original parts retain a gap in the numbering. Part length and exclusions are saved with the queue item. Downloads and joins preserve the source codecs; boundaries may align with HLS segments or video keyframes. Completed source ranges are retained for retry after interruption and removed when the job completes or is removed from the queue.
+
+This Mac repository includes its regression tests. Mac CI runs the unit, native UI, media and updater checks on Apple Silicon and Intel before a release is published. Missing required tests fail verification. Local project memory and generated test artifacts are excluded from the repository.
 
 ### Verify and build
 
-```powershell
-npm run test:e2e:release
-npm run dist:win
+```bash
+npm ci
+npm run tools:mac
+npm run build
+npm run test:unit
+npm run test:mac
+npm run test:mac-update
+npm run dist:mac -- --arm64 -c.mac.identity=- --publish never
 ```
 
-The Windows installer and updater metadata are written to `release/`.
+Use `--x64` for Intel builds. See [Mac build details](docs/MACOS.md).
+
+Mac packages are written to `release/`. The inherited Windows `release:build` pipeline additionally requires the complete Windows verification suite. The Windows installer and updater metadata are written to `release/`. Verification receipts in `release/verification/` bind the tests to the source and runtime files. Packaging rejects stale receipts, checks the exact packaged file list and runs the isolated native package test. Only current renderer assets are included. CI can build an unverified candidate with `npm run dist:ci`; that candidate is not a release approval.
 
 ## Project structure
 
 | Path | Purpose |
 | --- | --- |
-| `src/main.ts` | Electron main process and desktop integrations |
-| `src/main/` | Domain logic, persistence and infrastructure |
+| `src/main.ts` | Electron main-process orchestration and desktop integrations |
+| `src/main/queue/` | Queue process lifecycle and runtime coordination |
+| `src/main/cutter/` | Video cutter integration surface |
+| `src/main/twitch/` | Twitch authentication and provider integration |
+| `src/main/updates/` | Update lifecycle coordination |
+| `src/main/storage/` | Persistence integration surface |
+| `src/main/domain/` | Shared domain logic and validation |
 | `src/renderer-*.ts` | Workspace features and renderer behavior |
 | `src/index.html` | Application shell and settings pages |
-| `src/styles.css` | Shared component styles |
-| `src/workspace.css` | Desktop workspace layout and motion |
+| `src/styles*.css` | Shared components, workflows and overlays |
+| `src/workspace*.css` | Desktop workspace layout, motion and responsive refinements |
 | `scripts/` | Development, test and release checks |
 | `build/` | Installer resources and application icons |
 
 ## License
 
-Twitch VOD Manager is released under the [MIT License](LICENSE).
+Twitch Downloader is released under the [MIT License](LICENSE).

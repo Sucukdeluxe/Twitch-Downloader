@@ -5,11 +5,21 @@ import globals from 'globals';
 
 export default [
     {
-        ignores: ['.cache/**', 'dist/**', 'release/**', 'node_modules/**', 'tmp_*/**', 'docs/**']
+        ignores: ['.cache/**', 'dist/**', 'release/**', 'node_modules/**', '.dev-program-data/**', '.dev-user-data/**', 'tmp_*/**', 'docs/**']
     },
     js.configs.recommended,
     ...tseslint.configs.recommended,
     security.configs.recommended,
+    {
+        files: ['src/vod-player/**/*.{js,jsx}'],
+        languageOptions: { globals: globals.browser, parserOptions: { ecmaFeatures: { jsx: true } } },
+        rules: {
+            'no-unused-vars': 'off',
+            '@typescript-eslint/no-unused-vars': 'off',
+            'no-empty': ['error', { allowEmptyCatch: true }],
+            'security/detect-object-injection': 'off'
+        }
+    },
     {
         files: ['src/**/*.ts'],
         rules: {
@@ -35,7 +45,7 @@ export default [
         }
     },
     {
-        files: ['scripts/**/*.js'],
+        files: ['scripts/**/*.{js,cjs}'],
         languageOptions: {
             sourceType: 'commonjs',
             globals: globals.node
@@ -67,7 +77,7 @@ export default [
         }
     },
     {
-        files: ['scripts/smoke-test*.js', 'scripts/capture-readme-screenshot.js', 'scripts/e2e-test-environment.js'],
+        files: ['scripts/smoke-test*.{js,cjs}', 'scripts/capture-readme-screenshot.js', 'scripts/e2e-test-environment.js'],
         languageOptions: {
             globals: {
                 ...globals.node,

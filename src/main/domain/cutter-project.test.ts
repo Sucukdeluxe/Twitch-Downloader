@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('cutter project autosave', () => {
-    test('restores a crash-saved edit after recreating the local store', () => {
+    test.each(['software', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'] as const)('restores a crash-saved %s edit after recreating the local store', (encoder) => {
         const autosavePath = path.join(directory, 'cutter-projects.json');
         const source = { path: 'C:\\Media\\source.mp4', size: 2_048_000, mtimeMs: 1_725_000_000_000 };
         const savingStore = createCutterProjectAutosaveStore(autosavePath);
@@ -28,7 +28,7 @@ describe('cutter project autosave', () => {
             trimEnd: 110,
             cuts: [{ id: 'cut-1', start: 32, end: 46 }],
             profile: 'quality',
-            encoder: 'software',
+            encoder,
             audioStreamIndex: 1,
         });
 
@@ -40,6 +40,7 @@ describe('cutter project autosave', () => {
             trimEnd: 110,
             cuts: [{ id: 'cut-1', start: 32, end: 46 }],
             profile: 'quality',
+            encoder,
             audioStreamIndex: 1,
         });
         expect(fs.existsSync(`${autosavePath}.tmp`)).toBe(false);

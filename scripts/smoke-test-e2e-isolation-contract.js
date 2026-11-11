@@ -4,9 +4,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const HELPER_FILE = path.join(__dirname, 'e2e-test-environment.js');
 const SMOKE_FILES = [
-  'scripts/smoke-test.js',
-  'scripts/smoke-test-template-guide.js',
-  'scripts/smoke-test-full.js',
+  'scripts/smoke-test-cutter.js',
   'scripts/smoke-test-settings-autosave.js',
   'scripts/smoke-test-workspace-ui.js'
 ];
@@ -44,17 +42,15 @@ function inspectSources() {
     }
   }
 
-  const fullSource = fs.readFileSync(path.join(ROOT, 'scripts/smoke-test-full.js'), 'utf8');
-  const forbiddenFullPatterns = [
+  const forbiddenPatterns = [
     ['backupFile(', 'real-file backup path'],
     ['restoreFile(', 'real-file restore path'],
-    ["path.join(process.cwd(), 'tmp_e2e_full')", 'project-local media path'],
-    ["process.env.PROGRAMDATA || 'C:\\\\ProgramData'", 'ambient ProgramData path']
+    ["path.join(process.cwd(), 'tmp_e2e_full')", 'project-local media path']
   ];
-
-  for (const [pattern, label] of forbiddenFullPatterns) {
-    if (fullSource.includes(pattern)) {
-      failures.push(`scripts/smoke-test-full.js: contains ${label}`);
+  for (const relativePath of SMOKE_FILES) {
+    const source = fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+    for (const [pattern, label] of forbiddenPatterns) {
+      if (source.includes(pattern)) failures.push(`${relativePath}: contains ${label}`);
     }
   }
 

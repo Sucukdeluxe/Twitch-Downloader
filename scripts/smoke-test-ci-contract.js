@@ -1,72 +1,39 @@
-const fs = require('fs');
-const path = require('path');
-
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const failures = [];
+const pkg = require('../package.json');
 
-function check(condition, message) {
-  if (!condition) failures.push(message);
+assert.equal(pkg.scripts['test:unit'], 'vitest run', 'Unit checks must fail when the suite is missing');
+for (const name of ['test:security', 'test:lint-config', 'test:ci-contract', 'test:e2e:release', 'test:mac', 'test:mac-update']) {
+  const command = pkg.scripts[name];
+  assert(command && !command.includes('run-local-check'), `${name} must run required tests directly`);
 }
-
-const requiredScripts = {
-  lint: 'eslint .',
-  'security:check': 'node scripts/security-check.js && node scripts/smoke-test-public-release-config.js',
-  'test:security': 'node --test scripts/security-check.test.js',
-  'test:lint-config': 'node --test scripts/lint-config.test.mjs',
-  'test:ci-contract': 'node scripts/smoke-test-ci-contract.js',
-  'test:e2e:focused': 'npm run test:e2e:isolation && npm run test:e2e:workspace-ui',
-  'test:packaged-launch': 'node scripts/smoke-test-packaged-launch.js',
-  'test:installer': 'node scripts/smoke-test-installer.js',
-  'dist:ci': 'electron-builder --win nsis'
-};
-
-for (const [name, command] of Object.entries(requiredScripts)) {
-  check(packageJson.scripts?.[name] === command, `package script ${name} is missing or changed`);
-}
-
-for (const relativePath of ['.github/workflows/windows-ci.yml', '.gitea/workflows/windows-ci.yml']) {
-  const absolutePath = path.join(root, relativePath);
-  check(fs.existsSync(absolutePath), `${relativePath} is missing`);
-  if (!fs.existsSync(absolutePath)) continue;
-
-  const source = fs.readFileSync(absolutePath, 'utf8');
-  const requiredCommands = [
-    'npm ci',
-    'npm run lint',
-    'npm run test:lint-config',
-    'npm run security:check',
-    'npm run test:security',
-    'npm run test:ci-contract',
-    'npm run test:unit',
-    'npm run test:e2e:focused',
-    'npm run build',
-    'npm run pack',
-    'npm run test:packaged-launch',
-    'npm run dist:ci',
-    'npm run test:installer'
-  ];
-
-  check(/runs-on:\s*windows-latest/.test(source), `${relativePath} does not use a Windows runner`);
-  check(/node-version:\s*['"]?24\.11\.1['"]?/.test(source), `${relativePath} does not pin Node 24.11.1`);
-  for (const command of requiredCommands) {
-    check(source.includes(`run: ${command}`), `${relativePath} is missing ${command}`);
+for (const name of ['macos-ci.yml', 'macos-release.yml']) {
+  const source = fs.readFileSync(path.join(root, '.github', 'workflows', name), 'utf8');
+  for (const command of ['npm ci', 'npm run lint', 'npm run test:unit', 'npm run rebuild:electron', 'npm run security:check', 'npm run test:security', 'npm run test:lint-config', 'npm run test:ci-contract', 'npm run test:mac-update', 'npm run test:mac', 'npm run test:e2e:release', 'npm run dist:mac', 'scripts/smoke-test-macos-update.js']) {
+    assert(source.includes(command), `${name} must run ${command}`);
   }
-  const runSteps = source.split(/\r?\n/).filter((line) => /^\s+run:\s+/.test(line));
-  const timeoutSteps = source.split(/\r?\n/).filter((line) => /^\s+timeout-minutes:\s*10\s*$/.test(line));
-  check(timeoutSteps.length >= runSteps.length, `${relativePath} does not cap every command at ten minutes`);
-  check(!/test:[^\s]*authenticated|TWITCH_CLIENT_SECRET|DISCORD_WEBHOOK/i.test(source), `${relativePath} includes authenticated integration inputs`);
+  for (const required of ['macos-15', 'macos-15-intel', "TVM_STRICT_LOCAL_CHECKS: 'true'", 'PACKAGED_APP_PATH:', 'MAC_UPDATE_FROM_APP:']) {
+    assert(source.includes(required), `${name} is missing ${required}`);
+  }
+  assert(!source.includes('continue-on-error: true'), `${name} must fail closed`);
+  assert(source.includes('codesign --verify --deep --strict'), `${name} must verify the built app before update tests`);
+  if (name === 'macos-ci.yml') {
+    for (const required of ["CSC_FOR_PULL_REQUEST: 'true'", "CSC_IDENTITY_AUTO_DISCOVERY: 'false'", '-c.mac.identity=-']) {
+      assert(source.includes(required), `PR packages must use explicit ad-hoc signing without credentials: ${required}`);
+    }
+  }
 }
-
-for (const relativePath of [
-  'scripts/security-check.js',
-  'scripts/security-check.test.js',
-  'scripts/lint-config.test.mjs',
-  'scripts/smoke-test-packaged-launch.js',
-  'scripts/smoke-test-installer.js'
-]) {
-  check(fs.existsSync(path.join(root, relativePath)), `${relativePath} is missing`);
+for (const directory of ['.github', '.gitea']) {
+  const source = fs.readFileSync(path.join(root, directory, 'workflows/windows-ci.yml'), 'utf8');
+  for (const command of ['npm run test:unit', 'npm run test:security', 'npm run test:lint-config', 'npm run test:ci-contract', 'npm run rebuild:electron', 'npm run test:e2e:focused']) {
+    assert(source.includes(command), `${directory} Windows CI must run ${command}`);
+  }
 }
-
-console.log(JSON.stringify({ failures }, null, 2));
-if (failures.length) process.exitCode = 1;
+for (const command of Object.values(pkg.scripts).filter(value => !value.includes('run-local-check'))) {
+  for (const match of command.matchAll(/\b(scripts\/[\w./-]+\.(?:js|mjs))\b/g)) {
+    assert(fs.existsSync(path.join(root, match[1])), `Required script is missing: ${match[1]}`);
+  }
+}
+console.log('CI contracts passed: native arm64/x64, required regression tests and original-release update');

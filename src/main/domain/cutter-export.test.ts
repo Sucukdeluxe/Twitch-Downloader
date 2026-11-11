@@ -37,9 +37,9 @@ describe('cutter export segments', () => {
             hasAudio: true,
         });
 
-        expect(plan.filterComplex).toBe('[0:v]trim=start=5:end=20,setpts=PTS-STARTPTS[v0];[0:a]atrim=start=5:end=20,asetpts=PTS-STARTPTS[a0];[0:v]trim=start=30.5:end=45.25,setpts=PTS-STARTPTS[v1];[0:a]atrim=start=30.5:end=45.25,asetpts=PTS-STARTPTS[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]');
+        expect(plan.filterComplex).toBe('[0:a]aresample=async=1:first_pts=0,apad=whole_dur=45.25,asplit=2[s0][s1];[0:v]trim=start=5:end=20,setpts=PTS-STARTPTS[v0];[s0]atrim=start=5:end=20,asetpts=PTS-STARTPTS[a0];[0:v]trim=start=30.5:end=45.25,setpts=PTS-STARTPTS[v1];[s1]atrim=start=30.5:end=45.25,asetpts=PTS-STARTPTS[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]');
         expect(plan.ffmpegArgs).toEqual([
-            '-i', 'D:\\media folder\\source.mp4',
+            '-copyts', '-itsoffset', '0', '-i', 'D:\\media folder\\source.mp4',
             '-filter_complex', plan.filterComplex,
             '-map', '[outv]',
             '-map', '[outa]',
@@ -68,7 +68,7 @@ describe('cutter export segments', () => {
 
         expect(plan.filterComplex).toBe('[0:v]trim=start=0:end=10,setpts=PTS-STARTPTS[v0];[0:v]trim=start=12:end=18,setpts=PTS-STARTPTS[v1];[v0][v1]concat=n=2:v=1:a=0[outv]');
         expect(plan.ffmpegArgs).toEqual([
-            '-i', 'input.mkv',
+            '-copyts', '-itsoffset', '0', '-i', 'input.mkv',
             '-filter_complex', plan.filterComplex,
             '-map', '[outv]',
             '-c:v', 'libx264',
@@ -127,7 +127,8 @@ describe('cutter export segments', () => {
         });
 
         expect(plan.filterComplex).toContain('[0:v]trim=start=0:end=20,setpts=PTS-STARTPTS,transpose=1[v0]');
-        expect(plan.filterComplex).toContain('[0:a:1]atrim=start=0:end=20,asetpts=PTS-STARTPTS[a0]');
+        expect(plan.filterComplex).toContain('[0:a:1]aresample=async=1:first_pts=0,apad=whole_dur=20[s0]');
+        expect(plan.filterComplex).toContain('[s0]atrim=start=0:end=20,asetpts=PTS-STARTPTS[a0]');
         expect(plan.ffmpegArgs).toContain('-noautorotate');
         expect(plan.ffmpegArgs).toEqual(expect.arrayContaining(['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k']));
     });
@@ -167,7 +168,7 @@ describe('cutter export segments', () => {
             encoder: 'software',
         });
 
-        expect(plan.ffmpegArgs).toEqual(expect.arrayContaining(['-c:v', 'ffv1', '-c:a', 'flac', '-pix_fmt', 'yuv420p']));
+        expect(plan.ffmpegArgs).toEqual(expect.arrayContaining(['-c:v', 'ffv1', '-c:a', 'pcm_f64le', '-pix_fmt', 'yuv420p']));
         expect(plan.ffmpegArgs).not.toContain('+faststart');
     });
 

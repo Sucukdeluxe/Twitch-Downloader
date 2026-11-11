@@ -6,7 +6,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron: electron } = require('playwright');
-const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment } = require('./e2e-test-environment');
+const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, cleanupE2eEnvironment, closeElectronWindow, activateElectronWindow } = require('./e2e-test-environment');
 const execute = promisify(execFile);
 
 function offsetFragmentTimestamps(file) {
@@ -76,6 +76,42 @@ async function run() {
     assert(checks.desktop.menuRoles.includes('editmenu'));
     assert(checks.desktop.menuRoles.includes('appmenu'));
     assert(fs.existsSync(path.join(environment.appDataDir, 'app.db')), 'SQLite store was not created');
+    console.log('[macos] Checking queue duplicate protection and persisted ordering');
+    const previousQueueConfig = await win.evaluate(async () => {
+      const config = await window.api.getConfig();
+      return { prevent_duplicate_downloads: config.prevent_duplicate_downloads, persist_queue_on_restart: config.persist_queue_on_restart };
+    });
+    try {
+      assert.equal((await win.evaluate(() => window.api.getQueue())).length, 0, 'Queue fixture must start empty');
+      checks.queue = await win.evaluate(async () => {
+        await window.api.saveConfig({ prevent_duplicate_downloads: true, persist_queue_on_restart: true });
+        const firstInput = { url: 'https://www.twitch.tv/videos/990000001', title: 'Mac queue fixture A', date: '2026-11-11T00:00:00Z', streamer: 'audit', duration_str: '3s' };
+        const first = await window.api.addToQueueWithResult(firstInput);
+        const duplicate = await window.api.addToQueueWithResult(firstInput);
+        const countAfterDuplicate = (await window.api.getQueue()).length;
+        const second = await window.api.addToQueueWithResult({ ...firstInput, url: 'https://www.twitch.tv/videos/990000002', title: 'Mac queue fixture B' });
+        const requestedOrder = [second.addedId, first.addedId];
+        await window.api.reorderQueue(requestedOrder);
+        return { firstAccepted: first.accepted, secondAccepted: second.accepted, duplicateAccepted: duplicate.accepted,
+          duplicateReason: duplicate.reason, countAfterDuplicate, requestedOrder, actualOrder: (await window.api.getQueue()).map(item => item.id) };
+      });
+      assert.equal(checks.queue.firstAccepted, true);
+      assert.equal(checks.queue.secondAccepted, true);
+      assert.equal(checks.queue.duplicateAccepted, false);
+      assert.equal(checks.queue.duplicateReason, 'duplicate');
+      assert.equal(checks.queue.countAfterDuplicate, 1);
+      assert.deepEqual(checks.queue.actualOrder, checks.queue.requestedOrder);
+      checks.queue.persistedOrder = await app.evaluate(({ app: nativeApp }) => {
+        const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+        return appRequire('./dist/main.js').getAppDb().all('SELECT id FROM queue_items ORDER BY queue_position').map(row => row.id);
+      });
+      assert.deepEqual(checks.queue.persistedOrder, checks.queue.requestedOrder, 'Reordered queue was not persisted');
+    } finally {
+      await win.evaluate(async previous => {
+        for (const item of await window.api.getQueue()) await window.api.removeFromQueue(item.id);
+        await window.api.saveConfig(previous);
+      }, previousQueueConfig);
+    }
     console.log('[macos] Downloading local HLS fixture');
 
     const toolRoot = path.join(environment.appDataDir, 'tools');
@@ -111,6 +147,33 @@ async function run() {
     });
     assert.equal(checks.cut.success, true);
     assert(fs.statSync(path.join(environment.mediaDir, checks.cut.outputName)).size > 0);
+    console.log('[macos] Merging real media through native file capabilities');
+    const mergeSecond = path.join(environment.mediaDir, 'merge-second.mp4');
+    const merged = path.join(environment.mediaDir, 'merged.mp4');
+    await execute(ffmpeg, ['-v', 'error', '-i', media, '-t', '2', '-c', 'copy', '-y', mergeSecond], { env: cleanEnv });
+    await app.evaluate(({ dialog }, files) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [files.media, files.mergeSecond] });
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: files.merged });
+    }, { media, mergeSecond, merged });
+    checks.merge = await win.evaluate(async () => {
+      const inputs = await window.api.selectMultipleVideos();
+      const output = await window.api.saveVideoDialog('merged.mp4');
+      if (!inputs || inputs.length !== 2 || !inputs.every(input => input.token) || !output?.token) throw new Error('Native merge dialogs did not issue file capabilities');
+      return window.api.mergeVideos(inputs.map(input => input.token), output.token);
+    });
+    assert.equal(checks.merge.success, true, JSON.stringify(checks.merge));
+    assert.equal(checks.merge.outputName, path.basename(merged));
+    const mergeDurations = await Promise.all([media, mergeSecond].map(async file => {
+      const result = await execute(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { env: cleanEnv });
+      return Number(result.stdout.trim());
+    }));
+    const mergedProbe = JSON.parse((await execute(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', merged], { env: cleanEnv })).stdout);
+    checks.merge.duration = Number(mergedProbe.format.duration);
+    checks.merge.expectedDuration = mergeDurations.reduce((sum, duration) => sum + duration, 0);
+    checks.merge.streams = mergedProbe.streams.map(stream => stream.codec_type).sort();
+    assert(Math.abs(checks.merge.duration - checks.merge.expectedDuration) < 0.3, 'Merged output lost or duplicated media duration');
+    assert.deepEqual(checks.merge.streams, ['audio', 'video']);
+    assert(fs.statSync(merged).size > 256);
     console.log('[macos] Checking timestamp normalization and export');
 
     const fragment = path.join(environment.mediaDir, 'Twitch excerpt.mp4');
@@ -168,7 +231,7 @@ async function run() {
       const originalCheck = updater.checkForUpdates;
       globalThis.__emptyReleaseFallbackCalls = 0;
       axios.get = async (url, ...args) => {
-        if (String(url).endsWith('/releases/latest')) {
+        if ((String(url).endsWith('/releases/latest') || String(url).endsWith('/mac-update.json'))) {
           throw Object.assign(new Error('No stable release'), { isAxiosError: true, response: { status: 404 } });
         }
         return originalGet.call(axios, url, ...args);
@@ -193,13 +256,8 @@ async function run() {
       const config = await window.api.getConfig();
       await window.api.saveConfig({ ...config, language: 'en', theme: 'light' });
     });
-    const closed = win.waitForEvent('close');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-    await closed;
-    const reopened = app.waitForEvent('window');
-    await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
-    win = await reopened;
-    await win.waitForLoadState('domcontentloaded');
+    await closeElectronWindow(app, win);
+    win = await activateElectronWindow(app);
     const config = await win.evaluate(() => window.api.getConfig());
     assert.equal(config.theme, 'light');
     assert.equal(config.language, 'en');

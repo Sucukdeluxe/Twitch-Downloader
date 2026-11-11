@@ -1,6 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const nodeCrypto = require('node:crypto');
+const testEncryption = new WeakMap();
 
 const OFFLINE_PROXY = 'http://127.0.0.1:1';
 
@@ -73,7 +75,7 @@ function createE2eEnvironment(name, configOverrides = {}) {
   writeJson(configFile, buildSafeConfig(downloadsDir, configOverrides));
   writeJson(queueFile, []);
 
-  return {
+  const environment = {
     rootDir,
     programDataDir,
     userDataDir,
@@ -83,6 +85,10 @@ function createE2eEnvironment(name, configOverrides = {}) {
     configFile,
     queueFile
   };
+  const id = nodeCrypto.randomUUID();
+  fs.writeFileSync(path.join(rootDir, '.tvm-e2e'), id, { mode: 0o600 });
+  testEncryption.set(environment, { id, key: nodeCrypto.randomBytes(32).toString('hex') });
+  return environment;
 }
 
 function writeE2eConfig(environment, overrides = {}) {
@@ -107,6 +113,8 @@ function readE2eConfig(environment) {
 }
 
 function getElectronLaunchOptions(environment, extraArgs = []) {
+  const encryption = testEncryption.get(environment);
+  if (!encryption) throw new Error('Electron tests require a freshly created isolated environment');
   return {
     executablePath: require('electron'),
     args: [
@@ -121,6 +129,10 @@ function getElectronLaunchOptions(environment, extraArgs = []) {
       ...process.env,
       PROGRAMDATA: environment.programDataDir,
       TWITCH_VOD_MANAGER_DATA_DIR: environment.appDataDir,
+      TVM_E2E_ROOT: environment.rootDir,
+      TVM_E2E_ID: encryption.id,
+      TVM_E2E_SECRET_KEY: encryption.key,
+      TVM_E2E_BACKGROUND: '1',
       HTTP_PROXY: OFFLINE_PROXY,
       HTTPS_PROXY: OFFLINE_PROXY,
       ALL_PROXY: OFFLINE_PROXY,
@@ -142,10 +154,17 @@ function isSamePath(left, right) {
 }
 
 async function verifyE2eIsolation(app, win, environment) {
-  const main = await app.evaluate(({ app: electronApp }) => ({
-    programData: process.env.PROGRAMDATA || '',
-    userData: electronApp.getPath('userData')
-  }));
+  await win.waitForURL(url => url.protocol === 'file:' && url.pathname.endsWith('/index.html'));
+  await win.waitForLoadState('domcontentloaded');
+  const main = await app.evaluate(({ app: electronApp }) => {
+    const appRequire = process.getBuiltinModule('module').createRequire(`${electronApp.getAppPath()}/package.json`);
+    return {
+      programData: process.env.PROGRAMDATA || '',
+      userData: electronApp.getPath('userData'),
+      encryption: appRequire('./dist/main/infra/secure-storage.js').getSecureStorageDiagnostics(),
+      background: process.platform !== 'darwin' || process.env.TVM_E2E_BACKGROUND !== '1' || electronApp.dock?.isVisible() === false,
+    };
+  });
   const rendererDownloadPath = await win.evaluate(async () => {
     const currentConfig = await window.api.getConfig();
     return currentConfig.download_path;
@@ -159,6 +178,12 @@ async function verifyE2eIsolation(app, win, environment) {
     userDataIsolated: isSamePath(main.userData, environment.userDataDir),
     downloadPathIsolated: isSamePath(rendererDownloadPath, environment.downloadsDir)
   };
+
+  if (main.encryption.backend !== 'isolated-test' || main.encryption.blockedNativeCalls !== 0) {
+    throw new Error('E2E encryption isolation is not active');
+  }
+
+  if (!main.background) throw new Error('Isolated Mac tests must run without a Dock entry');
 
   if (!verification.programDataIsolated || !verification.userDataIsolated || !verification.downloadPathIsolated) {
     throw new Error(`E2E isolation verification failed: ${JSON.stringify(verification)}`);
@@ -185,6 +210,14 @@ async function installOfflineFixtures(app) {
     if (!guardsActive) {
       throw new Error(`Offline bootstrap verification failed: ${JSON.stringify(offlineState || null)}`);
     }
+    // Background polling calls the backend directly, bypassing check-update IPC.
+    // UI fixtures drive updater events explicitly and must not receive a real
+    // offline network failure while inspecting a synthetic release state.
+    const appRequire = process.getBuiltinModule('module').createRequire(`${electronApp.getAppPath()}/package.json`);
+    const updater = process.platform === 'darwin'
+      ? appRequire('./dist/main/infra/mac-updater.js').MacUpdater.prototype
+      : appRequire('electron-updater').autoUpdater;
+    updater.checkForUpdates = async () => null;
     const vods = [{
       id: '999999999999999',
       title: 'Offline fixture VOD',
@@ -227,6 +260,35 @@ async function installOfflineFixtures(app) {
   });
 }
 
+// A Playwright Page close event and native BrowserWindow teardown need not
+// arrive together. Wait for both before simulating Dock activation, and accept
+// a window macOS already reopened instead of waiting for a second window event.
+async function closeElectronWindow(app, win) {
+  const pageClosed = win.waitForEvent('close');
+  await app.evaluate(({ BrowserWindow }) => new Promise((resolve, reject) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) { resolve(); return; }
+    const timeout = setTimeout(() => reject(new Error('Native window did not close')), 10000);
+    window.once('closed', () => { clearTimeout(timeout); resolve(); });
+    window.close();
+  }));
+  await pageClosed;
+}
+
+async function activateElectronWindow(app) {
+  let win = app.windows().find((window) => !window.isClosed());
+  if (!win) {
+    const opened = app.waitForEvent('window');
+    await app.evaluate(({ app: nativeApp }) => nativeApp.emit('activate'));
+    win = await opened;
+  }
+  // A newly created BrowserWindow first exposes about:blank; wait for the application navigation.
+  await win.waitForURL(url => url.protocol === 'file:' && url.pathname.endsWith('/index.html'));
+  await win.waitForLoadState('domcontentloaded');
+  await win.waitForFunction(() => typeof window.showTab === 'function');
+  return win;
+}
+
 function cleanupE2eEnvironment(environment) {
   if (!environment?.rootDir) {
     return;
@@ -243,5 +305,7 @@ module.exports = {
   getElectronLaunchOptions,
   verifyE2eIsolation,
   installOfflineFixtures,
-  cleanupE2eEnvironment
+  cleanupE2eEnvironment,
+  closeElectronWindow,
+  activateElectronWindow
 };
