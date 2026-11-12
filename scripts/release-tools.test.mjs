@@ -187,3 +187,25 @@ test('unit reports permit only explicit tests belonging to another native platfo
     assert.throws(() => validateUnitReport({ ...report, numPassedTests: 0 }, 'win32'), /incomplete/);
     assert.throws(() => validateUnitReport({ ...report, numFailedTests: 1 }, 'win32'), /incomplete/);
 });
+
+test('Windows reports retain the five explicitly Mac-only filesystem, process and archive cases', () => {
+    const cases = [
+        ['infra/mac-updater.test.ts', 'macOS update system compatibility', 'rejects an incompatible authenticated archive before staging (cleanup failure: false)'],
+        ['infra/mac-updater.test.ts', 'macOS update system compatibility', 'rejects an incompatible authenticated archive before staging (cleanup failure: true)'],
+        ['infra/download-process.test.ts', 'download process cancellation', 'kills an uncooperative descendant with inherited stdio before cleanup'],
+        ['infra/download-process.test.ts', 'download process cancellation', 'kills an uncooperative descendant with private stdio before cleanup'],
+        ['domain/portable-cutter-project.test.ts', 'portable Mac cutter projects', 'keeps distinct case-sensitive project paths when remembering and removing recents'],
+    ];
+    for (const [file, suite, title] of cases) {
+        const pending = { title, fullName: `${suite} ${title}`, ancestorTitles: [suite], status: 'skipped' };
+        const report = { success: true, numPassedTests: 1, numFailedTests: 0, numTodoTests: 0, numPendingTests: 1,
+            testResults: [{ name: `/repo/src/main/${file}`, assertionResults: [pending,
+                { title: 'shared test', fullName: 'shared test', ancestorTitles: [], status: 'passed' }] }] };
+        assert.equal(validateUnitReport(report, 'win32').platformSpecific.length, 1);
+        assert.throws(() => validateUnitReport(report, 'darwin'), /did not pass/);
+        pending.status = 'failed';
+        assert.throws(() => validateUnitReport(report, 'win32'), /did not pass/);
+        pending.status = 'skipped'; pending.title = 'new shared regression';
+        assert.throws(() => validateUnitReport(report, 'win32'), /did not pass/);
+    }
+});

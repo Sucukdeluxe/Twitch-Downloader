@@ -198,10 +198,23 @@ async function assertPreciseRange(output, fixture, ranges, { ffmpeg = 'ffmpeg', 
 async function observePlayerMedia(win) {
   await win.evaluate(() => {
     window.__trimPlayerBuffers = [];
+    window.__trimPlayerSourceUrls = new Map();
+    const sources = new WeakMap();
+    let nextSource = 0;
+    const sourceId = source => {
+      if (!sources.has(source)) sources.set(source, ++nextSource);
+      return sources.get(source);
+    };
+    const createUrl = URL.createObjectURL;
+    URL.createObjectURL = function (source) {
+      const url = createUrl.call(this, source);
+      if (source instanceof MediaSource) window.__trimPlayerSourceUrls.set(url, sourceId(source));
+      return url;
+    };
     const add = MediaSource.prototype.addSourceBuffer;
     MediaSource.prototype.addSourceBuffer = function (mime) {
       const buffer = add.call(this, mime);
-      const record = { mime, chunks: [] };
+      const record = { mime, sourceId: sourceId(this), chunks: [] };
       window.__trimPlayerBuffers.push(record);
       const append = buffer.appendBuffer;
       buffer.appendBuffer = function (bytes) {
@@ -215,11 +228,45 @@ async function observePlayerMedia(win) {
 }
 
 async function capturePlayerReference(win, fixture, { ffmpeg, ffprobe }) {
-  await win.waitForFunction(duration => {
-    const video = document.querySelector('#clipPlayer video');
-    return video?.readyState >= 2 && video.buffered.length && video.buffered.end(video.buffered.length - 1) >= duration - .1;
-  }, fixture.duration);
-  const records = await win.evaluate(() => window.__trimPlayerBuffers);
+  // The player has active and standby slots. Bind one element/source generation;
+  // neither DOM order nor the first captured SourceBuffer identifies playback.
+  await win.waitForFunction(() => document.querySelector('#clipPlayer video.active')?.readyState >= 2);
+  const video = await win.$('#clipPlayer video.active');
+  const sourceUrl = await video.evaluate(element => { element.pause(); return element.currentSrc; });
+  try {
+    await waitFor(async () => video.evaluate((element, { duration, sourceUrl }) => {
+      if (!element.isConnected || !element.classList.contains('active') || element.currentSrc !== sourceUrl) {
+        throw new Error('Player source changed while capturing its reference');
+      }
+      const buffered = element.buffered;
+      if (!buffered.length || element.readyState < 2) return false;
+      const end = buffered.end(buffered.length - 1);
+      if (end >= duration - .1) return true;
+      // A paused playhead can remain before the first B-frame PTS, or HLS may
+      // have reached its forward-buffer limit. Move only INSIDE data already
+      // received, in order, so HLS loads the next fragment without skipping or
+      // refetching one. Do not alter production HLS buffering configuration.
+      const target = Math.max(buffered.start(buffered.length - 1), end - .25);
+      if (!element.seeking && target > element.currentTime + .1) element.currentTime = target;
+      return false;
+    }, { duration: fixture.duration, sourceUrl }), 30000);
+  } catch (error) {
+    console.error('Player reference buffer diagnostics:', await win.evaluate(() => ({
+      videos: [...document.querySelectorAll('#clipPlayer video')].map(element => ({
+        className: element.className, src: element.currentSrc, time: element.currentTime,
+        duration: element.duration, ready: element.readyState, paused: element.paused,
+        seeking: element.seeking, network: element.networkState, error: element.error?.message,
+        buffered: Array.from({ length: element.buffered.length }, (_, index) => [element.buffered.start(index), element.buffered.end(index)]),
+      })),
+      buffers: window.__trimPlayerBuffers.map(record => ({ sourceId: record.sourceId, mime: record.mime, chunks: record.chunks.length })),
+    })));
+    throw error;
+  }
+  const records = await win.evaluate(sourceUrl => {
+    const sourceId = window.__trimPlayerSourceUrls.get(sourceUrl);
+    if (!sourceId) throw new Error('Active player MediaSource was not observed');
+    return window.__trimPlayerBuffers.filter(record => record.sourceId === sourceId);
+  }, sourceUrl);
   const results = {};
   for (const type of ['video', 'audio']) {
     const record = records.find(row => row.mime.startsWith(type + '/'))
@@ -250,8 +297,7 @@ async function capturePlayerReference(win, fixture, { ffmpeg, ffprobe }) {
   // Confirm captured bytes agree with images displayed by the actual app. A
   // paused time between frames displays the previous frame; cuts use [start,end).
   for (const time of [4.513, 10.513]) {
-    const observed = await win.evaluate(async time => {
-      const video = document.querySelector('#clipPlayer video');
+    const observed = await video.evaluate(async (video, time) => {
       video.pause();
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Player reference seek timed out')), 10000);
@@ -377,28 +423,51 @@ async function headlessSourceAudio({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = 
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     browser = await chromium.launch({ headless: true });
-    for (const [fps, segmentType] of [['25', 'mpegts'], ['60000/1001', 'mpegts'], ['60000/1001', 'fmp4']]) {
+    for (const [fps, segmentType, duration] of [['25', 'mpegts', 28], ['60000/1001', 'mpegts', 28], ['60000/1001', 'fmp4', 28], ['25', 'mpegts', 68]]) {
       const page = await browser.newPage();
       try {
         let fixture = await createTemporalFixture(directory, { ffmpeg, ffprobe, fps, segmentType,
-          name: `headless-${fps.replace('/', '-')}-${segmentType}`, duration: 28 });
-        await page.setContent('<div id="clipPlayer"><video muted playsinline width="160" height="96"></video></div>');
+          name: `headless-${fps.replace('/', '-')}-${segmentType}-${duration}`, duration });
+        await page.setContent('<div id="clipPlayer"><video class="standby" muted playsinline></video><video class="active" muted playsinline width="160" height="96"></video></div>');
         await observePlayerMedia(page);
         await page.addScriptTag({ path: require.resolve('hls.js/dist/hls.js') });
-        await page.evaluate(url => {
-          const video = document.querySelector('video');
-          const hls = new window.Hls({ maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30 });
+        await page.evaluate(async url => {
+          const config = { maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30 };
+          // Observe an incomplete previous source first. Its buffers must never
+          // become the active reference merely because they were created first.
+          const previous = new window.Hls(config);
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Standby fixture did not buffer')), 10000);
+            previous.once(window.Hls.Events.FRAG_BUFFERED, () => {
+              previous.stopLoad(); clearTimeout(timer); resolve();
+            });
+            previous.loadSource(url); previous.attachMedia(document.querySelector('video.standby'));
+          });
+          previous.destroy();
+          const video = document.querySelector('video.active');
+          const hls = new window.Hls(config);
           window.__headlessHls = hls;
+          hls.on(window.Hls.Events.FRAG_BUFFERED, () => { window.__lastHeadlessAppend = performance.now(); });
           hls.loadSource(url); hls.attachMedia(video);
-          video.play().catch(() => {});
+          // Deliberately remain paused at zero, including before the first PTS.
         }, `http://127.0.0.1:${server.address().port}/${path.basename(fixture.playlist)}`);
+        if (duration > 60) {
+          await page.waitForFunction(() => {
+            const video = document.querySelector('video.active');
+            return video.buffered.length && video.buffered.end(0) >= 20
+              && window.__headlessHls.streamController.state === 'IDLE'
+              && performance.now() - window.__lastHeadlessAppend > 500;
+          });
+          const end = await page.evaluate(() => document.querySelector('video.active').buffered.end(0));
+          assert(end < duration - .1, 'Long paused fixture must demonstrate the passive full-buffer wait cannot finish');
+        }
         fixture = await capturePlayerReference(page, fixture, { ffmpeg, ffprobe });
-        observations.push({ fps: fixture.fps, segmentType, sourcePresentationShift: fixture.sourcePresentationShift,
+        observations.push({ fps: fixture.fps, segmentType, duration, frames: fixture.presentationFrames.length, sourcePresentationShift: fixture.sourcePresentationShift,
           sourceAudioStart: fixture.audioReference.start, browserAudioPhase: fixture.browserAudioPhase });
         // Expected video IDs/times come from the browser; expected PCM timing
         // comes from independently decoded original HLS, never this helper.
         const timeline = await production.readVodPlaylistTimeline(ffprobe, fixture.playlist);
-        for (const [start, end] of [[0, 1.013], [4.513, 8.527], [21.513, 24.527]]) {
+        for (const [start, end] of (duration > 60 ? [[61.513, 64.527]] : [[0, 1.013], [4.513, 8.527], [21.513, 24.527]])) {
           const output = path.join(directory, `output-${fps.replace('/', '-')}-${segmentType}-${start}.mp4`);
           await mediaCommand(ffmpeg, production.buildPreciseVodTrimArgs({ input: fixture.playlist, output,
             start, duration: end - start, seekOffset: timeline.seekOffset, seekAfterInput: true }));
@@ -505,7 +574,7 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
     }, { playlist: playlistUrl(fixture), file: fixture.playlist, root: environment.rootDir });
     await win.waitForFunction(() => typeof window.openClipDialog === 'function');
     await win.evaluate(() => window.openClipDialog('https://www.twitch.tv/videos/2222222', 'Trim workflow fixture', '2026-11-11T12:00:00Z', 'fixture', '28s'));
-    await win.waitForFunction(() => document.querySelector('#clipPlayer video')?.readyState >= 2).catch(async error => {
+    await win.waitForFunction(() => document.querySelector('#clipPlayer video.active')?.readyState >= 2).catch(async error => {
       console.error('Player load diagnostics:', await win.evaluate(() => ({
         text: document.querySelector('#clipPlayer')?.textContent,
         videos: [...document.querySelectorAll('#clipPlayer video')].map(video => ({ src: video.currentSrc, ready: video.readyState, error: video.error?.message, dataset: { ...video.dataset } })),
@@ -513,14 +582,14 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
       })));
       throw error;
     });
-    await win.evaluate(() => document.querySelector('#clipPlayer video').pause());
+    await win.evaluate(() => document.querySelector('#clipPlayer video.active').pause());
     fixture = await capturePlayerReference(win, fixture, { ffmpeg, ffprobe });
     assert.equal(await win.locator('#clipDetailsToggle').getAttribute('aria-expanded'), 'false');
     for (const [seconds, text, button] of [[4, '00:00:04', '#clipMarkStart button'], [10, '00:00:10', '#clipMarkEnd button']]) {
       await win.getByRole('button', { name: 'Exact playback time', exact: true }).click();
       await win.locator('.player-exact-time input').fill(text);
       await win.locator('.player-exact-time input').press('Enter');
-      await win.waitForFunction(time => Math.abs(document.querySelector('#clipPlayer video').currentTime - time) < .1, seconds);
+      await win.waitForFunction(time => Math.abs(document.querySelector('#clipPlayer video.active').currentTime - time) < .1, seconds);
       await win.locator(button).click();
     }
     await win.locator('.vod-selection .vod-range-handle.is-start').press('ArrowRight');
@@ -579,8 +648,8 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
         await win.evaluate(() => { window.__trimPlayerBuffers = []; });
         await win.evaluate(({ id }) => window.openClipDialog(`https://www.twitch.tv/videos/${id}`,
           `Precise ${id}`, '2026-11-11T12:00:00Z', 'fixture', '28s'), { id });
-        await win.waitForFunction(() => document.querySelector('#clipPlayer video')?.readyState >= 2);
-        await win.evaluate(() => document.querySelector('#clipPlayer video').pause());
+        await win.waitForFunction(() => document.querySelector('#clipPlayer video.active')?.readyState >= 2);
+        await win.evaluate(() => document.querySelector('#clipPlayer video.active').pause());
         next = await capturePlayerReference(win, next, { ffmpeg, ffprobe });
         // These fractional bounds go through the same manual time entries and
         // Add to queue dialog as a user, not a direct synthetic queue insertion.

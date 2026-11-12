@@ -88,6 +88,12 @@ export function validateUnitReport(report, platform = process.platform) {
             const ancestors = assertion.ancestorTitles || [];
             const macSuite = ['macOS updater authenticated transport and cache', 'macOS update startup health acknowledgement', 'macOS update recovery notification', 'macOS installation cancellation'];
             const allowed = platform === 'win32' && name.endsWith('/src/main/infra/mac-updater.test.ts') && macSuite.some(suite => ancestors.includes(suite))
+                || platform === 'win32' && name.endsWith('/src/main/infra/mac-updater.test.ts') && ancestors.includes('macOS update system compatibility')
+                    && ['rejects an incompatible authenticated archive before staging (cleanup failure: false)', 'rejects an incompatible authenticated archive before staging (cleanup failure: true)'].includes(title)
+                || platform === 'win32' && name.endsWith('/src/main/infra/download-process.test.ts') && ancestors.includes('download process cancellation')
+                    && ['kills an uncooperative descendant with inherited stdio before cleanup', 'kills an uncooperative descendant with private stdio before cleanup'].includes(title)
+                || platform === 'win32' && name.endsWith('/src/main/domain/portable-cutter-project.test.ts') && ancestors.includes('portable Mac cutter projects')
+                    && title === 'keeps distinct case-sensitive project paths when remembering and removing recents'
                 || platform !== 'win32' && name.endsWith('/src/main/dev-executable.test.ts') && ancestors.includes('prepareWindowsDevExecutable')
                 || name.endsWith('/src/main/infra/executable-identity.test.ts') && (platform !== 'darwin' && title === 'invalidates same-size changes even if mtime is restored'
                     || platform === 'win32' && title === 'refuses lost executable permission');
