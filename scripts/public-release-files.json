@@ -96,6 +96,7 @@
     "scripts/release-tools.mjs",
     "scripts/release-tools.test.mjs",
     "scripts/release-vod-cases.cjs",
+    "scripts/release-vod-cases.test.cjs",
     "scripts/release-workspace-cases.cjs",
     "scripts/run-local-check.mjs",
     "scripts/security-check.js",

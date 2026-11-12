@@ -702,7 +702,7 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
     cleanupE2eEnvironment(environment);
   }
 }
-module.exports = { run, createTemporalFixture, assertPreciseRange, assertTemporalFrames, headlessSourceAudio };
+module.exports = { run, createTemporalFixture, assertPreciseRange, assertTemporalFrames, headlessSourceAudio, observePlayerMedia, capturePlayerReference };
 if (require.main === module) {
   const argv = process.argv.slice(2);
   const mode = argv[0]?.startsWith('--') ? argv.shift() : null;

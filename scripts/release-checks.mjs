@@ -1,6 +1,6 @@
 export const checks = [
     ['release-receipt', ['--test', 'scripts/release-tools.test.mjs']],
-    ['release-harness', ['--test', 'scripts/release-test-harness.test.cjs']],
+    ['release-harness', ['--test', 'scripts/release-test-harness.test.cjs', 'scripts/release-vod-cases.test.cjs']],
     ['security', ['scripts/security-check.js']],
     ['release-contract', ['scripts/smoke-test-public-release-config.js']],
     ['unified-release-contract', ['--test', 'scripts/unified-release.test.cjs']],

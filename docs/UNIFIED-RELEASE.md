@@ -100,5 +100,9 @@ published release. No recurring schedule or broad cross-repository token is
 needed.
 
 Local boundary tests: `node --test scripts/unified-release.test.cjs`.
+`npm run test:release-contracts` also builds and verifies the local VOD transport
+fixtures, including a real 30-second read timeout. It requires FFmpeg/FFprobe
+on `PATH` (or `FFMPEG_PATH`/`FFPROBE_PATH`) and Playwright Chromium
+(`npx playwright install chromium`); the Windows release job provisions these.
 Native builds and installer/update checks still require their Windows and
 Mac runners; passing local script tests does not replace them.

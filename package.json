@@ -50,7 +50,7 @@
     "test:e2e:mac-trim": "npm run build && node scripts/smoke-test-macos-trim-layout.js && node scripts/smoke-test-macos-trim-download.js",
     "test:mac-update": "npm run build && node --test scripts/test-macos-update-manifest.js && node scripts/test-macos-updater.js",
     "rebuild:electron": "electron-builder install-app-deps",
-    "test:release-contracts": "node --test scripts/release-tools.test.mjs scripts/release-test-harness.test.cjs",
+    "test:release-contracts": "npm run build && node --test scripts/release-tools.test.mjs scripts/release-test-harness.test.cjs scripts/release-vod-cases.test.cjs",
     "test:unified-release": "node --test scripts/unified-release.test.cjs",
     "test:precise-trim": "npm run build && node scripts/smoke-test-precise-trim.js"
   },

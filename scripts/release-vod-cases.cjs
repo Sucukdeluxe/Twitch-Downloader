@@ -10,7 +10,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { once } = require('node:events');
 const harness = require('./release-test-harness.cjs');
-const { createTemporalFixture, assertPreciseRange } = require('./smoke-test-precise-trim');
+const { createTemporalFixture, assertPreciseRange, observePlayerMedia, capturePlayerReference } = require('./smoke-test-precise-trim');
 const productionModules = {
   'update-version-utils': () => require('../dist/main/domain/update-version-utils.js'),
   'media-process': () => require('../dist/main/domain/media-process.js'),
@@ -408,23 +408,123 @@ async function openingSource(options) {
   } finally { await ctx.close(); }
 }
 
-async function stalledServer() {
-  const requested = deferred();
+async function stalledServer(playlist) {
+  assert.ok(playlist.startsWith('#EXTM3U') && playlist.includes('#EXT-X-ENDLIST'));
+  const requested = deferred(), calls = [];
   const server = http.createServer((request, response) => {
-    requested.resolve(request.url);
-    // Keep the TCP socket open without headers/body: FFmpeg's production
-    // rw_timeout must terminate the read, not a fixture timeout/HTTP error.
+    const pathname = new URL(request.url, 'http://localhost').pathname;
+    calls.push(pathname);
+    if (pathname === '/chunked/index.m3u8') {
+      response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl',
+        'Content-Length': Buffer.byteLength(playlist) });
+      response.end(playlist);
+      return;
+    }
+    requested.resolve(pathname);
+    // Only media reads stall. The real validated playlist loader must finish
+    // first, so FFmpeg's production rw_timeout is the failure being exercised.
     request.on('error', () => {}); response.on('error', () => {});
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
-  return { url: `http://127.0.0.1:${server.address().port}/chunked/index.m3u8`, requested,
+  return { url: `http://127.0.0.1:${server.address().port}/chunked/index.m3u8`, requested, calls,
     async close() { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } };
 }
 
-// These cases enter through the real renderer IPC, queue and downloader. Only
-// Twitch's external access-token/master-playlist responses are replaced. The
-// source resolver parses its normal unavailable-media metadata and FFmpeg reads
-// the resulting loopback source without a process/downloader replacement.
+// This function is serialized into the isolated native test process. Keep it
+// self-contained so the same network boundary can also be verified headlessly.
+function installNativeVodTransport(_electron, expected) {
+  const fixtureFs = process.getBuiltinModule('fs');
+  const fixturePath = process.getBuiltinModule('path');
+  const childProcess = process.getBuiltinModule('child_process');
+  const originalFetch = globalThis.fetch, originalSpawn = childProcess.spawn;
+  const mediaUrl = 'https://fixture.cloudfront.net/chunked/index.m3u8';
+  globalThis.__vodFixtureSource = '';
+  globalThis.__vodNetworkCalls = [];
+  globalThis.__vodProcesses = [];
+  globalThis.__vodSnapshotTransports = [];
+  const localSource = () => {
+    const source = new URL(globalThis.__vodFixtureSource);
+    if (source.protocol !== 'http:' || source.hostname !== '127.0.0.1' || source.username || source.password
+      || source.pathname !== '/chunked/index.m3u8') throw new Error('Invalid owned VOD fixture source');
+    return source;
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url || input.href);
+    globalThis.__vodNetworkCalls.push(url.href);
+    if (url.origin === 'https://gql.twitch.tv') {
+      return new Response(JSON.stringify({ data: { videoPlaybackAccessToken: { value: 'fixture-token', signature: 'fixture-signature' } } }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.origin === 'https://usher.ttvnw.net') {
+      const unavailable = Buffer.from(JSON.stringify([{ 'STABLE-VARIANT-ID': '1080p', RESOLUTION: '1920x1080', 'FRAME-RATE': '30', 'IVS-VARIANT-SOURCE': 'source', CODECS: 'avc1.640028' }])).toString('base64');
+      return new Response(['#EXTM3U', mediaUrl,
+        `#EXT-X-SESSION-DATA:DATA-ID="com.amazon.ivs.unavailable-media",VALUE="${unavailable}"`,
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,FRAME-RATE=30,IVS-NAME="1080p"', mediaUrl, ''].join('\n'));
+    }
+    if (url.href === mediaUrl) return originalFetch(localSource(), init);
+    if (url.protocol === 'http:' && url.hostname === '127.0.0.1') return originalFetch(input, init);
+    throw new Error(`Unexpected external fetch: ${url.origin}`);
+  };
+  childProcess.spawn = function (command, args, spawnOptions) {
+    const mapped = [...args];
+    let redirected = false;
+    for (let index = 0; index < mapped.length; index++) {
+      const arg = mapped[index];
+      if (arg === mediaUrl) { mapped[index] = localSource().href; redirected = true; continue; }
+      if (typeof arg !== 'string' || !arg.endsWith('.m3u8') || !fixturePath.isAbsolute(arg)
+        || !fixtureFs.existsSync(arg) || !fixtureFs.statSync(arg).isFile()) continue;
+      const relative = fixturePath.relative(fixtureFs.realpathSync(expected.rootDir), fixtureFs.realpathSync(arg));
+      if (!relative || relative === '..' || relative.startsWith('..' + fixturePath.sep) || fixturePath.isAbsolute(relative)) continue;
+      const content = fixtureFs.readFileSync(arg, 'utf8');
+      const localBase = new URL('.', localSource()).href;
+      if (!content.includes('https://fixture.cloudfront.net/chunked/') && !content.includes(localBase)) continue;
+      // Only the owned generated snapshot's transport URLs change. Source
+      // validation, source parsing, range planning and download arguments stay real.
+      fixtureFs.writeFileSync(arg, content.replaceAll('https://fixture.cloudfront.net/chunked/', localBase));
+      globalThis.__vodSnapshotTransports.push(arg);
+      redirected = true;
+    }
+    if (redirected) {
+      const protocols = mapped.indexOf('-protocol_whitelist');
+      if (protocols >= 0 && !mapped[protocols + 1].split(',').includes('http')) mapped[protocols + 1] += ',http';
+      spawnOptions = { ...spawnOptions, env: { ...(spawnOptions?.env || process.env),
+        NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
+    }
+    const child = originalSpawn.call(this, command, mapped, spawnOptions);
+    const record = { command, args: mapped, pid: child.pid, start: Date.now(), closed: false, stderr: '', redirected };
+    globalThis.__vodProcesses.push(record);
+    child.stderr?.on('data', data => { record.stderr = (record.stderr + data.toString()).slice(-8192); });
+    child.once('close', code => { record.closed = true; record.code = code; record.elapsed = Date.now() - record.start; });
+    return child;
+  };
+  globalThis.__restoreNativeVodTransport = () => { globalThis.fetch = originalFetch; childProcess.spawn = originalSpawn; };
+}
+
+async function sourceReference(ctx) {
+  if (ctx.source.presentationFrames) return ctx.source;
+  const browser = await require('playwright').chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url());
+      if (url.protocol === 'http:' && url.hostname === '127.0.0.1') return route.continue();
+      return route.abort();
+    });
+    await page.setContent('<div id="clipPlayer"><video class="active" muted playsinline></video></div>');
+    await observePlayerMedia(page);
+    await page.addScriptTag({ path: require.resolve('hls.js/dist/hls.js') });
+    await page.evaluate(url => {
+      const hls = new window.Hls({ maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30 });
+      hls.loadSource(url); hls.attachMedia(document.querySelector('video.active'));
+    }, ctx.source.url);
+    ctx.source = await capturePlayerReference(page, ctx.source, ctx);
+    return ctx.source;
+  } finally { await browser.close(); }
+}
+
+// These cases enter through the real renderer IPC, queue and downloader.
+// Twitch token/playlist responses and CDN transport are isolated fixtures; the
+// source resolver, validated parser, bounded spool, media processes and queue
+// remain production code.
 function nativeTool(command) {
   const candidates = path.isAbsolute(command) || /[\\/]/.test(command) ? [path.resolve(command)]
     : (process.env.PATH || '').split(path.delimiter).flatMap(directory =>
@@ -455,41 +555,8 @@ async function nativeContext(options, name) {
         || path.resolve(await tools.getFFprobePath()).toLowerCase() !== expected.ffprobe.toLowerCase()) throw new Error('Production selected different media tools than positional arguments');
       const streamlink = await tools.getStreamlinkCommand();
       if (!await tools.canExecuteCommand(streamlink.command, [...streamlink.prefixArgs, '--version'])) throw new Error('Native VOD queue requires a real installed Streamlink');
-      const originalFetch = globalThis.fetch;
-      globalThis.__vodFixtureSource = '';
-      globalThis.__vodNetworkCalls = [];
-      globalThis.fetch = async (input, init) => {
-        const url = new URL(typeof input === 'string' ? input : input.url || input.href);
-        if (url.origin === 'https://gql.twitch.tv') {
-          globalThis.__vodNetworkCalls.push(url.href);
-          return new Response(JSON.stringify({ data: { videoPlaybackAccessToken: { value: 'fixture-token', signature: 'fixture-signature' } } }), { headers: { 'Content-Type': 'application/json' } });
-        }
-        if (url.origin === 'https://usher.ttvnw.net') {
-          globalThis.__vodNetworkCalls.push(url.href);
-          const unavailable = Buffer.from(JSON.stringify([{ 'STABLE-VARIANT-ID': '1080p', RESOLUTION: '1920x1080', 'FRAME-RATE': '30', 'IVS-VARIANT-SOURCE': 'source', CODECS: 'avc1.640028' }])).toString('base64');
-          // The first reference supplies the unavailable source's base URL;
-          // the ordinary HTTPS variant also exercises normal master parsing.
-          const body = ['#EXTM3U', globalThis.__vodFixtureSource,
-            `#EXT-X-SESSION-DATA:DATA-ID="com.amazon.ivs.unavailable-media",VALUE="${unavailable}"`,
-            '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,FRAME-RATE=30,IVS-NAME="1080p"',
-            'https://fixture.cloudfront.net/chunked/index.m3u8', ''].join('\n');
-          return new Response(body);
-        }
-        if (url.protocol === 'http:' && url.hostname === '127.0.0.1') return originalFetch(input, init);
-        throw new Error(`Unexpected external fetch: ${url.origin}`);
-      };
-      const childProcess = process.getBuiltinModule('child_process');
-      const originalSpawn = childProcess.spawn;
-      globalThis.__vodProcesses = [];
-      childProcess.spawn = function (command, args, ...rest) {
-        const child = originalSpawn.call(this, command, args, ...rest);
-        const record = { command, args, pid: child.pid, start: Date.now(), closed: false, stderr: '' };
-        globalThis.__vodProcesses.push(record);
-        child.stderr?.on('data', data => { record.stderr = (record.stderr + data.toString()).slice(-8192); });
-        child.once('close', code => { record.closed = true; record.code = code; record.elapsed = Date.now() - record.start; });
-        return child;
-      };
     }, { ffmpeg, ffprobe });
+    await session.app.evaluate(installNativeVodTransport, { rootDir: env.rootDir });
     return { env, session, source, ffmpeg, ffprobe, async close() { await harness.closeSession(session); } };
   } catch (error) { await harness.closeSession(session || env); throw error; }
 }
@@ -531,9 +598,12 @@ async function nativeStall(options, recover) {
   const ctx = await nativeContext(options, recover ? 'stall-recovery' : 'stall-timeout');
   let server;
   try {
-    server = await stalledServer();
+    server = await stalledServer(fs.readFileSync(ctx.source.playlist, 'utf8'));
     const item = await queueNative(ctx, server.url, 'Stalled fixture', 0, 4, 'error');
     assert.match(item.last_error, /timeout|timed out|connection|Zeitüberschreitung/i);
+    assert.ok(server.calls.includes('/chunked/index.m3u8'), 'The validated media playlist must be fetched');
+    assert.ok(server.calls.filter(url => url.endsWith('.ts')).length >= 2, 'Both real transfer attempts must reach media reads');
+    assert.ok((await ctx.session.app.evaluate(() => globalThis.__vodSnapshotTransports)).length >= 2, 'The bounded production snapshots must reach FFmpeg');
     assert.notEqual(item.completionRecorded, true);
     assert.deepEqual(item.outputFiles || [], []);
     const processes = (await ctx.session.app.evaluate(() => globalThis.__vodProcesses)).filter(child => child.args.includes('-rw_timeout'));
@@ -550,7 +620,7 @@ async function nativeStall(options, recover) {
       await queueNative(ctx, `${ctx.source.server.url}/chunked/index.m3u8`, 'Recovered fixture', 4, 4, 'completed');
       const outputs = ownedFiles(ctx.env.downloadsDir).filter(file => file.endsWith('.mp4'));
       assert.equal(outputs.length, 1);
-      await assertPreciseRange(outputs[0], ctx.source, [{ start: 4, end: 8 }], ctx);
+      await assertPreciseRange(outputs[0], await sourceReference(ctx), [{ start: 4, end: 8 }], ctx);
       await assertNativeClean(ctx);
     }
   } finally { await server?.close(); await ctx.close(); }
@@ -591,7 +661,7 @@ async function healthy(options) {
       const outputs = ownedFiles(ctx.env.downloadsDir).filter(file => file.endsWith('.mp4') && !before.has(file));
       assert.equal(outputs.length, 1, `Expected one real finalized ${name} export`);
       if (length === null) await assertLosslessRange(ctx, outputs[0], 0, 16);
-      else await assertPreciseRange(outputs[0], ctx.source, [{ start, end: start + length }], ctx);
+      else await assertPreciseRange(outputs[0], await sourceReference(ctx), [{ start, end: start + length }], ctx);
     }
     assert.ok(ctx.source.server.calls.some(call => call.path.endsWith('.ts')));
     await assertNativeClean(ctx);
@@ -615,4 +685,4 @@ async function run(name, argv = process.argv.slice(2)) {
   console.log(`PASS ${name} (reconstructed public release check)`);
 }
 function main(name) { run(name).catch(error => { console.error(`FAIL ${name}: ${error.stack || error}`); process.exitCode = 1; }); }
-module.exports = { run, main, assertLosslessRange };
+module.exports = { run, main, assertLosslessRange, installNativeVodTransport, stalledServer, sourceReference };
