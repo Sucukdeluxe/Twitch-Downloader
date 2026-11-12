@@ -88,7 +88,20 @@ export function resolveMergeArtifactRoot(item: QueueItem, currentDownloadRoot: s
         : { artifactRoot: null, migrated: false };
 }
 
+// The optional final integer is the collision suffix from ensureUniqueFilename.
+// Keep this grammar shared with pipeline-version checks and recovery cleanup.
+export function isPreciseMergeArtifact(filePath: string): boolean {
+    const name = path.basename(filePath).toLowerCase();
+    const prefix = ['merge_tmp_', '.merge_output_'].find(value => name.startsWith(value));
+    if (!prefix || !name.endsWith('.mp4')) return false;
+    const parts = name.slice(prefix.length, -4).split('_');
+    return (parts.length === 3 || parts.length === 4) && parts[2] === '1123'
+        && parts.slice(0, 2).every(value => /^\d+$/.test(value))
+        && (parts.length === 3 || /^[1-9]\d*$/.test(parts[3]));
+}
+
 function isInternalMergeArtifact(filePath: string): boolean {
+    if (isPreciseMergeArtifact(filePath)) return true;
     const name = path.basename(filePath).toLowerCase();
     if (/^\.merge_split_[a-z0-9_-]+\.mp4$/.test(name)) return true;
     if (!name.endsWith('.mp4')) return false;

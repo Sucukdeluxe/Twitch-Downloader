@@ -61,3 +61,15 @@ describe('trim playlist resolution', () => {
         await expect(resolveVodTrimSource(request())).rejects.toThrow('source unavailable');
     });
 });
+
+describe('source output modes', () => {
+    it('keeps whole downloads lossless and explicitly bounded downloads precise', async () => {
+        const { buildVodSourceDownloadArgs } = await import('./vod-source-download');
+        expect(buildVodSourceDownloadArgs('source', null, null, 120)).toContain('copy');
+        const args = buildVodSourceDownloadArgs('source', '00:00:00', '00:00:02', 120, 'output.mp4');
+        expect(args).toContain('libx264');
+        expect(args).not.toContain('mpegts');
+        expect(args[args.indexOf('-t') + 1]).toBe('00:00:02');
+        expect(() => buildVodSourceDownloadArgs('source', '00:00:01', '00:00:02')).toThrow('seekable');
+    });
+});

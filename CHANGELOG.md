@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.23 - 2026-11-12
+
+- Build Windows, Apple Silicon and Intel from one canonical source and release version, preserving existing settings, application identities and update feeds.
+- Apply the shared compact Trim layout and filename-panel corrections on both Windows and Mac.
+- Remove keyframe pre-roll from selected VOD downloads with precise H.264/AAC encoding, preserving the selected resolution and source frame rate.
+- Verify selected ranges, final media timing and existing installation upgrades before publishing the platform packages.
+
 ## macOS 1.1.22 - 2026-11-11
 
 - Seek trimmed VOD downloads on the player's media timeline instead of Streamlink's segment-rounded offsets, which could skip the beginning of a marked range. Preserve the requested quality and the lossless keyframe pre-roll.

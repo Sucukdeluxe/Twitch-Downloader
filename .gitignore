@@ -14,6 +14,7 @@ tmp_*/
 PROJECT_MEMORY.md
 *MEMORY*.md
 artifacts/
+outputs/
 scripts/benchmark-archive-loading*.js
 
 # macOS artifacts

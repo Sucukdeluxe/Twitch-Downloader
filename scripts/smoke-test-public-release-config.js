@@ -8,8 +8,8 @@ const manifest = require('./public-release-files.json');
 assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
 assert.equal(lock.version, pkg.version);
 assert.equal(lock.packages[''].version, pkg.version);
-assert.equal(pkg.build.appId, 'io.github.sucukdeluxe.twitch-vod-manager');
-assert.equal(pkg.build.productName, 'Twitch VOD Manager');
+assert.equal(pkg.build.mac.appId, 'io.github.sucukdeluxe.twitch-vod-manager');
+for (const name of ['pack:mac', 'dist:mac']) assert(pkg.scripts[name].includes('-c.productName="Twitch VOD Manager"'));
 assert.equal(pkg.build.mac.artifactName, 'Twitch-VOD-Manager-${version}-mac-${arch}.${ext}');
 assert.equal(pkg.build.mac.publish.url, 'https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest/download/');
 assert.equal(pkg.build.mac.minimumSystemVersion, '13.0', 'Electron 44 requires macOS Ventura or later');
@@ -20,6 +20,17 @@ for (const file of ['dist/**/*', 'src/styles-workflows.css', 'src/styles-overlay
 for (const resource of ['macos-tools', 'macos-updater', 'mac-update-public-key.pem']) {
   assert(pkg.build.mac.extraResources.some(entry => entry.to === resource), `Missing Mac resource: ${resource}`);
 }
+assert.equal(pkg.build.appId, 'io.github.sucukdeluxe.twitch-downloader');
+assert.equal(pkg.build.productName, 'Twitch Downloader');
+assert.equal(pkg.build.nsis.guid, '08429788-303d-53b6-a4f9-894401712c7e');
+assert.equal(pkg.build.nsis.shortcutName, 'Twitch Downloader');
+assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
+assert.equal(pkg.build.win.artifactName, 'Twitch-Downloader-Setup-${version}.${ext}');
+assert.equal(pkg.build.publish.url, 'https://github.com/Sucukdeluxe/Twitch-Downloader/releases/latest/download/');
+assert.equal(pkg.build.publish.useMultipleRangeRequest, false);
+assert.equal(pkg.scripts['release:verify'], 'node scripts/release-gate.mjs');
+assert.equal(pkg.scripts['release:package'], 'node scripts/package-release.mjs');
+assert.match(pkg.scripts['release:build'], /npm run release:verify\s*&&\s*npm run release:package/);
 const files = new Set(manifest.files);
 assert.equal(files.size, manifest.files.length, 'Duplicate public release manifest entries');
 for (const file of files) {

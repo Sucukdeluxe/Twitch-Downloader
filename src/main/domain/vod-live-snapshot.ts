@@ -1,4 +1,5 @@
 import { validateVodMediaUrl } from './vod-playback-service';
+import { buildPreciseVodTrimArgs } from './vod-precise-trim';
 
 export interface HlsMediaSegment {
     uri: string;
@@ -54,6 +55,25 @@ function absoluteMediaUrl(value: string, base: string): string {
     return validateVodMediaUrl(new URL(value, base).href).href;
 }
 
+// RFC 8216 section 4.3.2.2: an omitted offset refers to the immediately
+// preceding range of the same resource. Resolve it before slicing a playlist.
+function absoluteByteRange(value: string, uri: string, previous: HlsMediaSegment | undefined): string {
+    const components = value.split('@');
+    if (components.length < 1 || components.length > 2 || components.some(part => !/^\d+$/.test(part))) throw new Error('Invalid media byte range');
+    const length = Number(components[0]);
+    let offset: number;
+    if (components[1] !== undefined) offset = Number(components[1]);
+    else {
+        if (!previous?.byteRange || previous.uri !== uri) throw new Error('Media byte range has no preceding offset');
+        const [previousLength, previousOffset] = previous.byteRange.split('@').map(Number);
+        offset = previousOffset + previousLength;
+    }
+    if (!Number.isSafeInteger(length) || length <= 0 || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(offset + length)) {
+        throw new Error('Invalid media byte range bounds');
+    }
+    return `${length}@${offset}`;
+}
+
 export function parseHlsMediaPlaylist(text: string, playlistUrl: string): HlsMediaPlaylist {
     const lines = text.split(/\r?\n/).map(line => line.trim());
     if (lines[0] !== '#EXTM3U') throw new Error('Invalid media playlist');
@@ -86,13 +106,15 @@ export function parseHlsMediaPlaylist(text: string, playlistUrl: string): HlsMed
             pendingDuration = duration;
         } else if (!line.startsWith('#')) {
             if (pendingDuration === null) throw new Error('Segment without duration');
+            const uri = absoluteMediaUrl(line, playlistUrl);
+            const byteRange = pendingByteRange === undefined ? undefined : absoluteByteRange(pendingByteRange, uri, segments.at(-1));
             segments.push({
-                uri: absoluteMediaUrl(line, playlistUrl),
+                uri,
                 duration: pendingDuration,
                 start,
                 sequence: mediaSequence + segments.length,
                 discontinuity: pendingDiscontinuity,
-                ...(pendingByteRange ? { byteRange: pendingByteRange } : {}),
+                ...(byteRange ? { byteRange } : {}),
                 ...(map ? { map } : {}),
             });
             start += pendingDuration;
@@ -114,6 +136,8 @@ export function buildVodSnapshotPlaylist(playlist: HlsMediaPlaylist, startSecond
         if (playlist.segments[index].start <= start + EPSILON) firstIndex = index;
         else break;
     }
+    // Include decoder preroll for an open GOP at the chosen segment boundary.
+    firstIndex = Math.max(0, firstIndex - 1);
     const selected = playlist.segments.slice(firstIndex).filter(segment => segment.start < end - EPSILON);
     const targetDuration = Math.max(playlist.targetDuration, ...selected.map(segment => Math.ceil(segment.duration)));
     const lines = [
@@ -144,7 +168,10 @@ export function buildVodSnapshotPlaylist(playlist: HlsMediaPlaylist, startSecond
     };
 }
 
-export function buildVodSnapshotDownloadArgs(snapshotPath: string, seekSeconds: number, durationSeconds: number): string[] {
+export function buildVodSnapshotDownloadArgs(snapshotPath: string, seekSeconds: number, durationSeconds: number, outputPath?: string, seekOffset = 0): string[] {
+    if (outputPath) return buildPreciseVodTrimArgs({ input: snapshotPath, output: outputPath,
+        start: seekSeconds.toFixed(6), duration: durationSeconds.toFixed(6), seekOffset, seekAfterInput: true,
+        inputArgs: ['-rw_timeout', '30000000', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp,httpproxy'] });
     return [
         '-hide_banner', '-loglevel', 'error', '-xerror',
         '-rw_timeout', '30000000',

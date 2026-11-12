@@ -21,7 +21,7 @@ future distribution improvement requiring the appropriate
 
 ## Release baseline and upgrade compatibility
 
-Mac 1.1.20 follows the published Windows `v1.1.20` source tag and requires
+Mac and Windows share the canonical source and version starting at 1.1.23. Mac requires
 macOS 13 or later because Electron 44 has that native minimum. The bundle ID,
 `Twitch VOD Manager.app` bundle name, public update key and existing Mac data
 directory stay stable. The update smoke test can use `MAC_UPDATE_FROM_APP` to
@@ -86,28 +86,18 @@ from the legitimate key holder safe.
 
 ## Publishing a complete release
 
-The workflow is `.github/workflows/macos-release.yml`. Bump `package.json` and
-`package-lock.json` consistently, then create a tag `mac-vVERSION` pointing at
-the intended release commit. The workflow can release a reviewed branch commit
-before it is merged; the repository owner controls tag creation. Version numbers
-have three numeric components, each at most eight digits and without leading
-zeroes. Optional standard SemVer prerelease suffixes are allowed for previews;
-build metadata is not used.
+Publishing now starts only in the canonical repository with a stable `vVERSION`
+tag. The unified workflow checks Windows and both native Mac architectures,
+builds their packages, tests upgrades and publishes them together. It then pushes
+an immutable `mac-vVERSION` tag at the **same commit** to the Mac repository using
+a dedicated deploy key. The compatibility relay verifies the canonical release,
+its successful workflow run and every Mac artifact hash before signing the feed.
 
-- A tag push for `mac-v1.2.3` publishes a **stable** release and updates `latest`.
-- A tag push for `mac-v1.2.3-rc.1` publishes a **preview**, never `latest`.
-- Manual runs require an existing tag and an explicit channel, defaulting to
-  **preview**. A prerelease version cannot be selected for the stable channel.
+See [UNIFIED-RELEASE.md](UNIFIED-RELEASE.md) for setup and retries. Do not create
+independent Mac release commits or move published tags. The new relay supports
+stable versions only; manual dispatch retries an existing immutable tag.
 
-A manual preview using a stable-looking version is still a GitHub prerelease
-and remains outside the stable feed. Once published, it cannot be overwritten
-or promoted by rerunning this workflow; use a new release version.
-
-The workflow creates a **draft** first. Native Apple Silicon and Intel runners
-then execute the tests and build the app/helper and matching DMG/ZIP. Packaged-app
-checks run on fresh runners to isolate Keychain identities from source tests.
-Only after both architectures succeed does the signing job download both sets
-of immutable workflow artifacts, create `mac-update.json`, and upload exactly:
+The relay creates a draft and uploads exactly:
 
 ```text
 Twitch-VOD-Manager-VERSION-mac-arm64.dmg

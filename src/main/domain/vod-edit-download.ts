@@ -3,13 +3,14 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { runMediaProcess, type MediaProcessOptions } from './media-process';
+import { buildVodConcatArgs, probeVodMedia, VOD_TRIM_VERSION, type VodMediaInfo } from './vod-precise-trim';
 import { planEditedVod, type EditedVodPart, type OmissionConfig, type OmittedRange } from './vod-edit-plan';
 
-interface CachedInput { size: number; duration: number; signature: string }
+interface CachedInput extends VodMediaInfo { size: number }
 interface PublishedPart { path: string; size: number }
 interface CopyIdentity { dev: number; ino: number; birthtimeMs: number }
 interface PendingPart extends PublishedPart { index: number; number: number; copyIdentity?: CopyIdentity }
-interface EditJournal { version: 1; identity: string; inputs: Record<string, CachedInput>; published: Record<string, PublishedPart>; pending?: PendingPart }
+interface EditJournal { version: 2; identity: string; inputs: Record<string, CachedInput>; published: Record<string, PublishedPart>; pending?: PendingPart }
 export interface EditedVodOptions extends MediaProcessOptions {
     id: string; url: string; folder: string; duration: number; startPart: number; omissions: OmissionConfig;
     namingIdentity: string; ffmpegPath: string; ffprobePath: string;
@@ -43,11 +44,10 @@ export async function cleanupEditedVod(folder: string, id: string): Promise<void
 }
 
 async function probe(filename: string, options: EditedVodOptions): Promise<CachedInput> {
-    const raw = await runMediaProcess(options.ffprobePath, ['-v', 'error', '-show_entries', 'format=duration,format_name:stream=codec_type,codec_name,width,height,pix_fmt,sample_rate,channels', '-of', 'json', filename], { ...options, timeoutMs: 120000 });
-    const data = JSON.parse(raw) as { format?: { duration?: string; format_name?: string }; streams?: Array<Record<string, unknown>> };
-    const duration = Number(data.format?.duration), size = await fileSize(filename);
-    if (!Number.isFinite(duration) || duration <= 0 || size < 1 || !data.format?.format_name?.split(',').includes('mp4') || !data.streams?.some(stream => stream.codec_type === 'video')) throw new Error('Invalid edited VOD media');
-    return { size, duration, signature: JSON.stringify(data.streams.filter(stream => stream.codec_type === 'video' || stream.codec_type === 'audio')) };
+    const info = await probeVodMedia(options.ffprobePath, filename, { ...options, timeoutMs: 120000 });
+    const size = await fileSize(filename);
+    if (size < 1) throw new Error('Invalid edited VOD media');
+    return { ...info, size };
 }
 
 async function hashFile(filename: string, length?: number): Promise<string> {
@@ -85,25 +85,6 @@ function validateOutputPath(folder: string, filename: string): void {
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid edited VOD output path');
 }
 
-async function finalSplitTime(inputs: Array<{ name: string; duration: number }>, split: number, end: number, previous: number, workspace: string, options: EditedVodOptions): Promise<number> {
-    const keyframes: number[] = [];
-    let offset = 0;
-    for (const input of inputs) {
-        if (offset + input.duration >= split - 30) {
-            if (!(await options.wait())) throw new Error('Edited VOD cancelled');
-            const raw = await runMediaProcess(options.ffprobePath, ['-v', 'error', '-read_intervals', Math.max(0, split - 30 - offset).toFixed(6) + '%', '-select_streams', 'v:0', '-show_packets', '-show_entries', 'packet=pts_time,flags', '-of', 'json', path.join(workspace, input.name)], { ...options, timeoutMs: 120000 });
-            const data = JSON.parse(raw) as { packets?: Array<{ pts_time?: string; flags?: string }> };
-            for (const packet of data.packets || []) {
-                const local = Number(packet.pts_time), time = offset + local;
-                if (packet.flags?.includes('K') && Number.isFinite(time) && local >= 0 && local < input.duration - .05 && time > previous + .1 && time < end - .05) keyframes.push(time);
-            }
-        }
-        offset += input.duration;
-    }
-    if (!keyframes.length || keyframes.some(time => time >= split - .05)) return split;
-    return Math.max(...keyframes);
-}
-
 export async function downloadEditedVod(options: EditedVodOptions): Promise<string[]> {
     const plan = planEditedVod(options.duration, options.omissions.partDurationSec, options.omissions.ranges, options.startPart, options.omissions.selection);
     if (!plan.parts.length) throw new Error('No remaining VOD content');
@@ -111,15 +92,22 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
     await fs.mkdir(workspace, { recursive: true });
     const stat = await fs.lstat(workspace);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid edit workspace');
-    const identity = createHash('sha256').update(JSON.stringify([options.url, options.duration, options.omissions, options.startPart, options.namingIdentity])).digest('hex');
+    const identity = createHash('sha256').update(JSON.stringify([VOD_TRIM_VERSION, options.url, options.duration, options.omissions, options.startPart, options.namingIdentity])).digest('hex');
     const journalPath = path.join(workspace, 'journal.json');
-    let journal: EditJournal = { version: 1, identity, inputs: {}, published: {} };
+    let journal: EditJournal = { version: 2, identity, inputs: {}, published: {} };
     const previous = await fs.readFile(journalPath, 'utf8').catch(() => null);
     if (previous) {
         if (previous.length > 1024 * 1024) throw new Error('Invalid edit recovery journal');
         const parsed = JSON.parse(previous) as EditJournal;
-        if (parsed.version !== 1 || parsed.identity !== identity || !parsed.inputs || !parsed.published) throw new Error('Edit recovery settings differ');
-        journal = parsed;
+        if (Number(parsed.version) === 1) {
+            // Only owned staging files are discarded. Previously published files
+            // remain untouched and the caller reserves fresh output names.
+            await cleanupEditedVod(options.folder, options.id);
+            await fs.mkdir(workspace, { recursive: true });
+        } else {
+            if (parsed.version !== 2 || parsed.identity !== identity || !parsed.inputs || !parsed.published) throw new Error('Edit recovery settings differ');
+            journal = parsed;
+        }
     }
     const save = async (): Promise<void> => { await fs.writeFile(journalPath + '.tmp', JSON.stringify(journal)); await fs.rename(journalPath + '.tmp', journalPath); };
     await save();
@@ -157,52 +145,50 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
         return outputs;
     }
     let completedDuration = 0;
-    const inputs: Array<{ name: string; duration: number }> = [];
-    let signature = '';
-    for (let index = 0; index < plan.ranges.length; index++) {
+    const inputs: Array<{ name: string; duration: number; info: CachedInput }> = [];
+    // Split the source ranges at output part boundaries before encoding. No
+    // downstream stream-copy split may move a boundary to a nearby keyframe.
+    const sourceRanges = plan.parts.flatMap(part => part.ranges);
+    for (let index = 0; index < sourceRanges.length; index++) {
         if (!(await options.wait())) throw new Error('Edited VOD cancelled');
-        const range = plan.ranges[index], duration = range.end - range.start;
+        const range = sourceRanges[index], duration = range.end - range.start;
         const name = 'source-' + String(index).padStart(4, '0') + '.mp4', filename = path.join(workspace, name);
         let cached = journal.inputs[name];
         if (!cached || await fileSize(filename) !== cached.size) {
             await fs.unlink(filename).catch(() => undefined);
-            await options.download(range, filename, percent => options.progress((completedDuration + duration * Math.max(0, Math.min(100, percent)) / 100) / plan.duration * 75, 'download', index + 1, plan.ranges.length));
+            await options.download(range, filename, percent => options.progress((completedDuration + duration * Math.max(0, Math.min(100, percent)) / 100) / plan.duration * 75, 'download', index + 1, sourceRanges.length));
             cached = await probe(filename, options);
-            if (Math.abs(cached.duration - duration) > Math.max(12, duration * .005)) throw new Error('Downloaded range duration differs');
+            if (Math.abs(cached.duration - duration) > cached.frameSeconds + 0.025) throw new Error('Downloaded range duration differs');
             journal.inputs[name] = cached;
             await save();
         }
-        if (signature && signature !== cached.signature) throw new Error('Source ranges use different media formats');
-        signature = cached.signature;
-        inputs.push({ name, duration: Math.min(duration, cached.duration) });
+        inputs.push({ name, duration, info: cached });
         completedDuration += duration;
-        options.progress(completedDuration / plan.duration * 75, 'download', index + 1, plan.ranges.length);
+        options.progress(completedDuration / plan.duration * 75, 'download', index + 1, sourceRanges.length);
     }
     if (!(await options.wait())) throw new Error('Edited VOD cancelled');
     options.checkSpace(Object.values(journal.inputs).reduce((sum, input) => sum + input.size, 0) * 1.1 + 32 * 1024 * 1024);
-    await fs.writeFile(path.join(workspace, 'concat.ffconcat'), 'ffconcat version 1.0\n' + inputs.map(input => 'file ' + input.name + '\noutpoint ' + input.duration.toFixed(6) + '\nduration ' + input.duration.toFixed(6)).join('\n') + '\n');
-    for (const name of await fs.readdir(workspace)) if (/^part-\d{4}\.mp4$/.test(name)) await fs.unlink(path.join(workspace, name));
-    const splitTimes = plan.parts.slice(1).map(part => part.start.toFixed(6));
-    if (splitTimes.length && plan.parts[plan.parts.length - 1].duration < 12) {
-        const index = splitTimes.length - 1;
-        splitTimes[index] = (await finalSplitTime(inputs, Number(splitTimes[index]), plan.duration, index > 0 ? Number(splitTimes[index - 1]) : 0, workspace, options)).toFixed(6);
-    }
-    options.progress(75, 'assemble', 0, plan.parts.length);
-    await runMediaProcess(options.ffmpegPath, [
-        '-hide_banner', '-loglevel', 'warning', '-nostdin', '-f', 'concat', '-safe', '1', '-i', path.join(workspace, 'concat.ffconcat'),
-        '-map', '0:v:0', '-map', '0:a?', '-map_metadata', '-1', '-c', 'copy', '-t', plan.duration.toFixed(6),
-        '-f', 'segment', ...(splitTimes.length ? ['-segment_times', splitTimes.join(',')] : ['-segment_time', '86401']),
-        '-segment_time_delta', '0.05', '-reset_timestamps', '1', '-segment_format', 'mp4', '-segment_format_options', 'movflags=+faststart',
-        '-progress', 'pipe:1', '-y', path.join(workspace, 'part-%04d.mp4'),
-    ], { ...options, timeoutMs: 3 * 60 * 60 * 1000, onProcess(process) {
-        process.stdout?.on('data', (chunk: Buffer) => { const match = chunk.toString().match(/out_time_us=(\d+)/); if (match) options.progress(75 + Math.min(1, Number(match[1]) / 1000000 / plan.duration) * 22, 'assemble', 0, plan.parts.length); });
-        return options.onProcess?.(process);
-    } });
-    if (!(await options.wait())) throw new Error('Edited VOD cancelled');
     const staged: CachedInput[] = [];
+    let sourceIndex = 0;
     for (let index = 0; index < plan.parts.length; index++) {
-        const info = await probe(path.join(workspace, 'part-' + String(index).padStart(4, '0') + '.mp4'), options);
-        if (Math.abs(info.duration - plan.parts[index].duration) > Math.max(12, plan.ranges.length * 2)) throw new Error('Output part duration differs');
+        if (!(await options.wait())) throw new Error('Edited VOD cancelled');
+        const part = plan.parts[index];
+        const fragments = inputs.slice(sourceIndex, sourceIndex + part.ranges.length);
+        sourceIndex += part.ranges.length;
+        const output = path.join(workspace, 'part-' + String(index).padStart(4, '0') + '.mp4');
+        options.progress(75 + index / plan.parts.length * 22, 'assemble', index + 1, plan.parts.length);
+        // A previous publication may still be hard-linked to this staging name.
+        // Unlink before rewriting so a retry cannot alter a published file.
+        await fs.unlink(output).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; });
+        // The single-fragment file is already a precise MP4, including its AAC
+        // edit list. Copying it avoids a needless second lossy generation.
+        if (fragments.length === 1) await fs.copyFile(path.join(workspace, fragments[0].name), output);
+        else await runMediaProcess(options.ffmpegPath, buildVodConcatArgs(fragments.map(fragment => ({
+            filename: path.join(workspace, fragment.name), info: fragment.info, duration: fragment.duration,
+        })), output), { ...options, timeoutMs: 24 * 60 * 60 * 1000 });
+        if (!(await options.wait())) throw new Error('Edited VOD cancelled');
+        const info = await probe(output, options);
+        if (Math.abs(info.duration - part.duration) > fragments.length * info.frameSeconds + 0.025) throw new Error('Output part duration differs');
         staged.push(info);
     }
     for (let index = outputs.length; index < plan.parts.length; index++) {

@@ -39,6 +39,10 @@ import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan'
 import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
 import { remuxMp4 } from './main/domain/mp4-remux';
+import { runMediaProcess, type MediaProcessOptions } from './main/domain/media-process';
+import { isPreciseMergeArtifact } from './main/domain/merge-recovery';
+import { buildVodSpoolArgs, planVodTrimEpochs, transferVodSource, vodSpoolSeekOffset } from './main/domain/vod-trim-transfer';
+import { buildPreciseVodTrimArgs, buildVodConcatArgs, probeVodMedia, readVodPlaylistTimeline, verifyPreciseVodOutput, VOD_TRIM_VERSION } from './main/domain/vod-precise-trim';
 import { VodPlaybackService } from './main/domain/vod-playback-service';
 import { VodTimelineService } from './main/domain/vod-timeline';
 import { compareUpdateVersions, createUpdateCheckCoordinator, normalizeUpdateVersion, UpdateLifecycle } from './main/updates';
@@ -3849,7 +3853,9 @@ async function mergeVideos(
     outputFile: string,
     onProgress: (percent: number) => void,
     totalDurationSec?: number,
-    itemId: string | null = null
+    itemId: string | null = null,
+    precise = false,
+    inputDurations?: number[]
 ): Promise<boolean> {
     if (appShutdownStarted) return false;
     const ffmpegReady = await ensureFfmpegInstalled();
@@ -3904,11 +3910,34 @@ async function mergeVideos(
         }
     }
 
+    let mergeArgs: string[];
+    try {
+        const ffprobe = await getFFprobePath();
+        const inputs: Array<{ filename: string; info: Awaited<ReturnType<typeof probeVodMedia>>; duration?: number }> = [];
+        for (const filename of inputFiles) {
+            if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Merge cancelled');
+            const info = await probeVodMedia(ffprobe, filename, { onProcess: process => {
+                const registration = itemId ? queueProcessRegistry.register(itemId, 'merge', createPhaseBoundaryProcessResource(
+                    process, () => waitForChildProcessExit(process))) : null;
+                if (!itemId) currentEditorProcesses.add(process);
+                if (appShutdownStarted) process.kill();
+                return () => { registration?.release(); currentEditorProcesses.delete(process); };
+            } });
+            inputs.push({ filename, info, duration: inputDurations?.[inputs.length] });
+        }
+        const compatible = inputs.every(input => input.info.signature === inputs[0].info.signature);
+        mergeArgs = compatible && !precise
+            ? ['-f', 'concat', '-safe', '0', '-i', concatFile, '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-movflags', '+faststart', '-progress', 'pipe:1', '-y', outputFile]
+            : buildVodConcatArgs(inputs, outputFile);
+    } catch (error) {
+        appendDebugLog('merge-probe-failed', { error: String(error) });
+        try { fs.unlinkSync(concatFile); } catch { }
+        return false;
+    }
+
     const runMergeAttempt = async (): Promise<boolean> => {
         if (appShutdownStarted) return false;
-        const args = ['-f', 'concat', '-safe', '0', '-i', concatFile, '-map', '0', '-c', 'copy'];
-
-        args.push('-progress', 'pipe:1', '-y', outputFile);
+        const args = mergeArgs;
         appendDebugLog('merge-video-attempt', { argsCount: args.length });
 
         return await new Promise((resolve) => {
@@ -4029,13 +4058,8 @@ async function splitMergedFile(
         onPartState(i, outputFile, temporaryFile);
         onProgress(i + 1, numParts);
 
-        const args = [
-            '-ss', formatDuration(startSec),
-            '-i', inputFile,
-            '-t', formatDownloadTime(thisDuration),
-            '-c', 'copy',
-            '-y', temporaryFile
-        ];
+        const args = buildPreciseVodTrimArgs({ input: inputFile, output: temporaryFile,
+            start: startSec, duration: thisDuration });
 
         appendDebugLog('split-merged-part', { part: i + 1, total: numParts, startSec, duration: thisDuration });
 
@@ -4077,6 +4101,14 @@ async function splitMergedFile(
         }
 
         try {
+            await verifyPreciseVodOutput(await getFFprobePath(), temporaryFile, thisDuration, { onProcess: process => {
+                const registration = itemId ? queueProcessRegistry.register(itemId, 'split', createPhaseBoundaryProcessResource(
+                    process, () => waitForChildProcessExit(process))) : null;
+                if (!itemId) currentEditorProcesses.add(process);
+                if (appShutdownStarted) process.kill();
+                return () => { registration?.release(); currentEditorProcesses.delete(process); };
+            } });
+            if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Split cancelled');
             fs.renameSync(temporaryFile, outputFile);
         } catch {
             try { fs.rmSync(temporaryFile, { force: true }); } catch { }
@@ -4149,10 +4181,33 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
 }
 
 interface LiveVodSnapshotPlan {
+    precise?: Array<{ snapshotPath: string; originSnapshotPath: string; timelineStartSeconds: number; durationSeconds: number; fragmentedMp4: boolean }>;
+    snapshotPath: string;
+    seekSeconds: number;
     args: string[];
     durationSeconds: number;
     remove: () => void;
     debug: Record<string, unknown>;
+}
+
+function writePreciseVodSnapshot(playlist: HlsMediaPlaylist, start: number, duration: number | null, itemId: string, partNum: number): LiveVodSnapshotPlan {
+    const plans = planVodTrimEpochs(playlist, start, duration);
+    const paths: string[] = [];
+    const precise: NonNullable<LiveVodSnapshotPlan['precise']> = [];
+    const remove = (): void => { for (const file of paths) fs.rmSync(file, { force: true }); };
+    try {
+        for (const [index, plan] of plans.entries()) {
+            const snapshotPath = path.join(app.getPath('temp'), `twitch-downloader-trim-${process.pid}-${itemId}-${partNum}-${Date.now()}-${index}.m3u8`);
+            const originSnapshotPath = plan.originText ? snapshotPath.replace('.m3u8', '-origin.m3u8') : snapshotPath;
+            fs.writeFileSync(snapshotPath, plan.text, { flag: 'wx' }); paths.push(snapshotPath);
+            if (plan.originText) { fs.writeFileSync(originSnapshotPath, plan.originText, { flag: 'wx' }); paths.push(originSnapshotPath); }
+            precise.push({ snapshotPath, originSnapshotPath, timelineStartSeconds: plan.timelineStartSeconds,
+                durationSeconds: plan.durationSeconds, fragmentedMp4: plan.fragmentedMp4 });
+        }
+    } catch (error) { remove(); throw error; }
+    return { snapshotPath: precise[0].snapshotPath, seekSeconds: 0, args: [], precise,
+        durationSeconds: precise.reduce((total, epoch) => total + epoch.durationSeconds, 0), remove,
+        debug: { startSeconds: start, durationSeconds: duration, epochs: precise.length } };
 }
 
 const finishedVodUrls = new Set<string>();
@@ -4189,7 +4244,8 @@ async function prepareLiveVodSnapshot(
     totalParts: number,
     onProgress: (progress: DownloadProgress) => void
 ): Promise<LiveVodSnapshotPlan | { error: string } | null> {
-    if (!isLikelyVodUrl(url) || finishedVodUrls.has(url)) return null;
+    const explicitRange = startTime !== null || endTime !== null;
+    if (!isLikelyVodUrl(url) || (finishedVodUrls.has(url) && !explicitRange)) return null;
     const failedUntil = failedLiveVodChecks.get(url);
     if (failedUntil !== undefined && failedUntil > Date.now()) return null;
     const controller = new AbortController();
@@ -4207,12 +4263,12 @@ async function prepareLiveVodSnapshot(
         let playlist = loaded.playlist;
         if (playlist.ended) {
             rememberFinishedVod(url);
-            return null;
+            if (!explicitRange || !playlist.segments?.length) return null;
         }
         const source = loaded.mediaUrl;
         const startSeconds = parseClockSeconds(startTime) ?? 0;
         const requestedDuration = parseClockSeconds(endTime) ?? (expectedTotalSec > 0 ? expectedTotalSec : null);
-        if (requestedDuration !== null && playlist.totalSeconds + 0.0005 < startSeconds + requestedDuration) {
+        if (!playlist.ended && requestedDuration !== null && playlist.totalSeconds + 0.0005 < startSeconds + requestedDuration) {
             const endSeconds = startSeconds + requestedDuration;
             const waitStartedAt = Date.now();
             appendDebugLog('download-part-live-wait-start', { itemId, part: partNum, requestedEndSeconds: endSeconds, availableSeconds: playlist.totalSeconds });
@@ -4249,12 +4305,19 @@ async function prepareLiveVodSnapshot(
             }
             if (playlist.ended) {
                 rememberFinishedVod(url);
-                return null;
+                if (!explicitRange) return null;
             }
         }
         if (startSeconds >= playlist.totalSeconds) {
             appendDebugLog('download-part-live-range-unavailable', { itemId, startSeconds, availableSeconds: playlist.totalSeconds });
             return { error: tBackend('liveVodRangeUnavailable', { start: formatDuration(Math.floor(startSeconds)), available: formatDuration(Math.floor(playlist.totalSeconds)) }) };
+        }
+        if (explicitRange) {
+            try { return writePreciseVodSnapshot(playlist, startSeconds, requestedDuration, itemId, partNum); }
+            catch (error) {
+                appendDebugLog('download-part-precise-snapshot-failed', { itemId, error: String(error) });
+                return { error: tBackend('vodPreciseTrimFailed') };
+            }
         }
         let snapshot: ReturnType<typeof buildVodSnapshotPlaylist>;
         const snapshotPath = path.join(app.getPath('temp'), `twitch-downloader-live-${process.pid}-${itemId}-${partNum}-${Date.now()}.m3u8`);
@@ -4273,6 +4336,7 @@ async function prepareLiveVodSnapshot(
         }
         let removed = false;
         return {
+            snapshotPath, seekSeconds: snapshot.seekSeconds,
             args: buildVodSnapshotDownloadArgs(snapshotPath, snapshot.seekSeconds, snapshot.durationSeconds),
             durationSeconds: snapshot.durationSeconds,
             remove: () => {
@@ -4294,6 +4358,133 @@ async function prepareLiveVodSnapshot(
     }
 }
 
+async function downloadPreciseVodPart(
+    filename: string, itemId: string, partNum: number, totalParts: number, duration: number | null,
+    onProgress: (progress: DownloadProgress) => void, snapshot: LiveVodSnapshotPlan,
+): Promise<DownloadResult> {
+    let partial: string | undefined;
+    const sourceFiles: string[] = [];
+    const stopped = (): boolean => appShutdownStarted || cancelledItemIds.has(itemId) || queueProcessRegistry.isCancelled(itemId);
+    const processOptions: MediaProcessOptions = {
+        timeoutMs: 24 * 60 * 60 * 1000,
+        onProcess: process => {
+            recordManagedToolExecution(managedToolKindFromCommand(process.spawnfile) || 'ffmpeg', process.spawnfile);
+            const registration = queueProcessRegistry.register(itemId, 'post-processing', createPhaseBoundaryProcessResource(
+                process, () => waitForChildProcessExit(process),
+            ));
+            if (stopped()) process.kill();
+            return () => registration.release();
+        },
+    };
+    try {
+        if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+        if (!snapshot.precise?.length) throw new Error('Precise VOD snapshot metadata is missing');
+        const ffmpeg = await getFFmpegPath(), ffprobe = await getFFprobePath();
+        const transfer = async (input: string, suffix: string, fragmentedMp4: boolean): Promise<string> => {
+            if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+            const source = partialDownloadRegistry.begin(`${filename}.${suffix}.${fragmentedMp4 ? 'mp4' : 'ts'}`);
+            sourceFiles.push(source);
+            recordManagedToolExecution('ffmpeg', ffmpeg);
+            await transferVodSource({ command: ffmpeg, args: buildVodSpoolArgs(input, fragmentedMp4), outputPath: source,
+                throttle: createDownloadThrottleTransform(),
+                onReady: (process, output) => {
+                    const tracking: ActiveDownloadTracking = { process, output, partialFilename: source,
+                        cancelled: false, startTime: Date.now(), bytes: 0 };
+                    activeDownloads.set(itemId, tracking);
+                    const registration = queueProcessRegistry.register(itemId, 'streamlink', {
+                        kill: () => killDownloadProcess(process), wait: () => waitForChildProcessExit(process),
+                        pause: () => output.pause(), resume: () => output.resume(), cancel: () => output.cancel(),
+                        cleanup: () => partialDownloadRegistry.discard(source),
+                    });
+                    if (queuePaused) output.pause();
+                    if (stopped()) { killDownloadProcess(process); void output.cancel(); }
+                    return () => { registration.release(); if (activeDownloads.get(itemId) === tracking) activeDownloads.delete(itemId); };
+                },
+                onProgress: progress => {
+                    const tracking = activeDownloads.get(itemId);
+                    if (tracking) tracking.bytes = progress.bytes;
+                    if (progress.paused) return;
+                    runtimeMetrics.lastSpeedBytesPerSec = progress.speed;
+                    onProgress({ id: itemId, progress: -1, progressPhase: 'downloading',
+                        speed: formatSpeed(progress.speed), eta: '', status: tBackend('statusBytesDownloaded', { bytes: formatBytes(progress.bytes) }),
+                        currentPart: partNum, totalParts, downloadedBytes: progress.bytes, speedBytesPerSec: progress.speed });
+                } });
+            if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+            return source;
+        };
+        let completedSeconds = 0;
+        const encode = async (args: string[], encodeDuration: number, assembling = false): Promise<void> => {
+            let pending = '', seconds = 0, bytes = 0;
+            const started = Date.now();
+            const report = (): void => {
+                const elapsed = Math.max(0.001, (Date.now() - started) / 1000);
+                const rate = seconds / elapsed;
+                onProgress({ id: itemId, progress: assembling ? 99 : duration ? Math.min(99, (completedSeconds + seconds) / duration * 100) : -1,
+                    progressPhase: 'finalizing', speed: formatSpeed(bytes / elapsed),
+                    eta: rate > 0 ? formatETA(Math.max(0, encodeDuration - seconds) / rate) : '',
+                    status: tBackend(queuePaused ? 'downloadPausePending' : 'statusPreciseTrim'), currentPart: partNum, totalParts,
+                    downloadedBytes: bytes, speedBytesPerSec: bytes / elapsed });
+            };
+            report();
+            if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+            await runMediaProcess(ffmpeg, args, { ...processOptions, onProcess: process => {
+                const release = processOptions.onProcess?.(process);
+                process.stdout?.on('data', (chunk: Buffer) => {
+                    pending += chunk.toString();
+                    const lines = pending.split('\n'); pending = lines.pop() ?? '';
+                    for (const line of lines) {
+                        if (line.startsWith('out_time_us=')) seconds = Math.max(seconds, (Number(line.slice(12)) || 0) / 1e6);
+                        if (line.startsWith('total_size=')) bytes = Math.max(bytes, Number(line.slice(11)) || 0);
+                        if (line.startsWith('progress=')) report();
+                    }
+                });
+                return release;
+            } });
+            if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+        };
+        const epochs: Array<{ filename: string; info: Awaited<ReturnType<typeof probeVodMedia>>; duration: number }> = [];
+        for (const [index, epoch] of snapshot.precise.entries()) {
+            const source = await transfer(epoch.snapshotPath, `source-${index}`, epoch.fragmentedMp4);
+            const container = epoch.fragmentedMp4 ? 'fmp4' : 'mpegts';
+            const sourceTimeline = await readVodPlaylistTimeline(ffprobe, source, processOptions, false, container);
+            const originTimeline = epoch.originSnapshotPath === epoch.snapshotPath ? sourceTimeline
+                : await readVodPlaylistTimeline(ffprobe, await transfer(epoch.originSnapshotPath, `origin-${index}`, epoch.fragmentedMp4), processOptions, false, container);
+            const output = partialDownloadRegistry.begin(snapshot.precise.length === 1 ? filename : `${filename}.epoch-${index}.mp4`);
+            if (snapshot.precise.length === 1) partial = output; else sourceFiles.push(output);
+            const args = buildPreciseVodTrimArgs({ input: source, output, start: epoch.timelineStartSeconds,
+                duration: epoch.durationSeconds, seekOffset: vodSpoolSeekOffset(originTimeline.originSeconds, sourceTimeline.formatStartSeconds, epoch.timelineStartSeconds, epoch.fragmentedMp4),
+                audioShiftSeconds: originTimeline.audioShiftSeconds, seekAfterInput: true });
+            await encode(args, epoch.durationSeconds);
+            const info = await verifyPreciseVodOutput(ffprobe, output, epoch.durationSeconds, processOptions);
+            epochs.push({ filename: output, info, duration: epoch.durationSeconds });
+            completedSeconds += epoch.durationSeconds;
+        }
+        if (epochs.length > 1) {
+            partial = partialDownloadRegistry.begin(filename);
+            await encode(buildVodConcatArgs(epochs, partial), duration ?? completedSeconds, true);
+        }
+        if (!partial || stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+        onProgress({ id: itemId, progress: 100, progressPhase: 'finalizing', speed: '', eta: '',
+            status: tBackend('statusVerifyingMp4'), currentPart: partNum, totalParts });
+        await verifyPreciseVodOutput(ffprobe, partial, duration, processOptions);
+        if (stopped() || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+        const size = fs.statSync(partial).size;
+        partialDownloadRegistry.commit(partial, filename);
+        readArchiveInventory.invalidate();
+        runtimeMetrics.downloadedBytesTotal += size;
+        appendDebugLog('download-part-success', { itemId, filename, bytes: size, trimVersion: VOD_TRIM_VERSION });
+        return { success: true };
+    } catch (error) {
+        appendDebugLog('download-precise-trim-failed', { itemId, filename, error: String(error) });
+        return { success: false, error: tBackend(stopped() ? 'downloadCancelled' : isVodSourceReadTimeout(String(error)) ? 'vodReadTimeout' : 'vodPreciseTrimFailed') };
+    } finally {
+        for (const file of [...(partial ? [partial] : []), ...sourceFiles]) {
+            try { partialDownloadRegistry.discard(file); }
+            catch (error) { appendDebugLog('precise-trim-cleanup-deferred', { file, error: String(error) }); }
+        }
+    }
+}
+
 async function downloadVODPart(
     url: string,
     filename: string,
@@ -4309,7 +4500,7 @@ async function downloadVODPart(
     if (!(await ensureFfmpegInstalled())) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
     if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) return { success: false, error: tBackend('downloadCancelled') };
     const requestedQuality = quality ?? config.streamlink_quality;
-    const liveSnapshot = await prepareLiveVodSnapshot(url, requestedQuality, startTime, endTime, expectedTotalSec, itemId, partNum, totalParts, onProgress);
+    let liveSnapshot = await prepareLiveVodSnapshot(url, requestedQuality, startTime, endTime, expectedTotalSec, itemId, partNum, totalParts, onProgress);
     if (liveSnapshot && 'error' in liveSnapshot) return { success: false, error: liveSnapshot.error };
     let directSource: string | null = null;
     if (!liveSnapshot && (startTime !== null || endTime !== null)) {
@@ -4331,6 +4522,9 @@ async function downloadVODPart(
                     return () => registration.release();
                 },
             });
+            const playlist = await fetchHlsMediaPlaylist(directSource, controller.signal);
+            liveSnapshot = writePreciseVodSnapshot(playlist, parseClockSeconds(startTime) ?? 0,
+                parseClockDurationSeconds(endTime) ?? (expectedTotalSec > 0 ? expectedTotalSec : null), itemId, partNum);
         } catch {
             return { success: false, error: tBackend(stopped() ? 'downloadCancelled' : 'vodTrimSourceUnavailable') };
         } finally {
@@ -4338,6 +4532,13 @@ async function downloadVODPart(
         }
     } else if (!liveSnapshot) {
         directSource = await resolveVodQualitySource(url, requestedQuality);
+    }
+    if (startTime !== null || endTime !== null) {
+        try {
+            const duration = liveSnapshot?.durationSeconds ?? parseClockDurationSeconds(endTime) ?? (expectedTotalSec > 0 ? expectedTotalSec : null);
+            if (!liveSnapshot) return { success: false, error: tBackend('vodPreciseTrimFailed') };
+            return await downloadPreciseVodPart(filename, itemId, partNum, totalParts, duration, onProgress, liveSnapshot);
+        } finally { liveSnapshot?.remove(); }
     }
     const ffmpegInput = Boolean(directSource || liveSnapshot);
     let streamlinkCmd: { command: string; prefixArgs: string[] };
@@ -6030,8 +6231,8 @@ function sanitizeCompletedVodParts(raw: unknown): NonNullable<QueueItem['complet
             || typeof part.mtimeMs !== 'number' || !Number.isFinite(part.mtimeMs) || part.mtimeMs < 0) return false;
         try {
             const key = JSON.parse(part.key);
-            return Array.isArray(key) && key.length === 5 && typeof key[2] === 'string'
-                && path.isAbsolute(key[2]) && path.dirname(part.filename) === path.dirname(key[2]);
+            return Array.isArray(key) && key.length === 6 && key[0] === VOD_TRIM_VERSION && typeof key[3] === 'string'
+                && path.isAbsolute(key[3]) && path.dirname(part.filename) === path.dirname(key[3]);
         } catch { return false; }
     }).map(part => ({ key: part.key, filename: part.filename, size: part.size, mtimeMs: part.mtimeMs }));
 }
@@ -6269,7 +6470,7 @@ async function downloadVOD(
                 const plannedFilename = makeClipFilename(partNum, startOffset, thisDuration);
 
                 const result = await retainCompletedVodPart(completedParts,
-                    JSON.stringify([item.url, item.quality, plannedFilename, startOffset, thisDuration]),
+                    JSON.stringify([VOD_TRIM_VERSION, item.url, item.quality, plannedFilename, startOffset, thisDuration]),
                     () => ensureUniqueFilename(plannedFilename, item.id),
                     partFilename => downloadVODPart(
                     item.url,
@@ -6349,7 +6550,7 @@ async function downloadVOD(
             ));
 
             const result = await retainCompletedVodPart(completedParts,
-                JSON.stringify([item.url, item.quality, plannedFilename, startSec, duration]),
+                JSON.stringify([VOD_TRIM_VERSION, item.url, item.quality, plannedFilename, startSec, duration]),
                 () => ensureUniqueFilename(plannedFilename, item.id),
                 partFilename => downloadVODPart(
                 item.url,
@@ -6386,6 +6587,18 @@ async function processDownloadMergeGroup(
     item: QueueItem,
     onProgress: (progress: DownloadProgress) => void
 ): Promise<DownloadResult> {
+    const oldGroup = item.mergeGroup!;
+    const cachedArtifacts = [...Object.values(oldGroup.downloadedFiles), ...(oldGroup.mergedFile ? [oldGroup.mergedFile] : [])];
+    if (oldGroup.mergePhase !== 'done' && cachedArtifacts.some(file => !isPreciseMergeArtifact(file))) {
+        const recovered = recoverInterruptedMergeArtifacts([item], config.download_path, new Set([item.id]));
+        item.mergeGroup = recovered.queue[0].mergeGroup;
+        if (recovered.failedFiles.length) {
+            item.mergeRecoveryBlocked = true;
+            saveQueue(downloadQueue);
+            return { success: false, error: tBackend('mergeRecoveryBlocked') };
+        }
+        saveQueue(downloadQueue);
+    }
     const mg = item.mergeGroup!;
     const artifactRootResolution = resolveMergeArtifactRoot(item, config.download_path);
     if (!artifactRootResolution.artifactRoot) {
@@ -6459,7 +6672,7 @@ async function processDownloadMergeGroup(
             saveQueue(downloadQueue);
 
             const vodItem = mg.items[i];
-            const tmpFilename = ensureUniqueFilename(path.join(folder, `merge_tmp_${i}_${Date.now()}.mp4`), item.id);
+            const tmpFilename = ensureUniqueFilename(path.join(folder, `merge_tmp_${i}_${Date.now()}_1123.mp4`), item.id);
 
             // Calculate progress weighting per VOD
             const vodDuration = getMergeItemDurationSec(vodItem);
@@ -6570,7 +6783,7 @@ async function processDownloadMergeGroup(
         const date = new Date(mg.items[0].date);
         const dateStr = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
         const folder = path.join(artifactRoot, streamer, dateStr);
-        const mergedFilePath = ensureUniqueFilename(path.join(folder, `.merge_output_${Date.now()}_${process.pid}.mp4`), item.id);
+        const mergedFilePath = ensureUniqueFilename(path.join(folder, `.merge_output_${Date.now()}_${process.pid}_1123.mp4`), item.id);
 
         // Get files in correct order (explicit sort by index — do NOT rely on Object.values ordering)
         const sortedFiles = Object.keys(mg.downloadedFiles)
@@ -6597,7 +6810,9 @@ async function processDownloadMergeGroup(
                 });
             },
             totalDurationSec,
-            item.id
+            item.id,
+            mg.items.some(vod => Boolean(vod.customClip)),
+            mg.items.map(getMergeItemDurationSec)
         );
 
         if (!mergeSuccess) {

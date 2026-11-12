@@ -1731,13 +1731,13 @@ function refreshClipDetailsToggle(): void {
     const modal = byId('clipModal');
     const toggle = byId<HTMLButtonElement>('clipDetailsToggle');
     const collapsed = modal.classList.contains('is-range-collapsed');
-    toggle.hidden = window.api.platform !== 'darwin';
+    toggle.hidden = false;
     toggle.setAttribute('aria-expanded', String(!collapsed));
     byId('clipDetailsToggleLabel').textContent = collapsed ? UI_TEXT.clips.showDetails : UI_TEXT.clips.hideDetails;
     // Reuse the actual inputs and their player portals so both layouts edit
     // exactly the same range, including sub-second boundaries and validation.
     const fields = byId('clipRangeFields');
-    const inFooter = window.api.platform === 'darwin' && collapsed && !modal.classList.contains('is-omitting');
+    const inFooter = collapsed && !modal.classList.contains('is-omitting');
     const parent = byId(inFooter ? 'clipFooterFields' : 'clipCutPanel');
     const focused = document.activeElement instanceof HTMLElement && fields.contains(document.activeElement) ? document.activeElement : null;
     const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
@@ -1859,12 +1859,12 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
 
     updateClipDuration();
     updateFilenameExamples();
-    byId('clipModal').classList.toggle('is-mac', window.api.platform === 'darwin');
-    if (window.api.platform === 'darwin') {
+    byId('clipModal').classList.add('is-compact-trim');
+    {
         const close = byId('clipCancelBtn');
         if (close.parentElement?.firstElementChild !== close) close.parentElement?.prepend(close);
     }
-    byId('clipModal').classList.toggle('is-range-collapsed', window.api.platform === 'darwin' && !byId<HTMLButtonElement>('clipDetailsToggle').disabled
+    byId('clipModal').classList.toggle('is-range-collapsed', !byId<HTMLButtonElement>('clipDetailsToggle').disabled
         && (clipDetailsCollapsedPreference ?? true));
     refreshClipDetailsToggle();
     RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog, onBackdrop: closeClipDialog });

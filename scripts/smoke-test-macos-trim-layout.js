@@ -11,8 +11,7 @@ const {
 } = require('./e2e-test-environment');
 
 async function run() {
-  assert.equal(process.platform, 'darwin');
-  const environment = createE2eEnvironment('mac-trim-layout', { language: 'en', theme: 'twitch' });
+  const environment = createE2eEnvironment('compact-trim-layout', { language: 'en', theme: 'twitch' });
   const artifacts = path.resolve(process.env.TVM_TRIM_ARTIFACTS || 'artifacts/mac-trim-layout');
   fs.mkdirSync(artifacts, { recursive: true });
   let app;
@@ -20,7 +19,8 @@ async function run() {
   try {
     const media = path.join(environment.mediaDir, 'trim.mp4');
     const staged = path.resolve(`.cache/macos-tools/stage-${process.arch}/ffmpeg/ffmpeg`);
-    execFileSync(fs.existsSync(staged) ? staged : 'ffmpeg', [
+    const ffmpeg = process.env.FFMPEG_PATH || (process.platform === 'darwin' && fs.existsSync(staged) ? staged : 'ffmpeg');
+    execFileSync(ffmpeg, [
       '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=960x540:rate=1',
       '-t', '120', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '34',
       '-pix_fmt', 'yuv420p', '-an', '-y', media
@@ -42,7 +42,7 @@ async function run() {
       ipcMain.handle('close-vod-playback', () => {});
       ipcMain.removeHandler('get-vod-timeline');
       ipcMain.handle('get-vod-timeline', () => ({
-        vodId: '123456789', title: 'MacBook trim layout', started: Date.parse('2026-11-11T12:00:00Z'), duration: 120, login: 'fixture',
+        vodId: '123456789', title: 'Compact trim layout', started: Date.parse('2026-11-11T12:00:00Z'), duration: 120, login: 'fixture',
         chapters: [
           { id: 'one', start: 0, end: 40, name: 'Just Chatting', game_id: '509658', image: null, precision: 'source' },
           { id: 'two', start: 40, end: 90, name: 'Minecraft', game_id: '27471', image: null, precision: 'source' },
@@ -69,10 +69,10 @@ async function run() {
         footer: bounds('.vod-cut-footer'), collapsed: document.getElementById('clipModal').classList.contains('is-range-collapsed') };
     });
     const open = async () => {
-      await win.evaluate(() => window.openClipDialog('https://www.twitch.tv/videos/123456789', 'MacBook trim layout', '2026-11-11T12:00:00Z', 'fixture', '2m0s'));
+      await win.evaluate(() => window.openClipDialog('https://www.twitch.tv/videos/123456789', 'Compact trim layout', '2026-11-11T12:00:00Z', 'fixture', '2m0s'));
       await win.waitForFunction(() => document.querySelector('#clipPlayer video')?.readyState >= 2);
       await win.evaluate(() => document.querySelector('#clipPlayer video').pause());
-      await win.locator('.vod-selection-track').waitFor();
+      await win.locator('#clipModal.is-compact-trim .vod-selection-track').waitFor();
       await settle();
     };
     const assertFooter = async () => {
@@ -80,6 +80,8 @@ async function run() {
       assert.equal(await win.locator('#clipFooterFields > #clipRangeFields').count(), 1);
       const controls = win.locator('#clipRangeFields input[type="text"], #clipRangeFields button, #clipDurationDisplay, #clipCancelBtn, #clipDialogConfirmBtn');
       const footer = await win.locator('.vod-cut-footer').boundingBox();
+      assert(await win.locator('.vod-cut-footer').evaluate(element => element.firstElementChild.id === 'clipCancelBtn'),
+        'Close must remain the first footer action');
       for (const control of await controls.all()) {
         assert(await control.isVisible(), 'Compact time and queue controls must stay visible');
         const box = await control.boundingBox();
@@ -124,7 +126,7 @@ async function run() {
       await open();
       const state = await geometry();
       checks[`${width}x${height}`] = state;
-      assert.equal(state.collapsed, true, 'Mac defaults to compact at every viewport height');
+      assert.equal(state.collapsed, true, 'Trim defaults to compact at every viewport height');
       await assertFooter();
       assert(state.footer.bottom <= height && state.footer.y > 0, 'Queue actions must stay visible');
       assert(state.panel.scrollWidth <= state.panel.clientWidth + 1, 'No horizontal scrolling in range controls');
@@ -292,12 +294,12 @@ async function run() {
         row.prepend(heading);
       }
       document.getElementById('clipCutPanel').insertBefore(document.getElementById('clipRangeFields'), document.getElementById('clipOmissionPanel'));
-      document.getElementById('clipModal').classList.remove('is-mac', 'is-range-collapsed');
+      document.getElementById('clipModal').classList.remove('is-compact-trim', 'is-range-collapsed');
       document.getElementById('clipDetailsToggle').hidden = true;
     });
     checks.before = await geometry();
     await screenshot('before');
-    assert(checks.compact.video.height >= checks.before.video.height * 2.5, 'MacBook preview gain regressed');
+    assert(checks.compact.video.height >= checks.before.video.height * 2.5, 'Compact preview gain regressed');
     assert.deepEqual(issues, []);
     fs.writeFileSync(path.join(artifacts, 'checks.json'), JSON.stringify(checks, null, 2));
     console.log(JSON.stringify({ success: true, checks }, null, 2));

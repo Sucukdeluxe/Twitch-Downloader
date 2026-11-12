@@ -1,6 +1,7 @@
 import { runMediaProcess, type MediaProcessOptions } from './media-process';
 import { resolveVodPlaybackSource, vodQualityStreamArg, TWITCH_VIDEO_CODEC_ARGS } from './vod-quality';
 import { validateVodMediaUrl } from './vod-playback-service';
+import { buildPreciseVodTrimArgs } from './vod-precise-trim';
 
 // Resolve the playlist, not a segment-rounded excerpt. FFmpeg then seeks on
 // the same media timeline as the player, including for ordinary 1080p VODs.
@@ -25,8 +26,12 @@ export async function resolveVodTrimSource(options: {
     return validateVodMediaUrl(source.trim()).href;
 }
 
-export function buildVodSourceDownloadArgs(source: string, startTime: string | null, duration: string | null, totalDurationSeconds = 0): string[] {
+export function buildVodSourceDownloadArgs(source: string, startTime: string | null, duration: string | null, totalDurationSeconds = 0, outputPath?: string, seekOffset = 0): string[] {
     const limit = duration || (Number.isFinite(totalDurationSeconds) && totalDurationSeconds > 0 ? String(totalDurationSeconds) : null);
+    if (startTime !== null || duration !== null) {
+        return buildPreciseVodTrimArgs({ input: source, output: outputPath ?? '', start: startTime, duration: limit, seekOffset, seekAfterInput: true,
+            inputArgs: ['-rw_timeout', '30000000', '-live_start_index', '0'] });
+    }
     return [
         '-hide_banner', '-loglevel', 'error', '-xerror',
         '-rw_timeout', '30000000',

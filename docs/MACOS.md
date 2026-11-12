@@ -1,11 +1,10 @@
 # macOS port
 
-Baseline: `Sucukdeluxe/Twitch-Downloader` release tag **`v1.1.20`**, commit
-`9a814180291547e456f059eadf4b0a9bba518014` (the `public-v1` release line).
-The baseline follows the published release tag because the original repository's
-`main` still points to 1.0.9. The Mac version is **1.1.20**.
-The complete upstream history is retained. `upstream` points to the Windows repository;
-`origin` points to `Sucukdeluxe/Twitch-Downloader-macos`. No upstream merge has been made.
+Since **1.1.23**, Windows, Apple Silicon and Intel are built from the same commit in
+[`Sucukdeluxe/Twitch-Downloader`](https://github.com/Sucukdeluxe/Twitch-Downloader).
+Both histories are retained. The Mac repository remains the compatibility release
+feed for installed apps; development and pull requests use the canonical repository.
+See [UNIFIED-RELEASE.md](UNIFIED-RELEASE.md) for publishing and recovery.
 
 ## Install the preview
 
@@ -50,8 +49,10 @@ All upstream screens, translations, queue, archive, statistics, trimming, mergin
 splitting, Twitch access, chat replay and automatic recording logic remain shared.
 This includes the 1.1.20 VOD player, quality selection, range exclusions, persistent
 editing workspaces, export queue, live-VOD snapshots and lifetime download history.
-Changes are restricted to OS paths, native menus, Apple hardware encoding,
-portable tool packaging, process argument safety and macOS test/build support.
+Platform-specific adapters cover OS paths, native menus, Apple hardware encoding,
+portable tool packaging and macOS support. Trim fixes and the compact player layout
+are shared with Windows. Selected VOD ranges are encoded precisely in H.264/AAC;
+complete VOD downloads retain the stream-copy path.
 Window closing follows macOS behavior: the app and background downloads stay alive;
 Command-Q runs the existing orderly shutdown and partial-file cleanup.
 
@@ -69,15 +70,12 @@ first install; it never probes a system Python or triggers the developer-tools i
 
 ## Validation and release boundary
 
-`macos-ci.yml` runs on separate native Apple Silicon and Intel runners, including the
-restored regression suite and real packaged-app tests. The public upstream
-release excludes its private tests; this Mac repository commits its own tests
-and fails required checks if their test sources are absent.
-The maintained source suite is `npm run test:e2e:release`. The legacy
-`test:e2e` alias runs the focused workspace suite, `test:e2e:full` runs that
-release suite, and `test:e2e:guide` runs the workspace checks that include the
-filename guide. Unpublished upstream private-check commands fail explicitly
-when their files are absent; they are not counted as passing Mac checks.
+`macos-ci.yml` runs on native Apple Silicon and Intel runners. The unified release
+workflow also verifies the full Windows release harness and WebKit checks, packages
+all three targets, validates artifact hashes and tests upgrades from Mac 1.0.10.
+A failed required check prevents publication. The maintained Mac source suite is
+`npm run test:e2e:release`; `npm run release:verify` runs the full Windows release
+gate on Windows. Required tests must be present and cannot report skipped success.
 
 The source and packaged-app jobs use separate fresh runners so their differently
 signed executables do not compete for the same login Keychain item.
@@ -100,5 +98,5 @@ the free update path authenticates releases with a separately pinned Ed25519 key
 It uses this public repository, architecture-specific ZIPs and `mac-update.json`.
 This is release authentication, not Apple notarization. See [MACOS-UPDATES.md](MACOS-UPDATES.md).
 
-Before merging upstream: run Windows and both Mac jobs from the same commit, test the
-authenticated update from an older installed version, and confirm authenticated Twitch workflows.
+All releases must pass Windows and both Mac jobs from the same commit and the
+authenticated upgrade checks described in [UNIFIED-RELEASE.md](UNIFIED-RELEASE.md).

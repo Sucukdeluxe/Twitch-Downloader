@@ -1,4 +1,4 @@
-name: macOS release
+name: macOS compatibility relay
 
 on:
   push:
@@ -6,265 +6,37 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag matching package.json, e.g. mac-v1.1.20'
+        description: 'Existing immutable mac-vX.Y.Z tag from the canonical release'
         required: true
         type: string
-      channel:
-        description: 'Stable updates latest; preview remains outside the stable updater'
-        required: true
-        default: preview
-        type: choice
-        options: [preview, stable]
-
-env:
-  TVM_STRICT_LOCAL_CHECKS: 'true'
 
 permissions:
   contents: read
 
-# Never let two releases race to update the stable feed.
 concurrency:
   group: macos-release
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  relay:
     if: github.repository == 'Sucukdeluxe/Twitch-Downloader-macos'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: macos-release
     permissions:
       contents: write
-    outputs:
-      sha: ${{ steps.release.outputs.sha }}
-      tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
-      channel: ${{ steps.release.outputs.channel }}
-      release-id: ${{ steps.release.outputs.release-id }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24.11.1'
-      - name: Validate the tag and create or resume a draft
-        id: release
-        uses: actions/github-script@v7
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_CHANNEL: ${{ inputs.channel }}
-        with:
-          script: |
-            const { execFileSync } = require('node:child_process');
-            const { validateVersion } = require(`${process.env.GITHUB_WORKSPACE}/scripts/create-macos-update-manifest.js`);
-            const { version } = require(`${process.env.GITHUB_WORKSPACE}/package.json`);
-            validateVersion(version);
-            const tag = process.env.RELEASE_TAG;
-            if (tag !== `mac-v${version}`) throw new Error('Release tag must match package.json exactly.');
-            const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-            const taggedSha = execFileSync('git', ['rev-parse', `refs/tags/${tag}^{commit}`], { encoding: 'utf8' }).trim();
-            if (taggedSha !== sha) throw new Error('Checkout does not match the immutable release tag.');
-            const channel = process.env.RELEASE_CHANNEL || (version.includes('-') ? 'preview' : 'stable');
-            if (!['preview', 'stable'].includes(channel)) throw new Error('Invalid release channel.');
-            if (channel === 'stable' && version.includes('-')) throw new Error('Prerelease versions cannot enter the stable feed.');
-            const prerelease = channel === 'preview';
-            const repo = context.repo;
-            let release;
-            try { release = (await github.rest.repos.getReleaseByTag({ ...repo, tag })).data; }
-            catch (error) { if (error.status !== 404) throw error; }
-            if (release) {
-              if (!release.draft || release.target_commitish !== sha || release.prerelease !== prerelease) {
-                throw new Error('Only an existing draft for the same commit and channel can be resumed. Never overwrite a published release.');
-              }
-            } else {
-              const notes = (await github.rest.repos.generateReleaseNotes({ ...repo, tag_name: tag, target_commitish: sha })).data;
-              if (Buffer.byteLength(notes.body, 'utf8') > 32768) throw new Error('Generated release notes exceed 32768 bytes.');
-              release = (await github.rest.repos.createRelease({ ...repo, tag_name: tag, target_commitish: sha,
-                name: `macOS ${version}`, body: notes.body, draft: true, prerelease, make_latest: 'false' })).data;
-            }
-            core.setOutput('sha', sha);
-            core.setOutput('tag', tag);
-            core.setOutput('version', version);
-            core.setOutput('channel', channel);
-            core.setOutput('release-id', String(release.id));
-
-  verify:
-    needs: prepare
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.11.1'
-          cache: npm
-      - run: npm ci
-      - run: node node_modules/electron/install.js
-      - run: npm run lint
-      - run: npm run security:check
-      - run: npm run test:security && npm run test:lint-config && npm run test:ci-contract
-      - run: npm run test:unit
-      - run: npm run rebuild:electron
-      - run: npm run tools:mac -- ${{ matrix.arch }}
-      - run: npm run test:mac-update
-        timeout-minutes: 10
-      - run: npm run test:mac
-        timeout-minutes: 10
-      - run: PATH="$PWD/.cache/macos-tools/stage-${{ matrix.arch }}/ffmpeg:$PATH" npm run test:e2e:release
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: release-${{ matrix.arch }}-diagnostics
-          path: artifacts/
-
-  package:
-    needs: prepare
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-            folder: mac-arm64
-          - runner: macos-15-intel
-            arch: x64
-            folder: mac
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.11.1'
-          cache: npm
-      - run: npm ci
-      - run: node node_modules/electron/install.js
-      - run: npm run tools:mac -- ${{ matrix.arch }}
-      - run: npm run dist:mac -- --${{ matrix.arch }} -c.mac.identity=- --publish never
-      - name: Verify the packaged code signature
-        run: codesign --verify --deep --strict "release/${{ matrix.folder }}/Twitch VOD Manager.app"
-      - name: Test the actual application bundle on a fresh runner
-        run: npm run test:mac
-        timeout-minutes: 10
-        env:
-          PACKAGED_APP_PATH: release/${{ matrix.folder }}/Twitch VOD Manager.app/Contents/MacOS/Twitch VOD Manager
-      - name: Fetch original 1.0.10 update source
+      - name: Verify canonical provenance and relay unchanged Mac assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p .cache/original-release
-          gh release download mac-v1.0.10 --repo Sucukdeluxe/Twitch-Downloader-macos --pattern "Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" --dir .cache/original-release
-          if [ "${{ matrix.arch }}" = arm64 ]; then
-            expected=943aa43944b40bdac42fa820a7ceee87addc673fbed256deb67fe6a4760926c1
-          else
-            expected=4a06cc4eecff18cb65f19553ff925fa3bfa7c3db8515667e6f162640846ec5bd
-          fi
-          echo "$expected  .cache/original-release/Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" | shasum -a 256 -c -
-          ditto -x -k ".cache/original-release/Twitch-VOD-Manager-1.0.10-mac-${{ matrix.arch }}.zip" .cache/original-release
-      - name: Verify actual old-to-new application update
-        run: node scripts/smoke-test-macos-update.js
-        env:
-          MAC_UPDATE_FROM_APP: .cache/original-release/Twitch VOD Manager.app
-        timeout-minutes: 10
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macos-${{ matrix.arch }}
-          if-no-files-found: error
-          path: |
-            release/Twitch-VOD-Manager-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.dmg
-            release/Twitch-VOD-Manager-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.zip
-
-  publish:
-    needs: [prepare, verify, package]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Store the signing secret here. Environment protection can be configured separately.
-    environment: macos-release
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-      RELEASE_ID: ${{ needs.prepare.outputs.release-id }}
-      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.11.1'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-macos-*
-          merge-multiple: true
-          path: release-assets
-      - name: Read the draft release notes
-        run: gh api "repos/$GH_REPO/releases/$RELEASE_ID" --jq .body > release-notes.txt
-      - name: Sign both architecture ZIPs with the pinned release key
-        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           MAC_UPDATE_PRIVATE_KEY: ${{ secrets.MAC_UPDATE_PRIVATE_KEY }}
-        run: |
-          node scripts/create-macos-update-manifest.js \
-            --version "$RELEASE_VERSION" --tag "$RELEASE_TAG" \
-            --arm64 "release-assets/Twitch-VOD-Manager-$RELEASE_VERSION-mac-arm64.zip" \
-            --x64 "release-assets/Twitch-VOD-Manager-$RELEASE_VERSION-mac-x64.zip" \
-            --notes-file release-notes.txt --output release-assets/mac-update.json
-      - name: Upload and verify the complete draft before publication
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
-            const { execFileSync } = require('node:child_process');
-            const repo = context.repo;
-            const release_id = Number(process.env.RELEASE_ID);
-            const release = (await github.rest.repos.getRelease({ ...repo, release_id })).data;
-            if (!release.draft || release.tag_name !== process.env.RELEASE_TAG) throw new Error('Release is no longer the expected draft.');
-            const version = process.env.RELEASE_VERSION;
-            const expected = ['mac-update.json', ...['arm64', 'x64'].flatMap(arch =>
-              ['dmg', 'zip'].map(ext => `Twitch-VOD-Manager-${version}-mac-${arch}.${ext}`))].sort();
-            const dir = 'release-assets';
-            if (JSON.stringify(fs.readdirSync(dir).sort()) !== JSON.stringify(expected)) throw new Error('Release must contain exactly two DMGs, two ZIPs and the signed manifest.');
-            for (const name of expected) {
-              if (!fs.statSync(path.join(dir, name)).isFile() || fs.statSync(path.join(dir, name)).size === 0) throw new Error('Empty or invalid release asset.');
-            }
-            const previous = await github.paginate(github.rest.repos.listReleaseAssets, { ...repo, release_id, per_page: 100 });
-            for (const asset of previous) await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
-            execFileSync('gh', ['release', 'upload', process.env.RELEASE_TAG, ...expected.map(name => path.join(dir, name))], { stdio: 'inherit' });
-            const uploaded = await github.paginate(github.rest.repos.listReleaseAssets, { ...repo, release_id, per_page: 100 });
-            if (JSON.stringify(uploaded.map(asset => asset.name).sort()) !== JSON.stringify(expected)) throw new Error('Uploaded asset set is incomplete.');
-            for (const asset of uploaded) {
-              if (asset.state !== 'uploaded' || asset.size !== fs.statSync(path.join(dir, asset.name)).size) throw new Error('Uploaded asset size or state is incorrect.');
-            }
-            const preview = process.env.RELEASE_CHANNEL === 'preview';
-            if (!preview) {
-              let latest;
-              try { latest = (await github.rest.repos.getLatestRelease(repo)).data; }
-              catch (error) { if (error.status !== 404) throw error; }
-              if (latest) {
-                const previous = /^mac-v(\d+)\.(\d+)\.(\d+)$/.exec(latest.tag_name);
-                if (!previous) throw new Error('Review migration from an unknown stable release tag before publishing.');
-                const current = version.split('.').map(Number);
-                const before = previous.slice(1).map(Number);
-                const differing = current.findIndex((part, index) => part !== before[index]);
-                if (differing < 0 || current[differing] < before[differing]) throw new Error('Stable releases must advance the published version.');
-              }
-            }
-            // A single final state change exposes the already complete release.
-            await github.rest.repos.updateRelease({ ...repo, release_id, draft: false,
-              prerelease: preview, make_latest: preview ? 'false' : 'true' });
+        run: node scripts/publish-macos-relay.cjs

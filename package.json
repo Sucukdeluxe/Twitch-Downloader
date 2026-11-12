@@ -1,6 +1,6 @@
 {
   "name": "twitch-downloader",
-  "version": "1.1.22",
+  "version": "1.1.23",
   "description": "Twitch Downloader - Download Twitch VODs easily",
   "main": "dist/main.js",
   "author": "Sucukdeluxe",
@@ -22,9 +22,7 @@
     "test:e2e:guide": "npm run test:e2e:workspace-ui",
     "test:e2e:full": "npm run test:e2e:release",
     "test:e2e:workspace-ui": "npm run build && node scripts/smoke-test-workspace-ui.js",
-    "test:e2e:queue-cards": "npm run build && node scripts/run-local-check.mjs scripts/smoke-test-queue-cards.js",
     "test:e2e:cutter": "npm run build && node scripts/smoke-test-cutter.js",
-    "test:e2e:cutter-matrix": "npm run build && node scripts/run-local-check.mjs scripts/smoke-test-cutter-media-matrix.js",
     "test:e2e:isolation": "node scripts/smoke-test-e2e-isolation-contract.js",
     "test:capability-contract": "node scripts/smoke-test-file-capability-contract.js",
     "test:e2e:settings-autosave": "node scripts/smoke-test-settings-autosave.js",
@@ -33,15 +31,9 @@
     "test:lint-config": "node --test scripts/lint-config.test.mjs",
     "test:ci-contract": "node scripts/smoke-test-ci-contract.js",
     "test:installer-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-installer.test.js",
-    "test:managed-tools-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-managed-tools-live.test.js",
-    "test:cutter-matrix-contract": "node scripts/run-local-check.mjs --test scripts/smoke-test-cutter-media-matrix.test.js",
-    "test:managed-tools-live": "node scripts/run-local-check.mjs scripts/smoke-test-managed-tools-live.js",
-    "test:live-integration-contract": "npm run build && node scripts/run-local-check.mjs --test scripts/smoke-test-live-integration.test.js",
-    "test:live:twitch": "node scripts/run-local-check.mjs scripts/smoke-test-live-integration.js twitch",
-    "test:live:updater-postpublish": "node scripts/run-local-check.mjs scripts/smoke-test-live-integration.js updater",
     "test:packaged-launch": "node scripts/smoke-test-packaged-launch.js",
     "test:installer": "node scripts/smoke-test-installer.js",
-    "test:e2e:release": "npm run build && npm run test:security && npm run test:lint-config && npm run test:ci-contract && npm run test:capability-contract && npm run test:e2e:update-logic && npm run test:merge-split && npm run test:e2e:public-release && npm run test:e2e:isolation && node scripts/smoke-test-workspace-ui.js && node scripts/smoke-test-cutter.js && npm run test:e2e:settings-autosave",
+    "test:e2e:release": "npm run build && npm run test:security && npm run test:lint-config && npm run test:ci-contract && npm run test:unified-release && npm run test:capability-contract && npm run test:e2e:update-logic && npm run test:merge-split && npm run test:e2e:public-release && npm run test:e2e:isolation && node scripts/smoke-test-workspace-ui.js && node scripts/smoke-test-cutter.js && npm run test:e2e:settings-autosave",
     "test:e2e:stress": "npm run test:e2e:release && npm run test:e2e:release && npm run test:e2e:release",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run release:build",
@@ -52,12 +44,15 @@
     "release:package": "node scripts/package-release.mjs",
     "release:build": "npm run release:verify && npm run release:package",
     "tools:mac": "python3 scripts/prepare-macos-tools.py",
-    "pack:mac": "npm run build && electron-builder --mac --dir",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "pack:mac": "npm run build && electron-builder --mac --dir -c.productName=\"Twitch VOD Manager\"",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip -c.productName=\"Twitch VOD Manager\"",
     "test:mac": "npm run build && node scripts/smoke-test-macos.js && node scripts/smoke-test-macos-recovery.js && node scripts/smoke-test-macos-trim-layout.js && node scripts/smoke-test-macos-trim-download.js",
     "test:e2e:mac-trim": "npm run build && node scripts/smoke-test-macos-trim-layout.js && node scripts/smoke-test-macos-trim-download.js",
     "test:mac-update": "npm run build && node --test scripts/test-macos-update-manifest.js && node scripts/test-macos-updater.js",
-    "rebuild:electron": "electron-builder install-app-deps"
+    "rebuild:electron": "electron-builder install-app-deps",
+    "test:release-contracts": "node --test scripts/release-tools.test.mjs scripts/release-test-harness.test.cjs",
+    "test:unified-release": "node --test scripts/unified-release.test.cjs",
+    "test:precise-trim": "npm run build && node scripts/smoke-test-precise-trim.js"
   },
   "dependencies": {
     "axios": "^1.21.1",
@@ -85,8 +80,8 @@
     "vitest": "^4.1.6"
   },
   "build": {
-    "appId": "io.github.sucukdeluxe.twitch-vod-manager",
-    "productName": "Twitch VOD Manager",
+    "appId": "io.github.sucukdeluxe.twitch-downloader",
+    "productName": "Twitch Downloader",
     "files": [
       "dist/**/*",
       "!dist/**/*.test.js",
@@ -177,7 +172,8 @@
       "publish": {
         "provider": "generic",
         "url": "https://github.com/Sucukdeluxe/Twitch-Downloader-macos/releases/latest/download/"
-      }
+      },
+      "appId": "io.github.sucukdeluxe.twitch-vod-manager"
     },
     "dmg": {
       "title": "Twitch VOD Manager",
