@@ -3,6 +3,7 @@
 // After building: node scripts/smoke-test-precise-trim.js [absolute-ffmpeg absolute-ffprobe]
 // macOS always uses bundled managed tools, even when host arguments are supplied.
 // Oracle-only (no build/UI): node scripts/smoke-test-precise-trim.js --oracle-self-test [ffmpeg ffprobe]
+// Actual HLS decoder, no visible windows: --headless-source-audio [ffmpeg ffprobe]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -14,9 +15,10 @@ const { createE2eEnvironment, getElectronLaunchOptions, verifyE2eIsolation, clea
 const execute = promisify(execFile);
 
 const WIDTH = 160, HEIGHT = 96, SAMPLE_RATE = 48000;
-const mediaCommand = (command, args, binary = false) => execute(command, args, {
+const mediaCommand = (command, args, binary = false, cwd) => execute(command, args, {
   timeout: 120000, windowsHide: true, maxBuffer: 96 * 1024 * 1024,
   ...(binary ? { encoding: 'buffer' } : {}),
+  ...(cwd ? { cwd } : {}),
 });
 const rateNumber = rate => String(rate).split('/').map(Number).reduce((a, b) => a / b);
 
@@ -24,13 +26,16 @@ const rateNumber = rate => String(rate).split('/').map(Number).reduce((a, b) => 
 // They can be read after H.264 encoding without relying on source pixel hashes.
 async function createTemporalFixture(directory, { ffmpeg = 'ffmpeg', ffprobe = 'ffprobe',
   fps = '25', duration = 18, name = 'temporal', segmentType = 'mpegts' } = {}) {
+  directory = path.resolve(directory);
   assert.equal(path.basename(name), name);
   assert(['mpegts', 'fmp4'].includes(segmentType));
   const rate = rateNumber(fps), count = Math.ceil(duration * rate);
   assert(count > 0 && count < 4096);
   const rawVideo = path.join(directory, `${name}.gray`), rawAudio = path.join(directory, `${name}.f32`);
   const source = path.join(directory, `${name}.mp4`);
-  const playlist = path.join(directory, `${name.replace(/[^a-z0-9_-]/gi, '-')}.m3u8`);
+  const stem = name.replace(/[^a-z0-9_-]/gi, '-');
+  // FFmpeg's HLS reader treats backslashes as URL separators inconsistently.
+  const playlist = path.join(directory, `${stem}.m3u8`).replaceAll('\\', '/');
   const video = Buffer.alloc(count * WIDTH * HEIGHT, 96);
   for (let frame = 0; frame < count; frame++) {
     for (let bit = 0; bit < 12; bit++) {
@@ -60,10 +65,23 @@ async function createTemporalFixture(directory, { ffmpeg = 'ffmpeg', ffprobe = '
       '-frames:v', String(count), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
       '-g', String(Math.ceil(rate * 10)), '-keyint_min', String(Math.ceil(rate * 10)),
       '-sc_threshold', '0', '-bf', '3', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-n', source]);
-    await mediaCommand(ffmpeg, ['-v', 'error', '-i', source, '-c', 'copy', '-hls_time', '2',
+    // Generate every HLS artifact relative to one owned directory. In
+    // particular, fMP4 init/segment path inference must not see a Windows drive.
+    await mediaCommand(ffmpeg, ['-v', 'error', '-i', path.basename(source), '-c', 'copy', '-hls_time', '2',
       '-hls_list_size', '0', '-hls_playlist_type', 'vod',
-      ...(segmentType === 'fmp4' ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', `${path.basename(playlist, '.m3u8')}-init.mp4`] : []),
-      '-n', playlist]);
+      '-hls_segment_filename', `${stem}-%04d.${segmentType === 'fmp4' ? 'm4s' : 'ts'}`,
+      ...(segmentType === 'fmp4' ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', `${stem}-init.mp4`] : []),
+      '-n', path.basename(playlist)], false, directory);
+    const text = fs.readFileSync(playlist, 'utf8');
+    const references = [...text.matchAll(/#EXT-X-MAP:.*?URI="([^"]+)"/g)].map(match => match[1]);
+    references.push(...text.split(/\r?\n/).filter(line => line && !line.startsWith('#')));
+    assert(references.length > 0, 'HLS fixture must reference media files');
+    for (const reference of references) {
+      assert.equal(path.posix.basename(reference), reference, 'Fixture HLS URLs must be relative filenames');
+      assert.equal(path.win32.basename(reference), reference, 'Fixture HLS URLs must not contain Windows paths');
+      assert(!reference.includes(':') && !reference.includes('\\'), 'Fixture HLS URL must not contain drive or backslash syntax');
+      assert(fs.statSync(path.join(directory, reference)).isFile(), `Missing generated HLS media: ${reference}`);
+    }
   } finally {
     fs.unlinkSync(rawVideo); fs.unlinkSync(rawAudio);
   }
@@ -116,6 +134,21 @@ async function audioSamples(file, ffmpeg) {
   return Float32Array.from({ length: data.length / 4 }, (_, i) => data.readFloatLE(i * 4));
 }
 
+function correlateAudio(actual, actualStart, expected, expectedStart) {
+  let best = { score: -1, lag: 0 };
+  for (let lag = -2400; lag <= 2400; lag++) {
+    if (expectedStart + lag < 0 || expectedStart + lag + 2400 >= expected.length) continue;
+    let dot = 0, xx = 0, yy = 0;
+    for (let i = 0; i < 2400; i += 4) {
+      const x = actual[actualStart + i], y = expected[expectedStart + i + lag];
+      dot += x * y; xx += x * x; yy += y * y;
+    }
+    const score = dot / Math.sqrt(xx * yy);
+    if (score > best.score) best = { score, lag };
+  }
+  return best;
+}
+
 async function assertPreciseRange(output, fixture, ranges, { ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = {}) {
   const frames = await assertTemporalFrames(output, fixture, ranges, { ffmpeg });
   const metadata = JSON.parse((await mediaCommand(ffprobe, ['-v', 'error', '-show_streams', '-show_format',
@@ -130,7 +163,7 @@ async function assertPreciseRange(output, fixture, ranges, { ffmpeg = 'ffmpeg', 
     assert(decoded.length, `Missing ${type} frames`);
     const times = decoded.map(frame => Number(frame.best_effort_timestamp_time));
     assert(times.every(Number.isFinite), `Missing ${type} PTS`);
-    const referenceStart = type === 'video' ? selectedFrames(fixture, ranges[0])[0].pts : fixture.audioReference?.start || 0;
+    const referenceStart = type === 'video' ? selectedFrames(fixture, ranges[0])[0].pts : 0;
     const initialGap = Math.max(0, referenceStart - ranges[0].start);
     assert(times[0] >= -.000001 && times[0] <= Math.max(initialGap, type === 'video' ? 1 / fixture.fps : 1024 / SAMPLE_RATE) + .001,
       `${type} starts at ${times[0]} instead of zero`);
@@ -145,20 +178,11 @@ async function assertPreciseRange(output, fixture, ranges, { ffmpeg = 'ffmpeg', 
     const length = range.end - range.start;
     // Correlate markers near BOTH edges and in the middle, including each join.
     for (const at of [.08, length / 2, length - .18]) {
-      let best = { score: -1, lag: 0 };
       const actualStart = Math.round((offset + at - outputAudioStart) * SAMPLE_RATE);
       assert(actualStart >= 0 && actualStart + 2400 < outputAudio.length, 'Audio marker must lie in output audio');
       const expectedStart = Math.round((range.start + at - (fixture.audioReference?.start || 0)) * SAMPLE_RATE);
-      assert(expectedStart >= 0 && expectedStart + 2400 < sourceAudio.length, 'Audio marker must lie in captured player audio');
-      for (let lag = -2400; lag <= 2400; lag++) {
-        let dot = 0, xx = 0, yy = 0;
-        for (let i = 0; i < 2400; i += 4) {
-          const x = outputAudio[actualStart + i], y = sourceAudio[expectedStart + i + lag];
-          dot += x * y; xx += x * x; yy += y * y;
-        }
-        const score = dot / Math.sqrt(xx * yy);
-        if (score > best.score) best = { score, lag };
-      }
+      assert(expectedStart >= 0 && expectedStart + 2400 < sourceAudio.length, 'Audio marker must lie in original source audio');
+      const best = correlateAudio(outputAudio, actualStart, sourceAudio, expectedStart);
       assert(best.score > .94, `Wrong audio content at ${offset + at}s (correlation ${best.score})`);
       assert(Math.abs(best.lag) <= 96, `Audio marker drift at ${offset + at}s: ${best.lag / SAMPLE_RATE}s`);
     }
@@ -250,8 +274,40 @@ async function capturePlayerReference(win, fixture, { ffmpeg, ffprobe }) {
     const expected = presentationFrames.filter(frame => frame.pts <= observed.time + .000001).at(-1);
     assert.equal(observed.id, expected.id, `Displayed HLS frame at ${observed.time}s`);
   }
-  return { ...fixture, presentationFrames,
-    audioReference: { path: results.audio.file, start: Number(results.audio.meta.streams[0].start_time) + results.audio.offset } };
+  const sourceReference = await mapOriginalSourceAudio(fixture, presentationFrames, { ffmpeg, ffprobe });
+  // HLS.js can smooth AAC differently after a seek. Its decoded audio is useful
+  // diagnostic evidence, but MUST NOT define the exported source A/V timeline.
+  const browserAudioStart = Number(results.audio.meta.frames[0].best_effort_timestamp_time) + results.audio.offset;
+  const at = Math.min(5, fixture.duration / 2);
+  const [browserAudio, rawAudio] = await Promise.all([audioSamples(results.audio.file, ffmpeg), audioSamples(fixture.playlist, ffmpeg)]);
+  const phase = correlateAudio(browserAudio, Math.round((at - browserAudioStart) * SAMPLE_RATE),
+    rawAudio, Math.round((at - sourceReference.audioReference.start) * SAMPLE_RATE));
+  return { ...sourceReference, browserAudioPhase: { seconds: phase.lag / SAMPLE_RATE, correlation: phase.score } };
+}
+
+async function mapOriginalSourceAudio(fixture, presentationFrames, { ffmpeg, ffprobe }) {
+  const raw = JSON.parse((await mediaCommand(ffprobe, ['-v', 'error', '-show_frames',
+    '-show_entries', 'frame=media_type,best_effort_timestamp_time', '-of', 'json', fixture.playlist])).stdout);
+  const video = raw.frames.filter(frame => frame.media_type === 'video');
+  const audio = raw.frames.filter(frame => frame.media_type === 'audio');
+  const ids = await readIds(fixture.playlist, ffmpeg);
+  assert.equal(ids.length, video.length);
+  assert.equal(ids.length, presentationFrames.length);
+  assert(audio.length, 'Original HLS must contain decoded audio');
+  const shifts = presentationFrames.map((frame, index) => {
+    assert.equal(frame.id, ids[index], 'Match source and browser pictures before mapping audio');
+    return frame.pts - Number(video[index].best_effort_timestamp_time);
+  });
+  const shift = shifts[0];
+  assert(Number.isFinite(shift) && shifts.every(value => Math.abs(value - shift) <= .0001),
+    'The actual browser/source video mapping must be a consistent shift for this continuous fixture');
+  // PCM sample zero belongs to the FIRST DECODED AUDIO FRAME, not the format or
+  // stream start. This preserves TS mux offsets and AAC priming independently
+  // of how the production downloader calculates its seek origin.
+  const start = Number(audio[0].best_effort_timestamp_time) + shift;
+  assert(Number.isFinite(start));
+  return { ...fixture, presentationFrames, sourcePresentationShift: shift,
+    audioReference: { path: fixture.playlist, start } };
 }
 
 async function waitFor(predicate, timeout = 60000) {
@@ -268,6 +324,7 @@ async function waitFor(predicate, timeout = 60000) {
 async function selfTest({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = {}) {
   const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'precise-trim-oracle-'));
   const checks = [];
+  let negativeChecks = 0;
   try {
     for (const fps of ['25', '60000/1001']) {
       const fixture = await createTemporalFixture(directory, { ffmpeg, ffprobe, fps,
@@ -284,13 +341,79 @@ async function selfTest({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = {}) {
           [{ start: start + 1 / fixture.fps, end: end + 1 / fixture.fps }], { ffmpeg }), /Source frame ID/);
         await assert.rejects(assertTemporalFrames(output, fixture,
           [{ start, end: end + 1 / fixture.fps }], { ffmpeg }), /Exact frame count/);
-        const shiftedAudio = path.join(directory, `wrong-audio-${fixture.fps}-${start}.mp4`);
-        await encode(shiftedAudio, 1024 / SAMPLE_RATE);
-        await assert.rejects(assertPreciseRange(shiftedAudio, fixture, [{ start, end }], { ffmpeg, ffprobe }), /Audio marker drift/);
+        negativeChecks += 2;
+        for (const shift of [-1024 / SAMPLE_RATE, -.004667, .004667, 1024 / SAMPLE_RATE].filter(shift => start + shift >= 0)) {
+          const shiftedAudio = path.join(directory, `wrong-audio-${fixture.fps}-${start}-${shift}.mp4`);
+          await encode(shiftedAudio, shift);
+          await assert.rejects(assertPreciseRange(shiftedAudio, fixture, [{ start, end }], { ffmpeg, ffprobe }), /Audio marker drift/);
+          negativeChecks++;
+        }
       }
     }
-    console.log(JSON.stringify({ oracle: 'passed', positiveRanges: checks, negativeChecks: 12 }));
+    console.log(JSON.stringify({ oracle: 'passed', positiveRanges: checks, negativeChecks }));
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}
+
+// Validate real HLS.js video mapping and source A/V timing with a genuinely
+// headless browser. This deliberately does not launch Electron or a native app.
+async function headlessSourceAudio({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = {}) {
+  const { chromium } = require('playwright');
+  const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'precise-headless-source-'));
+  let browser, server;
+  const checks = [], observations = [];
+  try {
+    const modulePath = path.join(directory, 'production-trim.cjs');
+    require('esbuild').buildSync({ entryPoints: [path.join(__dirname, '../src/main/domain/vod-precise-trim.ts')],
+      bundle: true, platform: 'node', format: 'cjs', outfile: modulePath, logLevel: 'silent' });
+    // Fixed repository entry point compiled into this test's owned directory.
+    // eslint-disable-next-line security/detect-non-literal-require
+    const production = require(modulePath);
+    server = http.createServer((request, response) => {
+      const file = path.join(directory, path.basename(decodeURIComponent(new URL(request.url, 'http://localhost').pathname)));
+      if (!fs.existsSync(file) || !fs.statSync(file).isFile()) { response.writeHead(404).end(); return; }
+      response.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Length': fs.statSync(file).size,
+        'Content-Type': file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp4' });
+      fs.createReadStream(file).pipe(response);
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    browser = await chromium.launch({ headless: true });
+    for (const [fps, segmentType] of [['25', 'mpegts'], ['60000/1001', 'mpegts'], ['60000/1001', 'fmp4']]) {
+      const page = await browser.newPage();
+      try {
+        let fixture = await createTemporalFixture(directory, { ffmpeg, ffprobe, fps, segmentType,
+          name: `headless-${fps.replace('/', '-')}-${segmentType}`, duration: 28 });
+        await page.setContent('<div id="clipPlayer"><video muted playsinline width="160" height="96"></video></div>');
+        await observePlayerMedia(page);
+        await page.addScriptTag({ path: require.resolve('hls.js/dist/hls.js') });
+        await page.evaluate(url => {
+          const video = document.querySelector('video');
+          const hls = new window.Hls({ maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30 });
+          window.__headlessHls = hls;
+          hls.loadSource(url); hls.attachMedia(video);
+          video.play().catch(() => {});
+        }, `http://127.0.0.1:${server.address().port}/${path.basename(fixture.playlist)}`);
+        fixture = await capturePlayerReference(page, fixture, { ffmpeg, ffprobe });
+        observations.push({ fps: fixture.fps, segmentType, sourcePresentationShift: fixture.sourcePresentationShift,
+          sourceAudioStart: fixture.audioReference.start, browserAudioPhase: fixture.browserAudioPhase });
+        // Expected video IDs/times come from the browser; expected PCM timing
+        // comes from independently decoded original HLS, never this helper.
+        const timeline = await production.readVodPlaylistTimeline(ffprobe, fixture.playlist);
+        for (const [start, end] of [[0, 1.013], [4.513, 8.527], [21.513, 24.527]]) {
+          const output = path.join(directory, `output-${fps.replace('/', '-')}-${segmentType}-${start}.mp4`);
+          await mediaCommand(ffmpeg, production.buildPreciseVodTrimArgs({ input: fixture.playlist, output,
+            start, duration: end - start, seekOffset: timeline.seekOffset, seekAfterInput: true }));
+          const evidence = await assertPreciseRange(output, fixture, [{ start, end }], { ffmpeg, ffprobe });
+          checks.push({ fps: fixture.fps, segmentType, start, end, ...evidence });
+        }
+      } finally { await page.close(); }
+    }
+    console.log(JSON.stringify({ headlessSourceAudio: 'passed', nativeAppLaunched: false,
+      originalSourceAudio: true, observations, ranges: checks }));
+  } finally {
+    if (browser) await browser.close();
+    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe } = {}) {
@@ -499,7 +622,7 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
     assert.deepEqual(pageErrors, []);
     console.log(JSON.stringify({ success: true, markers: true, invalidRange: true, filenameAndCollapse: true,
       qualityRetryAndCancel: true, queue: true, download: true, audioVideoDecode: true,
-      actualHlsPlayerReference: true, preciseRanges: checks, persistedCompletion: true }));
+      actualHlsPlayerReference: true, originalSourceAudio: true, preciseRanges: checks, persistedCompletion: true }));
   } catch (error) {
     const debugLog = path.join(environment.appDataDir, 'debug.log');
     if (fs.existsSync(debugLog)) console.error('Isolated trim diagnostics:', fs.readFileSync(debugLog, 'utf8').slice(-6000));
@@ -510,11 +633,14 @@ async function run({ macOnly = false, ffmpeg: hostFFmpeg, ffprobe: hostFFprobe }
     cleanupE2eEnvironment(environment);
   }
 }
-module.exports = { run, createTemporalFixture, assertPreciseRange, assertTemporalFrames };
+module.exports = { run, createTemporalFixture, assertPreciseRange, assertTemporalFrames, headlessSourceAudio };
 if (require.main === module) {
-  const argv = process.argv.slice(2), oracle = argv[0] === '--oracle-self-test';
-  if (oracle) argv.shift();
+  const argv = process.argv.slice(2);
+  const mode = argv[0]?.startsWith('--') ? argv.shift() : null;
   const [ffmpeg, ffprobe] = argv;
-  if (argv.length > 2 || argv.some(arg => arg.startsWith('--'))) throw new Error('Usage: smoke-test-precise-trim.js [--oracle-self-test] [ffmpeg ffprobe]');
-  (oracle ? selfTest : run)({ ffmpeg, ffprobe }).catch(error => { console.error(error); process.exitCode = 1; });
+  if (argv.length > 2 || argv.some(arg => arg.startsWith('--')) || ![null, '--oracle-self-test', '--headless-source-audio'].includes(mode)) {
+    throw new Error('Usage: smoke-test-precise-trim.js [--oracle-self-test | --headless-source-audio] [ffmpeg ffprobe]');
+  }
+  const command = mode === '--oracle-self-test' ? selfTest : mode === '--headless-source-audio' ? headlessSourceAudio : run;
+  command({ ffmpeg, ffprobe }).catch(error => { console.error(error); process.exitCode = 1; });
 }

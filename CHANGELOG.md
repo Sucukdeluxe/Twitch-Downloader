@@ -4,7 +4,7 @@
 
 - Build Windows, Apple Silicon and Intel from one canonical source and release version, preserving existing settings, application identities and update feeds.
 - Apply the shared compact Trim layout and filename-panel corrections on both Windows and Mac.
-- Remove keyframe pre-roll from selected VOD downloads with precise H.264/AAC encoding, preserving the selected resolution and source frame rate.
+- Remove keyframe pre-roll from selected VOD downloads with precise H.264/AAC encoding, preserving the selected resolution, source frame rate and original audio/video timing.
 - Verify selected ranges, final media timing and existing installation upgrades before publishing the platform packages.
 
 ## macOS 1.1.22 - 2026-11-11

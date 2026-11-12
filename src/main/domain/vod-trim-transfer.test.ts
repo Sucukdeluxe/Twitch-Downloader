@@ -10,6 +10,7 @@ import { buildPreciseVodTrimArgs, buildVodConcatArgs, probeVodMedia, readVodPlay
 import type { PausableOutput } from './pausable-output';
 import type { HlsMediaPlaylist } from './vod-live-snapshot';
 
+const toolPath = (value: string | undefined): string | undefined => value && /[/\\]/.test(value) ? path.resolve(value) : value;
 const roots: string[] = [];
 const root = (): string => { const result = fs.mkdtempSync(path.join(os.tmpdir(), 'vod-transfer-test-')); roots.push(result); return result; };
 afterEach(() => { for (const directory of roots.splice(0)) fs.rmSync(directory, { recursive: true, force: true }); });
@@ -54,6 +55,31 @@ describe('bounded precise VOD transport', () => {
             expect(fs.existsSync(file)).toBe(false);
         } finally { abort.abort(); await outcome; await fixture.close(); }
     }, 8000);
+
+    it('preserves cancellation when an outstanding write reports a secondary stream error', async () => {
+        const fixture = await fixtureServer(4 * 1024 * 1024), file = path.join(root(), 'cancelled.ts');
+        const abort = new AbortController(), throttle = createTokenBucketTransform(64 * 1024);
+        const originalPipe = throttle.pipe;
+        let target: NodeJS.WritableStream | undefined;
+        throttle.pipe = function <T extends NodeJS.WritableStream>(destination: T, options?: { end?: boolean }): T {
+            target = destination;
+            return originalPipe.call(this, destination, options) as T;
+        };
+        const work = transferVodSource({ command: process.execPath, args: ['-e', client, fixture.url],
+            outputPath: file, throttle, signal: abort.signal });
+        const outcome = work.then(() => null, failure => failure as Error);
+        try {
+            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0);
+            abort.abort();
+            // Windows may complete an already queued target write after destroy.
+            // Emit on the actual file stream: emitting on the destroyed throttle
+            // would be a no-op and would not exercise output.finished rejection.
+            expect(target).toBeDefined();
+            target!.emit('error', new Error('Cannot call write after a stream was destroyed'));
+            expect((await outcome)?.message).toMatch(/cancelled/);
+            expect(fs.existsSync(file)).toBe(false);
+        } finally { abort.abort(); await outcome; await fixture.close(); }
+    });
 
     it('shares the existing byte budget across concurrent source transfers', async () => {
         const bytes = 160 * 1024, rate = 128 * 1024;
@@ -116,25 +142,42 @@ describe('bounded precise VOD transport', () => {
 
     it.each(['ts', 'fmp4', 'av1'])('spools %s HLS without changing the source decoding timeline', async format => {
         const staged = path.resolve(`.cache/macos-tools/stage-${process.arch}/ffmpeg`);
-        const ffmpeg = process.env.FFMPEG_PATH ?? (process.platform === 'darwin' && fs.existsSync(path.join(staged, 'ffmpeg')) ? path.join(staged, 'ffmpeg') : 'ffmpeg');
-        const ffprobe = process.env.FFPROBE_PATH ?? (path.isAbsolute(ffmpeg) ? path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe') : 'ffprobe');
+        const ffmpeg = toolPath(process.env.FFMPEG_PATH) ?? (process.platform === 'darwin' && fs.existsSync(path.join(staged, 'ffmpeg')) ? path.join(staged, 'ffmpeg') : 'ffmpeg');
+        const ffprobe = toolPath(process.env.FFPROBE_PATH) ?? (path.isAbsolute(ffmpeg) ? path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe') : 'ffprobe');
         const directory = root(), playlist = path.join(directory, 'source.m3u8'), spool = path.join(directory, 'source.ts');
-        const made = spawnSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x48:r=25:d=3',
-            '-f', 'lavfi', '-i', 'sine=sample_rate=48000:duration=3', '-c:v', format === 'av1' ? 'libaom-av1' : 'libx264', '-g', '25', ...(format === 'av1' ? ['-cpu-used', '8'] : ['-bf', '3']),
-            '-c:a', 'aac', '-hls_time', '1', '-hls_list_size', '0', ...(format !== 'ts' ? ['-hls_segment_type', 'fmp4'] : []), '-y', playlist]);
+        let videoArgs = ['-c:v', 'libx264', '-g', '25', '-bf', '3'];
+        if (format === 'av1') {
+            const encoders = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+            expect(encoders.status, encoders.stderr || String(encoders.error)).toBe(0);
+            if (/\blibaom-av1\b/.test(encoders.stdout)) videoArgs = ['-c:v', 'libaom-av1', '-cpu-used', '8', '-g', '25'];
+            else if (/\blibsvtav1\b/.test(encoders.stdout)) videoArgs = ['-c:v', 'libsvtav1', '-preset', '12', '-svtav1-params', 'lp=2', '-g', '25'];
+            else throw new Error('An AV1 encoder is required for the AV1 source compatibility test');
+        }
+        const made = spawnSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=128x128:r=25:d=3',
+            '-f', 'lavfi', '-i', 'sine=sample_rate=48000:duration=3', ...videoArgs,
+            '-c:a', 'aac', '-hls_time', '1', '-hls_list_size', '0',
+            ...(format !== 'ts' ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4', '-hls_segment_filename', 'source-%d.m4s'] : ['-hls_segment_filename', 'source-%d.ts']),
+            '-y', path.basename(playlist)], { cwd: directory });
         expect(made.status, made.stderr?.toString() || String(made.error)).toBe(0);
-        const container = format === 'ts' ? 'mpegts' : 'fmp4';
-        const original = await readVodPlaylistTimeline(ffprobe, playlist, {}, true, container);
-        await transferVodSource({ command: ffmpeg, args: buildVodSpoolArgs(playlist, format !== 'ts'), outputPath: spool });
-        const copied = await readVodPlaylistTimeline(ffprobe, spool, {}, false, container);
+        const manifest = fs.readFileSync(playlist, 'utf8');
+        const references = [...manifest.matchAll(/URI="([^"]+)"/g)].map(match => match[1]);
+        references.push(...manifest.split(/\r?\n/).filter(line => line && !line.startsWith('#')));
+        for (const reference of references) {
+            expect(path.basename(reference)).toBe(reference);
+            expect(fs.statSync(path.join(directory, reference)).size).toBeGreaterThan(0);
+        }
+        const input = playlist.replaceAll('\\', '/');
+        const original = await readVodPlaylistTimeline(ffprobe, input, {}, true);
+        await transferVodSource({ command: ffmpeg, args: buildVodSpoolArgs(input, format !== 'ts'), outputPath: spool });
+        const copied = await readVodPlaylistTimeline(ffprobe, spool, {}, false);
         expect(copied.originSeconds).toBeCloseTo(original.originSeconds, 4);
         expect(copied.formatStartSeconds).toBeCloseTo(original.formatStartSeconds, 4);
-        expect(copied.audioShiftSeconds).toBeCloseTo(original.audioShiftSeconds, 4);
-    });
+        expect(copied.seekOffset).toBeCloseTo(original.seekOffset, 4);
+    }, 15000);
     it('preserves selected frames across two timestamp-reset epochs in one final MP4', async () => {
         const staged = path.resolve(`.cache/macos-tools/stage-${process.arch}/ffmpeg`);
-        const ffmpeg = process.env.FFMPEG_PATH ?? (process.platform === 'darwin' && fs.existsSync(path.join(staged, 'ffmpeg')) ? path.join(staged, 'ffmpeg') : 'ffmpeg');
-        const ffprobe = process.env.FFPROBE_PATH ?? (path.isAbsolute(ffmpeg) ? path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe') : 'ffprobe');
+        const ffmpeg = toolPath(process.env.FFMPEG_PATH) ?? (process.platform === 'darwin' && fs.existsSync(path.join(staged, 'ffmpeg')) ? path.join(staged, 'ffmpeg') : 'ffmpeg');
+        const ffprobe = toolPath(process.env.FFPROBE_PATH) ?? (path.isAbsolute(ffmpeg) ? path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe') : 'ffprobe');
         const directory = root();
         const run = (args: string[]): Buffer => {
             const result = spawnSync(ffmpeg, args, { maxBuffer: 8 * 1024 * 1024 });
@@ -155,9 +198,9 @@ describe('bounded precise VOD transport', () => {
             const input = path.join(directory, `plan-${index}.m3u8`), spool = path.join(directory, `spool-${index}.ts`), output = path.join(directory, `trim-${index}.mp4`);
             fs.writeFileSync(input, plan.text);
             await transferVodSource({ command: ffmpeg, args: buildVodSpoolArgs(input), outputPath: spool });
-            const timeline = await readVodPlaylistTimeline(ffprobe, spool, {}, false, 'mpegts');
+            const timeline = await readVodPlaylistTimeline(ffprobe, spool, {}, false);
             run(buildPreciseVodTrimArgs({ input: spool, output, start: plan.timelineStartSeconds, duration: plan.durationSeconds,
-                seekOffset: timeline.seekOffset, audioShiftSeconds: timeline.audioShiftSeconds, seekAfterInput: true }));
+                seekOffset: timeline.seekOffset, seekAfterInput: true }));
             audioReferences.push({ filename: spool, sourceStart: plan.timelineStartSeconds + timeline.seekOffset,
                 outputStart: encoded.reduce((sum, item) => sum + item.duration, 0) });
             encoded.push({ filename: output, info: await probeVodMedia(ffprobe, output), duration: plan.durationSeconds });

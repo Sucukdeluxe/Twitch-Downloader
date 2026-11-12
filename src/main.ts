@@ -4445,15 +4445,14 @@ async function downloadPreciseVodPart(
         const epochs: Array<{ filename: string; info: Awaited<ReturnType<typeof probeVodMedia>>; duration: number }> = [];
         for (const [index, epoch] of snapshot.precise.entries()) {
             const source = await transfer(epoch.snapshotPath, `source-${index}`, epoch.fragmentedMp4);
-            const container = epoch.fragmentedMp4 ? 'fmp4' : 'mpegts';
-            const sourceTimeline = await readVodPlaylistTimeline(ffprobe, source, processOptions, false, container);
+            const sourceTimeline = await readVodPlaylistTimeline(ffprobe, source, processOptions, false);
             const originTimeline = epoch.originSnapshotPath === epoch.snapshotPath ? sourceTimeline
-                : await readVodPlaylistTimeline(ffprobe, await transfer(epoch.originSnapshotPath, `origin-${index}`, epoch.fragmentedMp4), processOptions, false, container);
+                : await readVodPlaylistTimeline(ffprobe, await transfer(epoch.originSnapshotPath, `origin-${index}`, epoch.fragmentedMp4), processOptions, false);
             const output = partialDownloadRegistry.begin(snapshot.precise.length === 1 ? filename : `${filename}.epoch-${index}.mp4`);
             if (snapshot.precise.length === 1) partial = output; else sourceFiles.push(output);
             const args = buildPreciseVodTrimArgs({ input: source, output, start: epoch.timelineStartSeconds,
                 duration: epoch.durationSeconds, seekOffset: vodSpoolSeekOffset(originTimeline.originSeconds, sourceTimeline.formatStartSeconds, epoch.timelineStartSeconds, epoch.fragmentedMp4),
-                audioShiftSeconds: originTimeline.audioShiftSeconds, seekAfterInput: true });
+                seekAfterInput: true });
             await encode(args, epoch.durationSeconds);
             const info = await verifyPreciseVodOutput(ffprobe, output, epoch.durationSeconds, processOptions);
             epochs.push({ filename: output, info, duration: epoch.durationSeconds });

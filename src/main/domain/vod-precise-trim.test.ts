@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -7,7 +7,10 @@ import { buildVodSnapshotDownloadArgs } from './vod-live-snapshot';
 import { buildPreciseVodTrimArgs, buildVodConcatArgs, probeVodMedia, readVodPlaylistSeekOffset, readVodPlaylistTimeline, vodPlaylistSeekOffset, vodPlaylistTimeline, verifyPreciseVodOutput } from './vod-precise-trim';
 
 function mediaTool(name: 'ffmpeg' | 'ffprobe'): string {
-    const configured = process.env[name === 'ffmpeg' ? 'FFMPEG_PATH' : 'FFPROBE_PATH'];
+    const value = process.env[name === 'ffmpeg' ? 'FFMPEG_PATH' : 'FFPROBE_PATH'];
+    // The fixture generator changes cwd; resolve configured paths now while
+    // preserving bare executable names for normal PATH lookup.
+    const configured = value && (/[\\/]/.test(value) || /^[a-z]:/i.test(value)) ? path.resolve(value) : value;
     const staged = path.resolve(`.cache/macos-tools/stage-${process.arch}/ffmpeg/${name}`);
     const candidates = configured ? [configured] : [...(process.platform === 'darwin' && existsSync(staged) ? [staged] : []), name];
     for (const candidate of candidates) {
@@ -17,8 +20,8 @@ function mediaTool(name: 'ffmpeg' | 'ffprobe'): string {
 }
 const ffmpeg = mediaTool('ffmpeg');
 const ffprobe = mediaTool('ffprobe');
-function run(command: string, args: string[]): Buffer {
-    const result = spawnSync(command, args, { maxBuffer: 64 * 1024 * 1024 });
+function run(command: string, args: string[], cwd?: string): Buffer {
+    const result = spawnSync(command, args, { cwd, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
     if (result.status !== 0) throw new Error(result.stderr?.toString() || String(result.error));
     return result.stdout;
 }
@@ -41,12 +44,12 @@ describe('precise VOD command', () => {
         expect(args).not.toContain('-r');
         expect(args.slice(-4)).toEqual(['-f', 'mp4', '-y', 'part.mp4.tvm-part']);
     });
-    it('preserves negative HLS offsets and shifts only audio when requested', () => {
+    it('preserves negative HLS offsets while padding the original audio timeline', () => {
         const args = buildPreciseVodTrimArgs({ input: 'source', output: 'part.mp4', start: 0,
-            duration: 1, seekOffset: -0.012033, seekAfterInput: true, audioShiftSeconds: -0.012033 });
+            duration: 1, seekOffset: -0.012033, seekAfterInput: true });
         expect(args.indexOf('-ss')).toBeGreaterThan(args.indexOf('-i'));
         expect(args[args.indexOf('-ss') + 1]).toBe('-0.012033');
-        expect(args[args.indexOf('-af') + 1]).toBe('asetpts=PTS+(-0.012033)/TB,asetpts=PTS-(-0.012033)/TB,aresample=first_pts=0,asetpts=PTS+(-0.012033)/TB');
+        expect(args[args.indexOf('-af') + 1]).toBe('asetpts=PTS-(-0.012033)/TB,aresample=first_pts=0,asetpts=PTS+(-0.012033)/TB');
     });
     it('uses first decoding time, with a bounded audio fallback and wrap normalization', () => {
         const probe = { format: { start_time: '1.412033' }, streams: [
@@ -54,8 +57,7 @@ describe('precise VOD command', () => {
             { index: 1, codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', start_time: '1.412033' },
         ], packets: [{ stream_index: 0, dts_time: '1.400000', pts_time: '1.433367' }] };
         expect(vodPlaylistSeekOffset(probe)).toBeCloseTo(-0.012033, 6);
-        expect(vodPlaylistTimeline(probe).audioShiftSeconds).toBeCloseTo(-0.012033, 6);
-        expect(vodPlaylistTimeline(probe, 'fmp4').audioShiftSeconds).toBe(0);
+        expect(vodPlaylistTimeline(probe)).toEqual({ seekOffset: 1.4 - 1.412033, originSeconds: 1.4, formatStartSeconds: 1.412033 });
         probe.packets[0].dts_time = String(1.4 - 2 ** 33 / 90000);
         expect(vodPlaylistSeekOffset(probe)).toBeCloseTo(-0.012033, 6);
     });
@@ -167,18 +169,28 @@ describe('precise VOD decoded media', () => {
     it.each([
         ['mpegts', true], ['mpegts', false], ['fmp4', true], ['fmp4', false],
     ] as const)('probes %s HLS with audio=%s and preserves its first frame', async (container, audio) => {
-        const input = path.join(folder, `${container}-${audio}.mp4`), playlist = input + '.m3u8';
+        const input = path.join(folder, `${container}-${audio}.mp4`), playlist = (input + '.m3u8').replaceAll('\\', '/');
         run(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'nullsrc=s=64x48:r=25:d=2,geq=lum=16+N*2:cb=128:cr=128',
             ...(audio ? ['-f', 'lavfi', '-i', 'sine=frequency=997:sample_rate=48000:duration=2'] : []),
             '-c:v', 'libx264', '-crf', '18', '-g', '50', '-bf', '3', ...(audio ? ['-c:a', 'aac'] : ['-an']), '-y', input]);
-        run(ffmpeg, ['-v', 'error', '-i', input, '-c', 'copy', '-hls_time', '1', '-hls_list_size', '0',
-            '-hls_segment_type', container, ...(container === 'fmp4' ? ['-hls_fmp4_init_filename', `${container}-${audio}-init.mp4`] : []), '-y', playlist]);
-        const timeline = await readVodPlaylistTimeline(ffprobe, playlist, {}, true, container);
+        // HLS references are URL paths. Generate relative references inside the
+        // fixture directory; a Windows C:\ path must not become a playlist URI.
+        run(ffmpeg, ['-v', 'error', '-i', path.basename(input), '-c', 'copy', '-hls_time', '1', '-hls_list_size', '0',
+            '-hls_segment_type', container, '-hls_segment_filename', `${container}-${audio}-%d.${container === 'fmp4' ? 'm4s' : 'ts'}`,
+            ...(container === 'fmp4' ? ['-hls_fmp4_init_filename', `${container}-${audio}-init.mp4`] : []), '-y', path.basename(playlist)], folder);
+        const playlistText = readFileSync(playlist, 'utf8');
+        const references = [...playlistText.matchAll(/#EXT-X-MAP:URI="([^"]+)"/g)].map(match => match[1])
+            .concat(playlistText.split(/\r?\n/).filter(line => line && !line.startsWith('#')));
+        expect(references.length).toBeGreaterThan(container === 'fmp4' ? 1 : 0);
+        for (const reference of references) {
+            expect(reference).toBe(path.basename(reference));
+            expect(existsSync(path.join(folder, reference)), `Missing HLS fixture resource: ${reference}`).toBe(true);
+        }
+        const timeline = await readVodPlaylistTimeline(ffprobe, playlist, {}, true);
         expect(Number.isFinite(timeline.originSeconds)).toBe(true);
-        if (!audio || container === 'fmp4') expect(timeline.audioShiftSeconds).toBe(0);
         const output = input + '.trim.mp4';
         run(ffmpeg, buildPreciseVodTrimArgs({ input: playlist, output, start: 0, duration: 1.013,
-            seekAfterInput: true, seekOffset: timeline.seekOffset, audioShiftSeconds: timeline.audioShiftSeconds }));
+            seekAfterInput: true, seekOffset: timeline.seekOffset }));
         const frames = lumaFrames(output);
         expect(frames).toHaveLength(24);
         frames.forEach((luma, index) => expect(Math.abs(luma - (16 + index * 2))).toBeLessThanOrEqual(1));
@@ -206,33 +218,43 @@ describe('precise VOD decoded media', () => {
         }
     });
 
-    it('matches AAC phase correction without moving selected video frames', async () => {
+    it('preserves original A/V timing with a sub-packet AAC gap at the start and after seeking', async () => {
         const input = path.join(folder, 'aac-phase.mp4'), playlist = input + '.m3u8';
-        run(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x48:r=60000/1001:d=2',
-            '-f', 'lavfi', '-i', 'aevalsrc=0.12*sin(2*PI*(317*t+37*t*t))+0.10*sin(2*PI*(733*t+53*t*t)):s=48000:d=2',
+        run(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x48:r=60000/1001:d=22',
+            '-f', 'lavfi', '-i', 'aevalsrc=0.12*sin(2*PI*(317*t+37*t*t))+0.10*sin(2*PI*(733*t+53*t*t)):s=48000:d=22',
             '-c:v', 'libx264', '-g', '150', '-bf', '3', '-c:a', 'aac', '-y', input]);
-        run(ffmpeg, ['-v', 'error', '-i', input, '-c', 'copy', '-hls_time', '1', '-hls_list_size', '0', '-y', playlist]);
+        run(ffmpeg, ['-v', 'error', '-i', input, '-c', 'copy', '-hls_time', '2', '-hls_list_size', '0', '-y', playlist]);
         const timeline = await readVodPlaylistTimeline(ffprobe, playlist, {}, true);
-        expect(timeline.audioShiftSeconds).toBeCloseTo(-0.012033, 5);
-        const output = input + '.trim.mp4';
-        const start = 0.537;
-        run(ffmpeg, buildPreciseVodTrimArgs({ input: playlist, output, start, duration: 1,
-            seekOffset: timeline.seekOffset, audioShiftSeconds: timeline.audioShiftSeconds, seekAfterInput: true }));
+        // Two reordered video frames minus AAC's priming packet leave a 12ms
+        // gap. Export must retain that gap even if a player smooths it away.
+        expect(timeline.formatStartSeconds - timeline.originSeconds).toBeCloseTo(0.012033, 5);
         const audio = (filename: string): Float32Array => {
             const bytes = run(ffmpeg, ['-v', 'error', '-i', filename, '-map', '0:a:0', '-ar', '48000', '-ac', '1', '-f', 'f32le', 'pipe:1']);
             return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
         };
-        const sourceAudio = audio(input), actual = audio(output);
-        // HLS.js starts the first AAC packet at zero; its 1024 priming samples
-        // remain present in TS, so original MP4 content starts one packet later.
-        const sourceOffset = Math.round((start - 1024 / 48000) * 48000);
-        let best = { error: Infinity, lag: 0 };
-        for (let lag = -1200; lag <= 1200; lag++) {
-            let error = 0;
-            for (let sample = 2000; sample < 5000; sample += 3) error += (actual[sample] - sourceAudio[sourceOffset + sample + lag]) ** 2;
-            if (error < best.error) best = { error, lag };
+        const sourceAudio = audio(input);
+        const frameDelay = 2 * 1001 / 60000;
+        for (const start of [0, 0.537, 18.537]) {
+            const output = input + `.${start}.trim.mp4`;
+            run(ffmpeg, buildPreciseVodTrimArgs({ input: playlist, output, start, duration: 1,
+                seekOffset: timeline.seekOffset, seekAfterInput: true }));
+            const actual = audio(output);
+            // Source MP4 audio and video both begin at zero; TS preserves that
+            // relation after adding the same presentation delay to both tracks.
+            const sourceOffset = Math.round((start - frameDelay) * 48000);
+            for (const at of [0.08, 0.5, 0.82]) {
+                let best = { error: Infinity, lag: 0 };
+                const first = Math.round(at * 48000);
+                for (let lag = -1200; lag <= 1200; lag++) {
+                    let error = 0;
+                    for (let sample = first; sample < first + 2400; sample += 3) error += (actual[sample] - sourceAudio[sourceOffset + sample + lag]) ** 2;
+                    if (error < best.error) best = { error, lag };
+                }
+                expect(Math.abs(best.lag), `raw audio marker at ${start}+${at}`).toBeLessThanOrEqual(2);
+            }
+            const metadata = JSON.parse(run(ffprobe, ['-v', 'error', '-show_streams', '-of', 'json', output]).toString());
+            expect(Number(metadata.streams.find((stream: { codec_type: string }) => stream.codec_type === 'audio').start_time)).toBe(0);
         }
-        expect(Math.abs(best.lag)).toBeLessThanOrEqual(2);
     });
 
     it('joins independently decoded codecs and synthesizes missing audio', async () => {

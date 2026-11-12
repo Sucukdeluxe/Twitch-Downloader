@@ -203,8 +203,12 @@ async function run() {
       fs.createReadStream(file).pipe(response);
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    await app.evaluate(({ app: nativeApp }, port) => {
+    await app.evaluate(({ app: nativeApp }, fixture) => {
+      const { port } = fixture;
       const appRequire = process.getBuiltinModule('module').createRequire(`${nativeApp.getAppPath()}/package.json`);
+      const fixtureFs = appRequire('node:fs');
+      const fixturePath = appRequire('node:path');
+      nativeApp.setPath('temp', fixture.root);
       const axios = appRequire('axios').default;
       const childProcess = appRequire('node:child_process');
       const quality = appRequire('./dist/main/domain/vod-quality.js');
@@ -215,7 +219,8 @@ async function run() {
       quality.resolveVodPlaybackSource = (url, ...args) => url === 'https://www.twitch.tv/videos/2222222'
         ? Promise.resolve(mediaUrl) : original.source(url, ...args);
       snapshot.fetchHlsMediaPlaylist = (url, ...args) => url === mediaUrl
-        ? Promise.resolve({ ended: true }) : original.playlist(url, ...args);
+        ? Promise.resolve(snapshot.parseHlsMediaPlaylist(fixtureFs.readFileSync(fixture.playlist, 'utf8'), mediaUrl))
+        : original.playlist(url, ...args);
       axios.post = async (url, ...args) => {
         if (String(url).includes('/oauth2/token')) return { data: { access_token: 'audit-fixture-token' } };
         if (String(url) === 'https://gql.twitch.tv/gql' && String(args[0]?.query).includes('clip(slug:')) {
@@ -226,6 +231,21 @@ async function run() {
       axios.get = async (url, ...args) => String(url).includes('/helix/clips')
         ? { data: { data: [{ broadcaster_name: 'audit', title: 'Local fixture' }] } } : original.get.call(axios, url, ...args);
       childProcess.spawn = (command, args, spawnOptions) => {
+        // Keep the real parser, bounded source spool and precise encoder active;
+        // redirect only this test's HTTPS segment transport to its local server.
+        let fixtureTransport = false;
+        for (const arg of args) {
+          if (typeof arg !== 'string' || !arg.endsWith('.m3u8') || !fixturePath.resolve(arg).startsWith(fixture.root + fixturePath.sep) || !fixtureFs.existsSync(arg)) continue;
+          const content = fixtureFs.readFileSync(arg, 'utf8');
+          if (!content.includes('https://fixture.ttvnw.net/') && !content.includes(`http://127.0.0.1:${port}/`)) continue;
+          fixtureFs.writeFileSync(arg, content.replaceAll('https://fixture.ttvnw.net/', `http://127.0.0.1:${port}/`));
+          fixtureTransport = true;
+        }
+        if (fixtureTransport) {
+          const protocols = args.indexOf('-protocol_whitelist');
+          if (protocols >= 0) args[protocols + 1] += ',http';
+          spawnOptions = { ...spawnOptions, env: { ...process.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
+        }
         if (args.includes(mediaUrl)) {
           args = args.map(arg => arg === mediaUrl ? `http://localhost:${port}/index.m3u8` : arg);
           spawnOptions = { ...spawnOptions, env: { ...process.env, NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' } };
@@ -241,7 +261,7 @@ async function run() {
         axios.get = original.get; axios.post = original.post; childProcess.spawn = original.spawn;
         quality.resolveVodPlaybackSource = original.source; snapshot.fetchHlsMediaPlaylist = original.playlist;
       };
-    }, server.address().port);
+    }, { port: server.address().port, root: environment.rootDir, playlist });
     await win.evaluate(async () => {
       await window.api.saveConfig({ ...(await window.api.getConfig()), client_id: 'audit-fixture-client' });
       await window.api.setClientSecret('audit-fixture-secret');

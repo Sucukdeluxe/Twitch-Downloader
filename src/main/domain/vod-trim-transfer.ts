@@ -94,15 +94,17 @@ export async function transferVodSource(options: {
     };
     child.stderr.on('data', (bytes: Buffer) => { stderr = (stderr + bytes.toString()).slice(-8192); });
     const closed = new Promise<number | null>(resolve => {
-        child.once('error', failure => { error = failure; void output.cancel(); });
+        child.once('error', failure => { error ??= failure; void output.cancel(); });
         child.once('close', code => { childClosed = true; resolve(code); });
     });
     const outputFinished = output.finished.catch(failure => {
-        error = failure instanceof Error ? failure : new Error(String(failure));
+        // Keep the initiating failure: destroying a pending Windows write can
+        // report ERR_STREAM_DESTROYED after an explicit cancellation.
+        error ??= failure instanceof Error ? failure : new Error(String(failure));
         terminate();
     });
     const abort = (): void => {
-        error = new Error('VOD transfer cancelled');
+        error ??= new Error('VOD transfer cancelled');
         terminate();
         void output.cancel();
     };
@@ -118,7 +120,7 @@ export async function transferVodSource(options: {
         lastBytes = bytes; lastTime = now;
         options.onProgress?.({ bytes, speed, seconds: media.seconds, paused, stalled: state.stalled });
         if (state.stalledForMs >= (options.stallTimeoutMs ?? 120000)) {
-            error = new Error('VOD source read timeout');
+            error ??= new Error('VOD source read timeout');
             terminate();
             void output.cancel();
         }

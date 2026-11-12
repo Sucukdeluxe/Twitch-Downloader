@@ -114,5 +114,5 @@ describe('edited VOD precise parts and recovery', () => {
             async download(...args) { regenerated++; await config.download(...args); },
         });
         expect(regenerated).toBe(expectedSources);
-    });
+    }, 20000); // Three real encoding/recovery passes, including full cache invalidation.
 });
