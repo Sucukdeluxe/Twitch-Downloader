@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const textExtensions = new Set([
-  '', '.cjs', '.css', '.html', '.js', '.json', '.md', '.mjs', '.nsh', '.ps1', '.ts', '.tsx', '.txt', '.yaml', '.yml'
+  '', '.cjs', '.css', '.html', '.js', '.jsx', '.json', '.md', '.mjs', '.nsh', '.ps1', '.ts', '.tsx', '.txt', '.vbs', '.yaml', '.yml'
 ]);
 
 const sensitivePatterns = [

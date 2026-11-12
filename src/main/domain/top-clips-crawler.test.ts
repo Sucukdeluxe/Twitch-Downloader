@@ -108,7 +108,7 @@ describe('fetchTopClips', () => {
         const brokenFetch = (async (): Promise<Response> => new Response('{not-json', { status: 200 })) as unknown as typeof fetch;
         await expect(fetchTopClips({
             clientId: 'C', accessToken: 'T', broadcasterId: 'b', fetchImpl: brokenFetch,
-        })).rejects.toThrow(/parse failed/);
+        })).rejects.toThrow(/invalid helix response/);
     });
 
     test('empty data returns empty array (not null)', async () => {

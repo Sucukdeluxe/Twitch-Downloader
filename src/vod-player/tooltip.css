@@ -1,0 +1,7 @@
+.vod-tooltip-position { z-index: 10000; width: max-content; max-width: min(420px, calc(100vw - 16px)); }
+.vod-tooltip-bubble { position: relative; border-radius: 5px; background: var(--bg-card); color: var(--text); box-shadow: 0 8px 24px #0003; border: 1px solid var(--border-soft); }
+.vod-tooltip-content { padding: 12px 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: max(0px, calc(var(--tooltip-max-height, 320px) - 2px)); box-sizing: border-box; overflow: auto; user-select: text; -webkit-user-select: text; }
+.vod-tooltip-arrow { fill: var(--bg-card); }
+.vod-tooltip-content strong { display: block; font-weight: 600; }
+.vod-tooltip-content time { display: block; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.vod-selection-chapters > span:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }

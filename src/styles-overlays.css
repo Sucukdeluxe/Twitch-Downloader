@@ -1,0 +1,1390 @@
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: modal-overlay-fade 0.2s ease-out;
+}
+
+.modal-overlay.show {
+    display: flex;
+}
+
+@keyframes modal-overlay-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 25px 28px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(145, 70, 255, 0.10);
+    animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+}
+
+@keyframes modal-pop {
+    from { opacity: 0; transform: scale(0.96) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal h2 {
+    margin-bottom: 18px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    color: var(--text);
+}
+
+.modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 30px;
+    height: 30px;
+    background: transparent;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
+}
+
+.modal-close:hover {
+    color: #fff;
+    background: rgba(255, 70, 70, 0.18);
+    border-color: rgba(255, 70, 70, 0.55);
+}
+
+.modal-close:focus-visible {
+    outline: none;
+    border-color: rgba(255, 70, 70, 0.6);
+    box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.6);
+}
+
+.modal-close:active {
+    transform: scale(0.92);
+}
+
+.slider-group {
+    margin-bottom: 20px;
+}
+
+.slider-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* ============================================
+   RANGE SLIDER — Twitch-purple track + thumb
+   ============================================
+   Track gets a subtle purple-tint behind a darker base so the slider
+   reads as part of the same family as the queue progress bar. Thumb
+   is a 16px purple circle with a hover halo. */
+.slider-group input[type="range"],
+.modal input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(90deg, rgba(145, 70, 255, 0.18) 0%, rgba(20, 20, 24, 0.95) 100%);
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+    transition: box-shadow 0.18s;
+}
+
+.slider-group input[type="range"]:focus-visible,
+.modal input[type="range"]:focus-visible {
+    box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.22);
+}
+
+.slider-group input[type="range"]::-webkit-slider-thumb,
+.modal input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.slider-group input[type="range"]::-moz-range-thumb,
+.modal input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.slider-group input[type="range"]:hover::-webkit-slider-thumb,
+.modal input[type="range"]:hover::-webkit-slider-thumb {
+    background: var(--accent-hover);
+    transform: scale(1.15);
+    box-shadow: 0 3px 12px rgba(145, 70, 255, 0.55);
+}
+
+.slider-group input[type="range"]:hover::-moz-range-thumb,
+.modal input[type="range"]:hover::-moz-range-thumb {
+    background: var(--accent-hover);
+    transform: scale(1.15);
+    box-shadow: 0 3px 12px rgba(145, 70, 255, 0.55);
+}
+
+/* ============================================
+   NUMBER INPUT — hide OS spinners, rely on keyboard / scroll
+   ============================================
+   The default Webkit spinners are a tiny gray arrow stack that always
+   reads as "unfinished input field" no matter the theme. Hidden across
+   all number inputs; users type or use arrow keys. Spinner-on-hover
+   pattern could come back as a custom thing later if needed. */
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.clip-time-display {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.clip-info-row {
+    background: var(--bg-main);
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.clip-info-row .label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.clip-info-row .value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--success);
+}
+
+.clip-info-row .value.error {
+    color: var(--error);
+}
+
+.part-number-group {
+    margin-bottom: 20px;
+}
+
+.part-number-group input {
+    width: 100px;
+    background: var(--bg-main);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 14px;
+}
+
+.part-number-group small {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-actions button {
+    flex: 1;
+}
+
+.template-guide-modal {
+    max-width: 860px;
+}
+
+.template-guide-intro {
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+    line-height: 1.5;
+}
+
+.template-guide-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.template-guide-actions .btn-secondary {
+    padding: 8px 12px;
+    min-width: 140px;
+}
+
+.template-guide-actions .btn-secondary.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+}
+
+.template-guide-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.template-guide-input {
+    width: 100%;
+    font-family: Consolas, "Courier New", monospace;
+    margin-bottom: 10px;
+}
+
+.template-guide-preview-box {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 14px;
+}
+
+.template-guide-preview-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.template-guide-output {
+    font-family: Consolas, "Courier New", monospace;
+    color: var(--text);
+    word-break: break-word;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.template-guide-context {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.template-guide-vars-title {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.template-guide-table-wrap {
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.template-guide-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.template-guide-table th,
+.template-guide-table td {
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 8px;
+    vertical-align: top;
+}
+
+.template-guide-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.template-guide-table td:first-child,
+.template-guide-table td:last-child {
+    font-family: Consolas, "Courier New", monospace;
+}
+
+.template-guide-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.app-toast {
+    position: fixed;
+    right: 18px;
+    bottom: 16px;
+    z-index: 2200;
+    max-width: min(90vw, 520px);
+    background: linear-gradient(135deg, rgba(28, 28, 34, 0.98), rgba(20, 20, 24, 0.98));
+    color: #e6e6ea;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    padding: 12px 16px 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(145, 70, 255, 0.12);
+    opacity: 0;
+    transform: translateX(20px);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(8px);
+}
+
+.app-toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.app-toast.warn {
+    border-color: var(--warning);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 167, 38, 0.25);
+}
+
+/* ============================================
+   STREAMER SECTION COUNTER
+   ============================================
+   Tiny "X · Y live" line next to the "Streamer" section heading.
+   Updated by renderStreamers on every redraw. */
+.streamer-section-counter {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    letter-spacing: 0.2px;
+}
+
+/* Empty-state hint inside the sidebar streamer list (no streamers
+   added yet). Subtler than the full-page .empty-state — fits the
+   narrow sidebar context. */
+.streamer-list-empty {
+    padding: 12px 14px;
+    margin: 4px 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+    border: 1px dashed var(--border-soft);
+    border-radius: 6px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* ============================================
+   VOD DURATION BADGE — Twitch-style pill on the thumbnail
+   ============================================
+   Sits inside .vod-thumb-wrap so the absolute positioning anchors
+   to the thumbnail bounds, not the whole card (which would push
+   the badge past the action buttons at the bottom — regression
+   reported in 4.6.44 screenshot). */
+.vod-thumb-wrap {
+    position: relative;
+    line-height: 0;
+}
+
+.vod-thumb-wrap .vod-thumbnail {
+    display: block;
+}
+
+.vod-duration-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 3px;
+    z-index: 1;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+}
+
+.vod-card:hover .vod-duration-badge {
+    background: rgba(0, 0, 0, 0.88);
+}
+
+/* ============================================
+   CHAT VIEWER — Twitch-chat-like message rows
+   ============================================
+   Replaces the inline-style chat row inside the chat-viewer modal
+   with proper class-based styling. Renderer still uses inline
+   per-message colour for the username (driven by Twitch's IRC color
+   metadata). */
+.chat-viewer-row {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    height: 29px;
+    padding: 4px 8px;
+    line-height: 1.55;
+    border-radius: 4px;
+    transition: background 0.12s;
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.chat-viewer-virtual-canvas {
+    position: relative;
+    min-height: 100%;
+}
+
+.chat-viewer-virtual-rows {
+    position: absolute;
+    inset: 0 0 auto;
+    width: 100%;
+}
+
+.chat-viewer-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.chat-viewer-row[aria-selected="true"],
+.event-viewer-row[aria-selected="true"] {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.viewer-detail-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2200;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.66);
+}
+
+.viewer-detail-modal.show {
+    display: flex;
+}
+
+.viewer-detail-dialog {
+    width: min(760px, 100%);
+    max-height: min(680px, 100%);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--bg-card);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.viewer-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.viewer-detail-header h2 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.viewer-detail-close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--text);
+    background: transparent;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.viewer-detail-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.viewer-detail-text {
+    overflow: auto;
+    padding: 18px;
+    color: var(--text);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.chat-viewer-row .chat-viewer-time {
+    color: var(--text-secondary);
+    margin-right: 8px;
+    font-size: 10px;
+    opacity: 0.7;
+    font-family: 'Segoe UI Mono', 'Consolas', monospace;
+}
+
+.chat-viewer-row .chat-viewer-user {
+    font-weight: 700;
+    margin-right: 4px;
+    color: var(--accent);
+}
+
+.chat-viewer-row > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-viewer-row .chat-viewer-tag {
+    color: var(--accent);
+    font-style: italic;
+    font-size: 11px;
+    margin-right: 6px;
+    background: rgba(145, 70, 255, 0.12);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(145, 70, 255, 0.3);
+}
+
+.chat-viewer-row.is-system {
+    background: rgba(145, 70, 255, 0.05);
+    border: 1px solid rgba(145, 70, 255, 0.3);
+    border-radius: 4px;
+    padding-left: 10px;
+}
+
+/* ============================================
+   EVENTS VIEWER — timeline rows
+   ============================================
+   Per-event-type colours live here via [data-type] attribute
+   selectors so the renderer just stamps the type and the CSS
+   handles the palette. Add a new event type by extending this
+   block, not the renderer. */
+.event-viewer-row {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    height: 36px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 12px;
+    gap: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.event-viewer-virtual-canvas {
+    position: relative;
+    min-height: 100%;
+}
+
+.event-viewer-virtual-rows {
+    position: absolute;
+    inset: 0 0 auto;
+    width: 100%;
+}
+
+.event-viewer-row:last-child {
+    border-bottom: none;
+}
+
+.event-viewer-time {
+    color: var(--text-secondary);
+    flex: 0 0 auto;
+    font-family: 'Consolas', 'Segoe UI Mono', monospace;
+}
+
+/* Empty state inside the events-viewer modal — shown when an events
+   file exists but contains no parsed entries. */
+.event-viewer-empty {
+    color: var(--text-secondary);
+    padding: 12px;
+    text-align: center;
+}
+
+.event-viewer-tag {
+    font-weight: 600;
+    flex: 0 0 auto;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: rgba(145, 70, 255, 0.10);
+    border: 1px solid rgba(145, 70, 255, 0.25);
+}
+
+.event-viewer-tag[data-type="recording_start"] {
+    color: #00c853;
+    background: rgba(0, 200, 83, 0.10);
+    border-color: rgba(0, 200, 83, 0.30);
+}
+
+.event-viewer-tag[data-type="recording_end"] {
+    color: #9146ff;
+    background: rgba(145, 70, 255, 0.10);
+    border-color: rgba(145, 70, 255, 0.30);
+}
+
+.event-viewer-tag[data-type="recording_resume"] {
+    color: #2196f3;
+    background: rgba(33, 150, 243, 0.10);
+    border-color: rgba(33, 150, 243, 0.30);
+}
+
+.event-viewer-tag[data-type="title_change"] {
+    color: #ffab00;
+    background: rgba(255, 171, 0, 0.10);
+    border-color: rgba(255, 171, 0, 0.30);
+}
+
+.event-viewer-tag[data-type="game_change"] {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.10);
+    border-color: rgba(255, 68, 68, 0.30);
+}
+
+.event-viewer-detail {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+}
+
+/* ============================================
+   STREAMER PROFILE HEADER
+   ============================================
+   Polished channel-page-style header that shows up above the VOD grid
+   when a streamer is selected. Modeled on Twitch's own profile header
+   for instant familiarity, but trimmed for the desktop-app context.  */
+.streamer-profile-header {
+    position: sticky;
+    top: -25px; /* negate the .content top padding so the header pins flush with the visible top edge */
+    z-index: 100;
+    display: block;
+    padding: 0;
+    margin-top: -2px;
+    margin-bottom: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    overflow: hidden;
+    animation: profile-fade-in 0.32s ease-out;
+    isolation: isolate; /* new stacking context so VODs below cannot leak above */
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+
+/* Dimming gradient sits ABOVE the banner-bg but BELOW the content row.
+   Gives the banner room to breathe while keeping name + bio readable. */
+.streamer-profile-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(15, 15, 18, 0.55) 0%, rgba(15, 15, 18, 0.78) 100%);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.streamer-profile-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    padding: 18px 22px;
+}
+
+.streamer-profile-banner-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    filter: blur(10px) saturate(1.35);
+    opacity: 1;
+    pointer-events: none;
+    z-index: 0;
+    transform: scale(1.12); /* hide the blur edge bleed inside the rounded corner clip */
+}
+
+@keyframes profile-fade-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.streamer-profile-header.is-live::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px rgba(233, 25, 22, 0.4);
+}
+
+.streamer-profile-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.streamer-profile-avatar-wrap:hover {
+    transform: scale(1.04);
+}
+
+.streamer-profile-avatar-wrap:focus-visible {
+    outline: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.55);
+}
+
+.streamer-profile-live-card:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(233, 25, 22, 0.55), 0 6px 22px rgba(233, 25, 22, 0.20);
+}
+
+.streamer-profile-avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--bg-elevated);
+    border: 3px solid rgba(145, 70, 255, 0.6);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.30);
+}
+
+.streamer-profile-avatar.is-live {
+    border-color: #e91916;
+    animation: profile-live-ring 1.6s ease-in-out infinite;
+}
+
+@keyframes profile-live-ring {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(233, 25, 22, 0.5), 0 4px 18px rgba(0, 0, 0, 0.30); }
+    50%      { box-shadow: 0 0 0 8px rgba(233, 25, 22, 0), 0 4px 18px rgba(0, 0, 0, 0.30); }
+}
+
+.streamer-profile-avatar-fallback {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #9146ff, #00c853);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: 700;
+    border: 3px solid rgba(145, 70, 255, 0.6);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.30);
+}
+
+.streamer-profile-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.streamer-profile-name-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.streamer-profile-display-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.1;
+    letter-spacing: -0.2px;
+}
+
+.streamer-profile-login {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.streamer-profile-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.streamer-profile-badge.partner {
+    background: rgba(145, 70, 255, 0.18);
+    color: #9146ff;
+    border: 1px solid rgba(145, 70, 255, 0.5);
+}
+
+.streamer-profile-badge.affiliate {
+    background: rgba(0, 200, 83, 0.15);
+    color: #00c853;
+    border: 1px solid rgba(0, 200, 83, 0.45);
+}
+
+.streamer-profile-badge.live {
+    background: #e91916;
+    color: #fff;
+    border: 1px solid #e91916;
+    animation: profile-live-blink 1.6s ease-in-out infinite;
+}
+
+.streamer-profile-badge.live::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+@keyframes profile-live-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+}
+
+.streamer-profile-bio {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    margin-top: 2px;
+}
+
+.streamer-profile-live-info {
+    font-size: 13px;
+    color: var(--text);
+    background: rgba(233, 25, 22, 0.08);
+    border: 1px solid rgba(233, 25, 22, 0.35);
+    padding: 6px 10px;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+.streamer-profile-live-info strong {
+    color: #ff6b6b;
+    font-weight: 600;
+}
+
+.streamer-profile-stats {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.streamer-profile-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.streamer-profile-stat strong {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.streamer-profile-stat svg {
+    width: 14px;
+    height: 14px;
+    opacity: 0.7;
+}
+
+.streamer-profile-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.streamer-profile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-soft);
+    color: var(--text);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.streamer-profile-btn:hover {
+    background: rgba(145, 70, 255, 0.18);
+    border-color: rgba(145, 70, 255, 0.6);
+    color: var(--text);
+    transform: translateY(-1px);
+}
+
+.streamer-profile-btn.primary {
+    background: #9146ff;
+    border-color: #9146ff;
+    color: #fff;
+}
+
+.streamer-profile-btn.primary:hover {
+    background: #a970ff;
+    border-color: #a970ff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(145, 70, 255, 0.4);
+}
+
+/* Focus-visible for the profile action buttons (Record now, Open on
+   Twitch, Refresh). Default variant gets a purple ring; the primary
+   variant already has a purple background so it gets the inner-white
+   + outer-purple double ring used elsewhere for purple-bg buttons. */
+.streamer-profile-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(145, 70, 255, 0.65);
+    border-color: rgba(145, 70, 255, 0.6);
+}
+
+.streamer-profile-btn.primary:focus-visible {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 0 4px rgba(145, 70, 255, 0.55);
+}
+
+/* Skeleton loading state — switches the profile-header from its
+   regular block layout to a flex row so the avatar + body sit
+   side-by-side. The element itself was previously flipped via inline
+   .style.display='flex' in renderStreamerProfileSkeleton(). */
+.streamer-profile-skeleton {
+    display: flex;
+}
+
+.streamer-profile-skeleton .streamer-profile-skel-block {
+    background: linear-gradient(90deg, var(--bg-elevated) 0%, rgba(255,255,255,0.06) 50%, var(--bg-elevated) 100%);
+    background-size: 200% 100%;
+    animation: profile-skel-shimmer 1.4s linear infinite;
+    border-radius: 4px;
+}
+
+/* Pre-shaped skeleton block variants — each matches one of the
+   real-profile-card slots so the loading silhouette previews the
+   final layout. Replaces inline width/height/border-radius declarations. */
+.streamer-profile-skel-block.avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.streamer-profile-skel-block.name {
+    width: 180px;
+    height: 24px;
+}
+
+.streamer-profile-skel-block.badge {
+    width: 90px;
+    height: 18px;
+    border-radius: 10px;
+}
+
+.streamer-profile-skel-block.subtitle {
+    width: 60%;
+    height: 14px;
+    margin-top: 6px;
+}
+
+.streamer-profile-skel-stats {
+    margin-top: 8px;
+}
+
+@keyframes profile-skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@media (max-width: 720px) {
+    .streamer-profile-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .streamer-profile-actions {
+        flex-direction: row;
+        width: 100%;
+    }
+}
+
+/* ============================================
+   LIVE PREVIEW CARD — inside the profile header
+   ============================================ */
+.streamer-profile-live-card {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 14px;
+    margin: 0 14px 14px;
+    padding: 12px;
+    background: rgba(233, 25, 22, 0.10);
+    border: 1px solid rgba(233, 25, 22, 0.5);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.18s, box-shadow 0.18s, background 0.18s;
+    animation: profile-fade-in 0.4s ease-out;
+}
+
+.streamer-profile-live-card:hover {
+    transform: translateY(-2px);
+    background: rgba(233, 25, 22, 0.16);
+    box-shadow: 0 6px 22px rgba(233, 25, 22, 0.20);
+}
+
+.streamer-profile-live-thumb {
+    width: 240px;
+    height: 135px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.streamer-profile-live-thumb-fallback {
+    width: 240px;
+    height: 135px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #2a0a0a, #1a0606);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(233, 25, 22, 0.5);
+}
+
+.streamer-profile-live-thumb-fallback svg {
+    width: 48px;
+    height: 48px;
+}
+
+.streamer-profile-live-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+}
+
+.streamer-profile-live-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.streamer-profile-live-viewers {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.streamer-profile-live-viewers svg {
+    width: 14px;
+    height: 14px;
+    opacity: 0.85;
+}
+
+.streamer-profile-live-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.streamer-profile-live-game {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.streamer-profile-live-rec-btn {
+    margin-top: 6px;
+    align-self: flex-start;
+}
+
+@media (max-width: 720px) {
+    .streamer-profile-live-card { flex-direction: column; }
+    .streamer-profile-live-thumb,
+    .streamer-profile-live-thumb-fallback { width: 100%; height: 180px; }
+}
+
+/* ============================================
+   VOD HOVER PREVIEW — storyboard sprite cycling
+   ============================================
+   Overlay sits as a direct child of .vod-card, positioned over the
+   thumbnail's bounding box. Width matches the card; aspect-ratio
+   16/9 anchors the height to align with the thumbnail.  */
+.vod-storyboard-preview {
+    /* Position + size werden vollstaendig per JS gesetzt (siehe
+       renderer-vod-hover.ts). Wir geben hier nur Visual + Stacking. */
+    position: absolute;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 0.22s ease-out;
+    pointer-events: none;
+    z-index: 2;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+}
+
+.vod-card.preview-active .vod-storyboard-preview {
+    opacity: 1;
+}
+
+.vod-card.preview-active .vod-thumbnail {
+    filter: brightness(0.92);
+    transition: filter 0.3s;
+}
+
+.vod-storyboard-preview::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.18) 100%);
+    pointer-events: none;
+}
+
+/* ============================================
+   REDUCED MOTION — respect OS-level user preference
+   ============================================
+   Users who set "Reduce motion" in their OS accessibility settings
+   (Windows: Settings > Accessibility > Visual Effects > Animation
+   effects; macOS: System Settings > Accessibility > Display > Reduce
+   motion) get animations and transitions effectively disabled.
+
+   Suppresses things like the empty-state-float loop, the btn-icon-spin
+   on Refresh hover, the vod-bulk-bar slide-in, the storyboard fade-in,
+   and the multitude of transition: all 0.2s declarations — anything
+   that involves motion. Critical for users with vestibular disorders
+   and a baseline accessibility expectation in 2025. */
+/* Generic hide utility. Use when an element's visible-state display
+   differs (button = inline-block, bulk-bar = flex, etc.) so a single
+   class can hide any of them without per-element .shown modifiers.
+   The !important wins over the base class's display declaration. */
+.is-hidden {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ============================================
+   CONTEXT MENU — generic right-click menu base
+   ============================================
+   Used by both the queue row context menu (renderer-queue.ts) and the
+   VOD card context menu (renderer-streamers.ts). left/top stay inline
+   on the container (set per-click); everything else lives here. */
+.context-menu {
+    position: fixed;
+    z-index: 9999;
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+    min-width: 200px;
+}
+
+.context-menu-item {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    border-radius: 4px;
+    transition: background 0.12s;
+}
+
+.context-menu-item:hover:not(.disabled) {
+    background: rgba(145, 70, 255, 0.15);
+}
+
+.context-menu-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.context-menu-item.disabled {
+    color: var(--text-secondary);
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.context-menu-separator {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border-soft);
+}
+
+/* Command Palette (Pillar 5 — added in 5.1.0-alpha.1) */
+.command-palette {
+    max-width: 540px;
+    width: 90%;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cp-title {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0;
+}
+
+.cp-input {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 16px;
+    background: var(--bg-main);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    outline: none;
+}
+
+.cp-input:focus {
+    border-color: var(--accent);
+}
+
+.cp-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+}
+
+.cp-list:empty {
+    display: none;
+}
+
+.cp-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.cp-item:last-child {
+    border-bottom: none;
+}
+
+.cp-item:hover,
+.cp-item.cp-active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.cp-item-label {
+    flex: 1;
+    font-size: 14px;
+}
+
+.cp-item-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.cp-item:hover .cp-item-hint,
+.cp-item.cp-active .cp-item-hint {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.cp-hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: right;
+}

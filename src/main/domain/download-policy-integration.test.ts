@@ -53,15 +53,19 @@ describe('download policy integration contract', () => {
         const section = source.slice(start, end);
 
         expect(section).toContain('createDownloadThrottleTransform()');
-        expect(section).toContain("const args = [...streamlinkCmd.prefixArgs, url, getStreamlinkStreamArg(), '--stdout'];");
+        expect(section).toContain("const args = [...streamlinkCmd.prefixArgs, ...TWITCH_VIDEO_CODEC_ARGS, url, getStreamlinkStreamArg(quality), '--stdout', '--ffmpeg-ffmpeg', ffmpegPath!];");
         expect(section).not.toMatch(/args\.push\([^\n]*(?:bandwidth|rate-limit|max-rate|throttle)/i);
     });
 
-    it('routes queue and clip stdout through one app-wide token bucket budget', () => {
+    it('routes queue, precise trim and clip stdout through one app-wide token bucket budget', () => {
         const source = readFileSync(join(process.cwd(), 'src', 'main.ts'), 'utf8');
 
         expect(source).toContain('const downloadThrottleBudget = createTokenBucketBudget(null);');
         expect(source).toContain('function createDownloadThrottleTransform(): Transform | undefined');
-        expect(source.match(/createDownloadThrottleTransform\(\)/g)).toHaveLength(3);
+        expect(source.match(/createDownloadThrottleTransform\(\)/g)).toHaveLength(4);
+        const preciseTransfer = source.slice(source.indexOf('async function downloadPreciseVodPart('), source.indexOf('async function downloadVODPart('));
+        expect(preciseTransfer).toContain('throttle: createDownloadThrottleTransform()');
+        expect(preciseTransfer).toContain('pause: () => output.pause()');
+        expect(preciseTransfer).toContain('resume: () => output.resume()');
     });
 });

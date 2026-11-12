@@ -89,13 +89,13 @@ describe('normalizeStreamlinkQuality', () => {
             expect(normalizeStreamlinkQuality(q)).toBe(q);
         }
     });
-    test('invalid string falls back to best', () => {
-        expect(normalizeStreamlinkQuality('foo')).toBe('best');
+    test('invalid string falls back to source', () => {
+        expect(normalizeStreamlinkQuality('foo')).toBe('source');
     });
-    test('null/undefined/number fall back to best', () => {
-        expect(normalizeStreamlinkQuality(null)).toBe('best');
-        expect(normalizeStreamlinkQuality(undefined)).toBe('best');
-        expect(normalizeStreamlinkQuality(42)).toBe('best');
+    test('null/undefined/number fall back to source', () => {
+        expect(normalizeStreamlinkQuality(null)).toBe('source');
+        expect(normalizeStreamlinkQuality(undefined)).toBe('source');
+        expect(normalizeStreamlinkQuality(42)).toBe('source');
     });
 });
 

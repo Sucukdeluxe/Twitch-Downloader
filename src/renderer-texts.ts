@@ -70,6 +70,7 @@ function setLanguage(lang: string): LanguageCode {
     RendererAccessibility.setDocumentLanguage(currentLanguage);
     UI_TEXT = UI_TEXTS[currentLanguage];
     applyLanguageToStaticUI();
+    if (typeof renderStatsBar === 'function') renderStatsBar();
     return currentLanguage;
 }
 
@@ -105,11 +106,17 @@ function applyLanguageToStaticUI(): void {
             archive: UI_TEXT.static.navArchive,
             settings: UI_TEXT.static.navSettings
         };
-        button.title = tab ? titles[tab] || '' : '';
+        button.removeAttribute('title');
+        if (tab && titles[tab]) button.setAttribute('aria-label', titles[tab]);
     });
     setText('archiveResultsNavText', UI_TEXT.static.archiveResults);
     setText('archiveTitle', UI_TEXT.static.archiveTitle);
-    setText('archiveIntro', UI_TEXT.static.archiveIntro);
+    setText('archiveQueryLabel', UI_TEXT.static.archiveQueryLabel);
+    setText('archiveTypeLabel', UI_TEXT.static.archiveTypeLabel);
+    setText('archiveStreamerLabel', UI_TEXT.static.archiveStreamerLabel);
+    setText('archiveSortLabel', UI_TEXT.static.archiveSortLabel);
+    setText('archiveResultsTitle', UI_TEXT.static.archiveResults);
+    if (typeof refreshArchiveSearchTexts === 'function') refreshArchiveSearchTexts();
     setText('btnArchiveSearch', UI_TEXT.static.archiveSearchBtn);
     const archiveQueryInput = document.getElementById('archiveSearchQuery') as HTMLInputElement | null;
     if (archiveQueryInput) archiveQueryInput.placeholder = UI_TEXT.static.archiveSearchPlaceholder;
@@ -120,6 +127,7 @@ function applyLanguageToStaticUI(): void {
         if (opts[0]) opts[0].text = UI_TEXT.static.archiveAllTypes;
         if (opts[1]) opts[1].text = UI_TEXT.static.archiveTypeLive;
         if (opts[2]) opts[2].text = UI_TEXT.static.archiveTypeVod;
+        if (opts[3]) opts[3].text = UI_TEXT.static.archiveTypeClip;
     }
     const archiveSortSelect = document.getElementById('archiveSearchSort') as HTMLSelectElement | null;
     if (archiveSortSelect) {
@@ -132,9 +140,9 @@ function applyLanguageToStaticUI(): void {
     }
     setText('navSettingsText', UI_TEXT.static.navSettings);
     setText('statsTitle', UI_TEXT.static.statsTitle);
-    const statsIntroEl = document.getElementById('statsIntro');
-    if (statsIntroEl) applyHtml(statsIntroEl, UI_TEXT.static.statsIntro);
     setText('statsSummaryTitle', UI_TEXT.static.statsSummaryTitle);
+    setText('statsInventoryTitle', UI_TEXT.static.statsInventoryTitle);
+    if (typeof refreshArchiveStatsTexts === 'function') refreshArchiveStatsTexts();
     setText('statsTopStreamersTitle', UI_TEXT.static.statsTopStreamersTitle);
     setText('statsActivityTitle', UI_TEXT.static.statsActivityTitle);
     setText('statsSizeBucketsTitle', UI_TEXT.static.statsSizeBucketsTitle);
@@ -150,24 +158,50 @@ function applyLanguageToStaticUI(): void {
     setText('clipsHeading', UI_TEXT.static.clipsHeading);
     setText('clipsInfoTitle', UI_TEXT.static.clipsInfoTitle);
     setText('clipsInfoText', UI_TEXT.static.clipsInfoText);
-    setText('clipTemplateHelp', UI_TEXT.clips.templateHelp);
     setPlaceholder('clipFilenameTemplate', UI_TEXT.clips.templatePlaceholder);
     setText('clipDialogStartLabel', UI_TEXT.clips.dialogStart);
     setText('clipDialogStartTimeLabel', UI_TEXT.clips.dialogStartTime);
     setText('clipDialogEndLabel', UI_TEXT.clips.dialogEnd);
     setText('clipDialogEndTimeLabel', UI_TEXT.clips.dialogEndTime);
+    for (const which of ['Start', 'End']) {
+        const label = which === 'Start' ? UI_TEXT.clips.dialogStartTime : UI_TEXT.clips.dialogEndTime;
+        for (const direction of ['Earlier', 'Later']) {
+            const description = label + ': ' + (direction === 'Earlier' ? UI_TEXT.clips.timeEarlier : UI_TEXT.clips.timeLater);
+            setAriaLabel('clip' + which + direction, description);
+            setTitle('clip' + which + direction, description);
+        }
+    }
     setText('clipDialogDurationLabel', UI_TEXT.clips.dialogDuration);
     setText('clipDialogPartLabel', UI_TEXT.clips.dialogPartLabel);
-    setText('clipDialogPartHint', UI_TEXT.clips.dialogPartHint);
     setText('clipDialogFormatLabel', UI_TEXT.clips.dialogFormatLabel);
     setText('clipDialogConfirmBtn', UI_TEXT.clips.dialogConfirm);
+    setText('clipTimeHint', UI_TEXT.clips.timeInputHint);
+    setText('clipSelectionTitle', UI_TEXT.clips.selectionTitle);
+    if (typeof refreshClipDetailsToggle === 'function') refreshClipDetailsToggle();
+    setText('clipSeekStart', UI_TEXT.clips.seekStart);
+    setText('clipSeekEnd', UI_TEXT.clips.seekEnd);
+    setText('clipFilenameOptionsTitle', UI_TEXT.clips.filenameOptions);
+    setText('clipQueueHint', '');
+    setText('clipCancelBtn', UI_TEXT.clips.close);
     setPlaceholder('clipUrl', UI_TEXT.clips.urlPlaceholder);
-    setText('btnClip', UI_TEXT.clips.downloadButton);
+    setText('clipsBatchHint', UI_TEXT.clips.batchHint);
+    setText('clipsLinksLabel', UI_TEXT.clips.linksLabel);
+    setText('clipsClearBtn', UI_TEXT.clips.clearList);
+    setText('clipsRetryBtn', UI_TEXT.clips.retryFailed);
+    setText('clipsResultsTitle', UI_TEXT.clips.resultsTitle);
+    syncClipStorage();
+    setAriaLabel('clipsBatchProgress', UI_TEXT.clips.resultsTitle);
+    renderClipBatch();
     setPlaceholder('clipStartPart', UI_TEXT.clips.startPartPlaceholder);
     setPlaceholder('cutterFilePath', UI_TEXT.cutter.filePathPlaceholder);
     setText('cutterSelectTitle', UI_TEXT.static.cutterSelectTitle);
     setText('cutterPreviewPlaceholder', UI_TEXT.static.cutterPreviewPlaceholder);
     setText('cutterBrowseBtn', UI_TEXT.static.cutterBrowse);
+    setText('cutterNewVideoText', UI_TEXT.cutter.newVideo);
+    setAriaLabel('cutterOpenProjectBtn', UI_TEXT.cutter.openProject);
+    setTitle('cutterOpenProjectBtn', UI_TEXT.cutter.openProject);
+    setAriaLabel('cutterSaveProjectBtn', UI_TEXT.cutter.saveProject);
+    setTitle('cutterSaveProjectBtn', UI_TEXT.cutter.saveProject);
     setText('commandPaletteTitle', UI_TEXT.static.commandPaletteTitle);
     setAriaLabel('commandPaletteInput', UI_TEXT.static.commandPaletteAria);
     setAriaLabel('commandPaletteList', UI_TEXT.static.commandPaletteResultsAria);
@@ -193,6 +227,19 @@ function applyLanguageToStaticUI(): void {
     setText('cutterVideoTrackLabel', UI_TEXT.cutter.videoTrack);
     setText('cutterAudioTrackLabel', UI_TEXT.cutter.audioTrack);
     setText('cutterAudioEmpty', UI_TEXT.cutter.noAudio);
+    setText('cutterRecoveryText', UI_TEXT.cutter.recoveryFound);
+    setText('cutterRecoveryRestoreBtn', UI_TEXT.cutter.recoverProject);
+    setText('cutterRecoveryDiscardBtn', UI_TEXT.cutter.discardProject);
+    setText('cutterExportProfileLabel', UI_TEXT.cutter.exportProfileLabel);
+    setText('cutterExportEncoderLabel', UI_TEXT.cutter.exportEncoderLabel);
+    setText('cutterAudioStreamLabel', UI_TEXT.cutter.audioStreamLabel);
+    setText('cutterProfileQualityOption', UI_TEXT.cutter.profileQuality);
+    setText('cutterProfileBalancedOption', UI_TEXT.cutter.profileBalanced);
+    setText('cutterProfileFastOption', UI_TEXT.cutter.profileFast);
+    setText('cutterProfileArchiveOption', UI_TEXT.cutter.profileArchive);
+    setText('cutterEncoderSoftwareOption', UI_TEXT.cutter.encoderSoftware);
+    setText('cutterAudioStreamEmptyOption', UI_TEXT.cutter.noAudio);
+    setText('cutterSpeedNormalBtn', UI_TEXT.cutter.speedNormal);
     setText('cutterLoadingLabel', UI_TEXT.cutter.loadingMedia);
     setText('cutterSpeedLabel', UI_TEXT.cutter.speedLabel);
     setAriaLabel('cutterPlayBtn', UI_TEXT.cutter.play);
@@ -205,6 +252,10 @@ function applyLanguageToStaticUI(): void {
     setAriaLabel('cutterFullscreenBtn', UI_TEXT.cutter.fullscreen);
     setAriaLabel('cutterUndoBtn', UI_TEXT.cutter.undo);
     setAriaLabel('cutterRedoBtn', UI_TEXT.cutter.redo);
+    if (window.api.platform === 'darwin') {
+        setTitle('cutterUndoBtn', `${UI_TEXT.cutter.undo} (⌘Z)`);
+        setTitle('cutterRedoBtn', `${UI_TEXT.cutter.redo} (⇧⌘Z)`);
+    }
     setAriaLabel('cutterZoomOutBtn', UI_TEXT.cutter.zoomOut);
     setAriaLabel('cutterZoomInBtn', UI_TEXT.cutter.zoomIn);
     setAriaLabel('cutterZoom', UI_TEXT.cutter.zoom);
@@ -214,10 +265,11 @@ function applyLanguageToStaticUI(): void {
     setAriaLabel('cutterNewCutBtn', UI_TEXT.cutter.newCut);
     setTitle('cutterNewCutBtn', UI_TEXT.cutter.newCut);
     setText('mergeTitle', UI_TEXT.static.mergeTitle);
-    setText('mergeDesc', UI_TEXT.static.mergeDesc);
     setText('mergeAddBtn', UI_TEXT.static.mergeAdd);
     setText('btnMerge', UI_TEXT.merge.merge);
     setText('designTitle', UI_TEXT.static.designTitle);
+    setText('playerSeekLabel', UI_TEXT.static.playerSeekLabel);
+    setText('playerSeekHint', UI_TEXT.static.playerSeekHint);
     setText('themeLabel', UI_TEXT.static.themeLabel);
     setText('themeLightOption', UI_TEXT.static.themeLight);
     setText('themeDarkOption', UI_TEXT.static.themeDark);
@@ -226,17 +278,33 @@ function applyLanguageToStaticUI(): void {
     setText('languageDeText', UI_TEXT.static.languageDe);
     setText('languageEnText', UI_TEXT.static.languageEn);
     setText('apiTitle', UI_TEXT.static.apiTitle);
-    setText('apiHelpIntro', UI_TEXT.static.apiHelpIntro);
     setText('apiHelpLink', UI_TEXT.static.apiHelpLinkText);
     setText('clientIdLabel', UI_TEXT.static.clientIdLabel);
     setText('clientSecretLabel', UI_TEXT.static.clientSecretLabel);
     setText('saveSettingsBtn', UI_TEXT.static.saveSettings);
     setText('downloadSettingsTitle', UI_TEXT.static.downloadSettingsTitle);
+    setText('settingsLocationsTitle', UI_TEXT.static.settingsLocationsTitle);
+    setText('settingsLocationsHint', UI_TEXT.static.settingsLocationsHint);
+    setText('settingsDownloadHint', UI_TEXT.static.settingsDownloadHint);
+    setText('settingsFilenamesHint', UI_TEXT.static.settingsFilenamesHint);
+    setText('settingsPolicyHint', UI_TEXT.static.settingsPolicyHint);
+    setText('settingsRecordingHint', UI_TEXT.static.settingsRecordingHint);
+    setText('settingsRecoveryTitle', UI_TEXT.static.settingsRecoveryTitle);
+    setText('settingsRecoveryHint', UI_TEXT.static.settingsRecoveryHint);
+    setText('settingsAutomationHint', UI_TEXT.static.settingsAutomationHint);
+    setText('settingsDiscordHint', UI_TEXT.static.settingsDiscordHint);
+    setText('settingsStorageHint', UI_TEXT.static.settingsStorageHint);
+    setText('settingsConfigHint', UI_TEXT.static.settingsConfigHint);
+    setText('settingsSystemHint', UI_TEXT.static.settingsSystemHint);
+    setText('settingsToolsHint', UI_TEXT.static.settingsToolsHint);
+    setText('settingsDebugHint', UI_TEXT.static.settingsDebugHint);
+    setText('settingsMetricsHint', UI_TEXT.static.settingsMetricsHint);
+    setText('settingsCacheTitle', UI_TEXT.static.settingsCacheTitle);
+    setText('settingsCacheHint', UI_TEXT.static.settingsCacheHint);
     setText('downloadBasicsTitle', UI_TEXT.static.downloadBasicsTitle);
     setText('queueAutomationTitle', UI_TEXT.static.queueAutomationTitle);
     setText('recordingMetadataTitle', UI_TEXT.static.recordingMetadataTitle);
     setText('sidebarSplitViewLabel', UI_TEXT.static.sidebarSplitViewLabel);
-    setText('sidebarSplitViewHint', UI_TEXT.static.sidebarSplitViewHint);
     setText('storageLabel', UI_TEXT.static.storageLabel);
     setText('selectFolderBtn', UI_TEXT.static.selectFolder);
     setText('openFolderBtn', UI_TEXT.static.openFolder);
@@ -251,40 +319,23 @@ function applyLanguageToStaticUI(): void {
     setText('performanceModeStability', UI_TEXT.static.performanceModeStability);
     setText('performanceModeBalanced', UI_TEXT.static.performanceModeBalanced);
     setText('performanceModeSpeed', UI_TEXT.static.performanceModeSpeed);
-    setText('smartSchedulerLabel', UI_TEXT.static.smartSchedulerLabel);
-    setTitle('smartSchedulerLabel', UI_TEXT.static.smartSchedulerHint);
-    setTitle('smartSchedulerToggle', UI_TEXT.static.smartSchedulerHint);
     setText('duplicatePreventionLabel', UI_TEXT.static.duplicatePreventionLabel);
     setText('persistQueueLabel', UI_TEXT.static.persistQueueLabel);
     setText('autoResumeQueueLabel', UI_TEXT.static.autoResumeQueueLabel);
-    setTitle('autoResumeQueueLabel', UI_TEXT.static.autoResumeQueueHint);
-    setTitle('autoResumeQueueToggle', UI_TEXT.static.autoResumeQueueHint);
     setText('notifyEachCompletionLabel', UI_TEXT.static.notifyEachCompletionLabel);
-    setTitle('notifyEachCompletionLabel', UI_TEXT.static.notifyEachCompletionHint);
-    setTitle('notifyEachCompletionToggle', UI_TEXT.static.notifyEachCompletionHint);
     setText('streamlinkDisableAdsLabel', UI_TEXT.static.streamlinkDisableAdsLabel);
-    setTitle('streamlinkDisableAdsLabel', UI_TEXT.static.streamlinkDisableAdsHint);
-    setTitle('streamlinkDisableAdsToggle', UI_TEXT.static.streamlinkDisableAdsHint);
     setText('downloadChatReplayLabel', UI_TEXT.static.downloadChatReplayLabel);
-    setTitle('downloadChatReplayLabel', UI_TEXT.static.downloadChatReplayHint);
-    setTitle('downloadChatReplayToggle', UI_TEXT.static.downloadChatReplayHint);
     setText('captureLiveChatLabel', UI_TEXT.static.captureLiveChatLabel);
-    setTitle('captureLiveChatLabel', UI_TEXT.static.captureLiveChatHint);
-    setTitle('captureLiveChatToggle', UI_TEXT.static.captureLiveChatHint);
     setText('logStreamEventsLabel', UI_TEXT.static.logStreamEventsLabel);
-    setTitle('logStreamEventsLabel', UI_TEXT.static.logStreamEventsHint);
-    setTitle('logStreamEventsToggle', UI_TEXT.static.logStreamEventsHint);
-    setText('streamlinkQualityLabel', UI_TEXT.static.streamlinkQualityLabel);
-    setTitle('streamlinkQualityLabel', UI_TEXT.static.streamlinkQualityHint);
-    setTitle('streamlinkQuality', UI_TEXT.static.streamlinkQualityHint);
-    setText('streamlinkQualityBest', UI_TEXT.static.streamlinkQualityBest);
-    setText('streamlinkQualitySource', UI_TEXT.static.streamlinkQualitySource);
-    setText('streamlinkQualityAudio', UI_TEXT.static.streamlinkQualityAudio);
     setText('downloadPolicyTitle', UI_TEXT.static.downloadPolicyTitle);
     setText('downloadThrottleLabel', UI_TEXT.static.downloadThrottleLabel);
     setText('downloadThrottleHint', UI_TEXT.static.downloadThrottleHint);
     setText('downloadWindowsLabel', UI_TEXT.static.downloadWindowsLabel);
     setText('downloadWindowsHint', UI_TEXT.static.downloadWindowsHint);
+    setText('downloadWindowAddText', UI_TEXT.static.downloadWindowAdd);
+    setText('downloadWindowsEmpty', UI_TEXT.static.downloadWindowsEmpty);
+    setPlaceholder('downloadThrottleMiBps', UI_TEXT.static.downloadThrottlePlaceholder);
+    refreshDownloadWindowTexts();
     setText('downloadPolicyOverrideBtn', UI_TEXT.static.downloadPolicyOverride);
     setText('streamerSectionTitleText', UI_TEXT.static.streamerSectionTitle);
     setPlaceholder('streamerListFilter', UI_TEXT.static.streamerListFilterPlaceholder);
@@ -298,13 +349,11 @@ function applyLanguageToStaticUI(): void {
     setText('vodTemplateLabel', UI_TEXT.static.vodTemplateLabel);
     setText('partsTemplateLabel', UI_TEXT.static.partsTemplateLabel);
     setText('defaultClipTemplateLabel', UI_TEXT.static.defaultClipTemplateLabel);
-    setText('filenameTemplateHint', UI_TEXT.static.filenameTemplateHint);
-    setText('filenameTemplateLint', UI_TEXT.static.templateLintOk);
+    setText('filenameTemplateLint', '');
     setText('settingsTemplateGuideBtn', UI_TEXT.static.templateGuideButton);
     setText('clipTemplateGuideBtn', UI_TEXT.static.templateGuideButton);
-    setText('clipTemplateLint', UI_TEXT.static.templateLintOk);
+    setText('clipTemplateLint', '');
     setText('templateGuideTitle', UI_TEXT.static.templateGuideTitle);
-    setText('templateGuideIntro', UI_TEXT.static.templateGuideIntro);
     setText('templateGuideTemplateLabel', UI_TEXT.static.templateGuideTemplateLabel);
     setText('templateGuideOutputLabel', UI_TEXT.static.templateGuideOutputLabel);
     setText('templateGuideVarsTitle', UI_TEXT.static.templateGuideVarsTitle);
@@ -325,6 +374,7 @@ function applyLanguageToStaticUI(): void {
     setText('btnPreflightRun', UI_TEXT.static.preflightRun);
     setText('btnPreflightFix', UI_TEXT.static.preflightFix);
     setText('preflightResult', UI_TEXT.static.preflightEmpty);
+    if (typeof refreshLocalizedPreflightUi === 'function') refreshLocalizedPreflightUi();
     setText('managedToolsTitle', UI_TEXT.static.managedToolsTitle);
     setText('btnRefreshManagedTools', UI_TEXT.static.managedToolsRefresh);
     setText('btnRepairManagedTools', UI_TEXT.static.managedToolsRepair);
@@ -334,7 +384,6 @@ function applyLanguageToStaticUI(): void {
     setText('btnRefreshLog', UI_TEXT.static.refreshLog);
     setText('btnOpenDebugLogFile', UI_TEXT.static.openDebugLogFile);
     setText('storageCardTitle', UI_TEXT.static.storageCardTitle);
-    setText('storageCardIntro', UI_TEXT.static.storageCardIntro);
     setText('btnRefreshStorage', UI_TEXT.static.storageRefresh);
     setText('cleanupTitle', UI_TEXT.static.cleanupTitle);
     setText('cleanupIntro', UI_TEXT.static.cleanupIntro);
@@ -349,7 +398,6 @@ function applyLanguageToStaticUI(): void {
     setText('btnCleanupDryRun', UI_TEXT.static.cleanupDryRun);
     setText('btnCleanupRunNow', UI_TEXT.static.cleanupRunNow);
     setText('discordCardTitle', UI_TEXT.static.discordCardTitle);
-    setText('discordCardIntro', UI_TEXT.static.discordCardIntro);
     setText('discordWebhookUrlLabel', UI_TEXT.static.discordWebhookUrlLabel);
     setText('discordNotifyLiveStartLabel', UI_TEXT.static.discordNotifyLiveStartLabel);
     setText('discordNotifyLiveEndLabel', UI_TEXT.static.discordNotifyLiveEndLabel);
@@ -359,7 +407,6 @@ function applyLanguageToStaticUI(): void {
     setText('deletePartsAfterMergeLabel', UI_TEXT.static.deletePartsAfterMergeLabel);
     setText('discordNotifyVodAutoQueuedLabel', UI_TEXT.static.discordNotifyVodAutoQueuedLabel);
     setText('autoVodCardTitle', UI_TEXT.static.autoVodCardTitle);
-    setText('autoVodCardIntro', UI_TEXT.static.autoVodCardIntro);
     setText('autoVodPollMinutesLabel', UI_TEXT.static.autoVodPollMinutesLabel);
     setText('autoVodMaxAgeHoursLabel', UI_TEXT.static.autoVodMaxAgeHoursLabel);
     setText('btnAutoVodScanNow', UI_TEXT.static.autoVodScanNow);
@@ -368,8 +415,7 @@ function applyLanguageToStaticUI(): void {
     // Empty-state copy for the VODs grid (when no streamer is selected
     // yet) and the Merge file list (no files added yet). Both were
     // hardcoded German in the HTML — English users saw German strings.
-    setText('vodGridEmptyTitle', UI_TEXT.vods.noneTitle);
-    setText('vodGridEmptyText', UI_TEXT.vods.noneText);
+    syncVodSelectionState();
     setText('mergeEmptyText', UI_TEXT.merge.empty);
 
     // Localize the modal close-button aria-label. The buttons share a
@@ -378,8 +424,12 @@ function applyLanguageToStaticUI(): void {
     document.getElementById('cutProgressGauge')?.setAttribute('aria-label', UI_TEXT.streamers.cutProgressAria);
     document.getElementById('mergeProgressGauge')?.setAttribute('aria-label', UI_TEXT.streamers.mergeProgressAria);
     document.getElementById('updateProgressGauge')?.setAttribute('aria-label', UI_TEXT.streamers.updateProgressAria);
+    setText('clipsDiscoverButton', currentLanguage === 'de' ? 'Clips suchen' : 'Find clips');
     setText('backupCardTitle', UI_TEXT.static.backupCardTitle);
-    setText('backupCardIntro', UI_TEXT.static.backupCardIntro);
+    setText('btnCreateBackup', UI_TEXT.static.backupCreate);
+    setText('btnRestoreBackup', UI_TEXT.static.backupRestore);
+    setText('backupScopeText', UI_TEXT.static.backupScope);
+    setText('backupSettingsOnly', UI_TEXT.static.backupSettingsOnly);
     setText('btnExportConfig', UI_TEXT.static.exportConfig);
     setText('btnImportConfig', UI_TEXT.static.importConfig);
     setText('btnResetDownloadedIds', UI_TEXT.static.resetDownloadedIds);
@@ -397,17 +447,19 @@ function applyLanguageToStaticUI(): void {
     setText('workspaceUpdateDismissText', UI_TEXT.updates.dismissAria);
     setAriaLabel('workspaceUpdateDismiss', UI_TEXT.updates.dismissAria);
     setTitle('workspaceUpdateDismiss', UI_TEXT.updates.dismissAria);
-    setText('updateModalEyebrow', UI_TEXT.static.updateTitle);
     setText('updateModalTitle', UI_TEXT.updates.modalAvailableTitle);
     setText('updateModalDismissBtn', UI_TEXT.updates.modalDismiss);
-    setText('updateModalConfirmBtn', UI_TEXT.updates.modalDownloadConfirm);
+    setText('updateModalConfirmText', UI_TEXT.updates.modalDownloadConfirm);
     setText('updateModalSkipBtn', UI_TEXT.updates.modalSkipVersion);
     setText('updateChangelogLabel', UI_TEXT.updates.changelogLabel);
-    setText('updateChangelogToggle', UI_TEXT.updates.showChangelog);
+    setAriaLabel('updateChangelogToggle', UI_TEXT.updates.showChangelog);
+    setText('updatePreserveText', UI_TEXT.updates.preserveData);
     setText('updateChangelogEmpty', UI_TEXT.updates.noChangelog);
-    setPlaceholder('newStreamer', UI_TEXT.static.streamerPlaceholder);
-    setAriaLabel('newStreamer', UI_TEXT.static.streamerAddAriaLabel);
-    setPlaceholder('vodFilterInput', UI_TEXT.vods.filterPlaceholder);
+    setPlaceholder('newStreamer', UI_TEXT.streamerSearch.placeholder);
+    setAriaLabel('newStreamer', UI_TEXT.streamerSearch.label);
+    setPlaceholder('vodFilterInput', window.api.platform === 'darwin'
+        ? UI_TEXT.vods.filterPlaceholder.replace(/Ctrl|Strg/g, '⌘')
+        : UI_TEXT.vods.filterPlaceholder);
     setAriaLabel('vodFilterInput', UI_TEXT.vods.filterAria);
     setTitle('vodFilterClearBtn', UI_TEXT.vods.filterClearTitle);
     setAriaLabel('vodFilterClearBtn', UI_TEXT.vods.filterClearTitle);
@@ -425,6 +477,8 @@ function applyLanguageToStaticUI(): void {
     setTitle('toolbarClipDownloadBtn', UI_TEXT.static.downloadClip);
     setAriaLabel('toolbarCheckUpdateBtn', UI_TEXT.static.checkUpdates);
     setTitle('toolbarCheckUpdateBtn', UI_TEXT.static.checkUpdates);
+    setText('autoVodRulesBtn', currentLanguage === 'de' ? 'Kanalregeln' : 'Channel rules');
+    setText('vodMarkersButton', currentLanguage === 'de' ? 'Markierungen' : 'Markers');
     setText('vodSortLabel', UI_TEXT.vods.sortLabel);
     if (typeof refreshVodSortSelectLabels === 'function') {
         refreshVodSortSelectLabels();
@@ -458,8 +512,8 @@ function applyLanguageToStaticUI(): void {
     if (typeof workspaceSync === 'function') {
         workspaceSync(activeTabId.replace(/Tab$/, ''));
     }
-    if (typeof updateCutterPlayUi === 'function') updateCutterPlayUi();
-    if (typeof updateCutterMuteUi === 'function') updateCutterMuteUi();
+    if (typeof refreshEditingWorkflowLanguage === 'function') refreshEditingWorkflowLanguage();
+    if (typeof refreshCutterLocalizedUi === 'function') refreshCutterLocalizedUi();
     if (typeof renderCutterEditor === 'function') renderCutterEditor();
 }
 

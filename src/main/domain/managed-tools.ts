@@ -74,6 +74,8 @@ const JOURNAL_SUFFIX = '.transaction.json';
 const INVALID_JOURNAL = Symbol('invalid-journal');
 
 function findFileRecursive(rootDir: string, fileName: string): string | null {
+    const direct = path.join(rootDir, fileName);
+    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;
     try {
         const entries = fs.readdirSync(rootDir, { withFileTypes: true });
         for (const entry of entries) {
@@ -217,7 +219,7 @@ export class ManagedToolInstaller {
 
     private async installOnce(manifest: ExternalToolManifest): Promise<ManagedToolInstallResult> {
         const uniqueSuffix = crypto.randomUUID();
-        const archivePath = path.join(this.options.temporaryDirectory, `${manifest.archiveName}.${uniqueSuffix}`);
+        const archivePath = path.join(this.options.temporaryDirectory, `${uniqueSuffix}-${manifest.archiveName}`);
         const stagingDirectory = `${this.options.installationDirectory}.stage-${uniqueSuffix}`;
         const diagnostics: string[] = [];
 

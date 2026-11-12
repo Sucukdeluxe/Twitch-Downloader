@@ -11,6 +11,7 @@ export type FileCapabilityPurpose =
     | 'config-import'
     | 'config-export'
     | 'runtime-export'
+    | 'queue-output'
     | 'selected-folder'
     | 'open-file'
     | 'show-in-folder';

@@ -32,6 +32,7 @@ describe('renderer settings autosave orchestration', () => {
         inputs.get('downloadWindows')!.value = '22:00-06:00';
         const saveConfigCalls: Array<Record<string, unknown>> = [];
         const window = {
+            matchMedia: () => ({ matches: false, addEventListener: () => undefined }),
             api: {
                 setClientSecret: () => Promise.resolve({ encryptionAvailable: true, clientSecretConfigured: false, discordWebhookConfigured: false }),
                 clearClientSecret: () => Promise.resolve({ encryptionAvailable: true, clientSecretConfigured: false, discordWebhookConfigured: false }),
@@ -79,6 +80,7 @@ describe('renderer settings autosave orchestration', () => {
         const setClientSecretCalls: string[] = [];
         const saveConfigCalls: unknown[] = [];
         const window = {
+            matchMedia: () => ({ matches: false, addEventListener: () => undefined }),
             api: {
                 setClientSecret(value: string) {
                     setClientSecretCalls.push(value);

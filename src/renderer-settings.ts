@@ -1,5 +1,5 @@
 let lastRuntimeMetricsOutput = '';
-let lastDebugLogOutput = '';
+let lastDebugLogOutput: string | null = null;
 let settingsAutoSaveBound = false;
 let settingsAutoSaveInFlight = false;
 let pendingSettingsAutoSave = false;
@@ -7,6 +7,30 @@ let settingsAutoSaveTimer: number | null = null;
 let pendingCredentialsReconnect = false;
 let lastPersistedSettingsFingerprint = '';
 let settingsInputGeneration = 0;
+let settingsSaveFailed = false;
+const settingsSaveWaiters = new Set<() => void>();
+
+function renderSettingsSaveStatus(): void {
+    const notice = document.getElementById('settingsSaveNotice');
+    if (!notice) return;
+    notice.hidden = !settingsSaveFailed;
+    byId('settingsSaveMessage').textContent = currentLanguage === 'de' ? 'Änderungen nicht gespeichert.' : 'Changes were not saved.';
+    byId('settingsSaveRetry').textContent = currentLanguage === 'de' ? 'Erneut speichern' : 'Retry saving';
+}
+
+function setSettingsSaveFailed(failed: boolean): void {
+    if (failed && !settingsSaveFailed) showAppToast(currentLanguage === 'de' ? 'Einstellungen konnten nicht gespeichert werden.' : 'Settings could not be saved.', 'warn');
+    settingsSaveFailed = failed;
+    renderSettingsSaveStatus();
+}
+
+async function reconnectSettings(): Promise<void> {
+    try { await connect(); }
+    catch { updateStatus(UI_TEXT.status.connectFailedPublic, false, 'public'); }
+}
+let lastPreflightResult: PreflightResult | null = null;
+let preflightFailed = false;
+let preflightGeneration = 0;
 const SECRET_INPUT_MASK = '••••••••';
 let secretStatus: SecretStatus = {
     encryptionAvailable: false,
@@ -19,12 +43,25 @@ const secretInputGenerations: Record<SecretInputId, number> = {
     discordWebhookUrl: 0
 };
 
-function canRunSettingsAutoRefresh(): boolean {
-    if (document.hidden) {
-        return false;
-    }
+function canRunSettingsAutoRefresh(targetId?: string): boolean {
+    if (document.hidden || document.querySelector('.tab-content.active')?.id !== 'settingsTab') return false;
+    if (!targetId) return true;
+    const target = document.getElementById(targetId);
+    if (!target || target.closest('[hidden]') || target.closest('details:not([open])')) return false;
+    const rect = target.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+}
 
-    return document.querySelector('.tab-content.active')?.id === 'settingsTab';
+let debugRefreshInFlight = false;
+let metricsRefreshInFlight = false;
+let automationRefreshInFlight = false;
+
+function refreshVisibleSettingsDiagnostics(): void {
+    if (byId<HTMLInputElement>('debugAutoRefresh')?.checked && canRunSettingsAutoRefresh('debugLogOutput')) void refreshDebugLog();
+    if (byId<HTMLInputElement>('runtimeMetricsAutoRefresh')?.checked) {
+        if (canRunSettingsAutoRefresh('runtimeMetricsOutput')) void refreshRuntimeMetrics(false);
+        if (canRunSettingsAutoRefresh('autoVodStatusLine')) void refreshAutomationStatusLine();
+    }
 }
 
 function markSettingsInputChanged(): void {
@@ -46,11 +83,46 @@ async function connect(): Promise<void> {
 }
 
 function formatBytesForMetrics(bytes: number): string {
-    const value = Math.max(0, Number(bytes) || 0);
-    if (value < 1024) return `${value.toFixed(0)} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    return formatBytes(bytes);
+}
+
+function formatRuntimeMetricSummary(template: string, values: Record<string, string | number>): string {
+    return Object.entries(values).reduce(
+        (summary, [key, value]) => summary.replace(`{${key}}`, String(value)),
+        template
+    );
+}
+
+function getRuntimePerformanceModeLabel(mode: RuntimeMetricsSnapshot['config']['performanceMode']): string {
+    const labels: Record<RuntimeMetricsSnapshot['config']['performanceMode'], string> = {
+        stability: UI_TEXT.static.performanceModeStability,
+        balanced: UI_TEXT.static.performanceModeBalanced,
+        speed: UI_TEXT.static.performanceModeSpeed
+    };
+    return labels[mode];
+}
+
+function getRuntimeBooleanLabel(value: boolean): string {
+    return value ? UI_TEXT.static.runtimeMetricEnabled : UI_TEXT.static.runtimeMetricDisabled;
+}
+
+function formatRuntimeMetricCount(count: number, singular: string, plural: string): string {
+    return formatRuntimeMetricSummary(count === 1 ? singular : plural, { count });
+}
+
+function getRuntimeErrorClassLabel(errorClass: string | null): string {
+    if (!errorClass) return '-';
+    const labels: Record<string, string> = {
+        network: UI_TEXT.static.runtimeMetricErrorNetwork,
+        rate_limit: UI_TEXT.static.runtimeMetricErrorRateLimit,
+        auth: UI_TEXT.static.runtimeMetricErrorAuth,
+        tooling: UI_TEXT.static.runtimeMetricErrorTooling,
+        integrity: UI_TEXT.static.runtimeMetricErrorIntegrity,
+        io: UI_TEXT.static.runtimeMetricErrorIo,
+        validation: UI_TEXT.static.runtimeMetricErrorValidation,
+        unknown: UI_TEXT.static.runtimeMetricErrorUnknown
+    };
+    return labels[errorClass] ?? UI_TEXT.static.runtimeMetricErrorUnknown;
 }
 
 function validateFilenameTemplates(showAlert = false): boolean {
@@ -66,7 +138,7 @@ function validateFilenameTemplates(showAlert = false): boolean {
 
     if (!uniqueUnknown.length) {
         lintNode.className = 'template-lint ok';
-        lintNode.textContent = UI_TEXT.static.templateLintOk;
+        lintNode.textContent = '';
         return true;
     }
 
@@ -113,6 +185,8 @@ function applyTemplatePreset(preset: string): void {
 }
 
 async function refreshRuntimeMetrics(showLoading = true): Promise<void> {
+    if (metricsRefreshInFlight) return;
+    metricsRefreshInFlight = true;
     const output = byId('runtimeMetricsOutput');
     if (showLoading) {
         output.textContent = UI_TEXT.static.runtimeMetricsLoading;
@@ -121,15 +195,44 @@ async function refreshRuntimeMetrics(showLoading = true): Promise<void> {
     try {
         const metrics = await window.api.getRuntimeMetrics();
         const lines = [
-            `${UI_TEXT.static.runtimeMetricQueue}: ${metrics.queue.total} total (${metrics.queue.pending} pending, ${metrics.queue.downloading} downloading, ${metrics.queue.error} failed)`,
-            `${UI_TEXT.static.runtimeMetricMode}: ${metrics.config.performanceMode} | smartScheduler=${metrics.config.smartScheduler} | dedupe=${metrics.config.duplicatePrevention}`,
-            `${UI_TEXT.static.runtimeMetricRetries}: ${metrics.retriesScheduled} scheduled, ${metrics.retriesExhausted} exhausted`,
+            `${UI_TEXT.static.runtimeMetricQueue}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricQueueSummary, {
+                total: metrics.queue.total,
+                pending: metrics.queue.pending,
+                downloading: metrics.queue.downloading,
+                failed: metrics.queue.error
+            })}`,
+            `${UI_TEXT.static.runtimeMetricMode}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricModeSummary, {
+                mode: getRuntimePerformanceModeLabel(metrics.config.performanceMode),
+                smartScheduler: getRuntimeBooleanLabel(metrics.config.smartScheduler),
+                duplicatePrevention: getRuntimeBooleanLabel(metrics.config.duplicatePrevention)
+            })}`,
+            `${UI_TEXT.static.runtimeMetricRetries}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricRetriesSummary, {
+                scheduled: metrics.retriesScheduled,
+                exhausted: metrics.retriesExhausted
+            })}`,
             `${UI_TEXT.static.runtimeMetricIntegrity}: ${metrics.integrityFailures}`,
-            `${UI_TEXT.static.runtimeMetricCache}: hits=${metrics.cacheHits}, misses=${metrics.cacheMisses}, vod=${metrics.caches.vodList}, users=${metrics.caches.loginToUserId}, clips=${metrics.caches.clipInfo}`,
-            `${UI_TEXT.static.runtimeMetricBandwidth}: current=${formatBytesForMetrics(metrics.lastSpeedBytesPerSec)}/s, avg=${formatBytesForMetrics(metrics.avgSpeedBytesPerSec)}/s`,
-            `${UI_TEXT.static.runtimeMetricDownloads}: started=${metrics.downloadsStarted}, done=${metrics.downloadsCompleted}, failed=${metrics.downloadsFailed}, bytes=${formatBytesForMetrics(metrics.downloadedBytesTotal)}`,
+            `${UI_TEXT.static.runtimeMetricCache}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricCacheSummary, {
+                hits: formatRuntimeMetricCount(metrics.cacheHits, UI_TEXT.static.runtimeMetricCacheHitOne, UI_TEXT.static.runtimeMetricCacheHitMany),
+                misses: formatRuntimeMetricCount(metrics.cacheMisses, UI_TEXT.static.runtimeMetricCacheMissOne, UI_TEXT.static.runtimeMetricCacheMissMany),
+                vods: formatRuntimeMetricCount(metrics.caches.vodList, UI_TEXT.static.runtimeMetricCacheVodOne, UI_TEXT.static.runtimeMetricCacheVodMany),
+                users: formatRuntimeMetricCount(metrics.caches.loginToUserId, UI_TEXT.static.runtimeMetricCacheUserOne, UI_TEXT.static.runtimeMetricCacheUserMany),
+                clips: formatRuntimeMetricCount(metrics.caches.clipInfo, UI_TEXT.static.runtimeMetricCacheClipOne, UI_TEXT.static.runtimeMetricCacheClipMany)
+            })}`,
+            `${UI_TEXT.static.runtimeMetricBandwidth}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricBandwidthSummary, {
+                current: formatBytesForMetrics(metrics.lastSpeedBytesPerSec),
+                average: formatBytesForMetrics(metrics.avgSpeedBytesPerSec)
+            })}`,
+            `${UI_TEXT.static.runtimeMetricDownloads}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricDownloadsSummary, {
+                started: metrics.downloadsStarted,
+                completed: metrics.downloadsCompleted,
+                failed: metrics.downloadsFailed,
+                bytes: formatBytesForMetrics(metrics.downloadedBytesTotal)
+            })}`,
             `${UI_TEXT.static.runtimeMetricActive}: ${metrics.activeItemTitle || '-'} (${metrics.activeItemId || '-'})`,
-            `${UI_TEXT.static.runtimeMetricLastError}: ${metrics.lastErrorClass || '-'}, retryDelay=${metrics.lastRetryDelaySeconds}s`,
+            `${UI_TEXT.static.runtimeMetricLastError}: ${formatRuntimeMetricSummary(UI_TEXT.static.runtimeMetricLastErrorSummary, {
+                errorClass: getRuntimeErrorClassLabel(metrics.lastErrorClass),
+                retryDelay: metrics.lastRetryDelaySeconds
+            })}`,
             `${UI_TEXT.static.runtimeMetricUpdated}: ${new Date(metrics.timestamp).toLocaleString(currentLanguage === 'en' ? 'en-US' : 'de-DE')}`
         ];
 
@@ -139,11 +242,9 @@ async function refreshRuntimeMetrics(showLoading = true): Promise<void> {
             lastRuntimeMetricsOutput = nextOutput;
         }
     } catch {
-        if (lastRuntimeMetricsOutput !== UI_TEXT.static.runtimeMetricsError) {
-            output.textContent = UI_TEXT.static.runtimeMetricsError;
-            lastRuntimeMetricsOutput = UI_TEXT.static.runtimeMetricsError;
-        }
-    }
+        output.textContent = UI_TEXT.static.runtimeMetricsError;
+        lastRuntimeMetricsOutput = UI_TEXT.static.runtimeMetricsError;
+    } finally { metricsRefreshInFlight = false; }
 }
 
 async function exportRuntimeMetrics(): Promise<void> {
@@ -179,12 +280,8 @@ function toggleRuntimeMetricsAutoRefresh(enabled: boolean): void {
 
     if (enabled) {
         runtimeMetricsAutoRefreshTimer = window.setInterval(() => {
-            if (!canRunSettingsAutoRefresh()) {
-                return;
-            }
-
-            void refreshRuntimeMetrics(false);
-            void refreshAutomationStatusLine();
+            if (canRunSettingsAutoRefresh('runtimeMetricsOutput')) void refreshRuntimeMetrics(false);
+            if (canRunSettingsAutoRefresh('autoVodStatusLine')) void refreshAutomationStatusLine();
         }, 2000);
     }
 }
@@ -213,42 +310,73 @@ function filterSettings(query: string): void {
         return searchableText.includes(normalizedQuery);
     });
     const pane = match?.dataset.settingsPane;
-    if (pane) setSettingsPane(pane);
+    if (pane) {
+        setSettingsPane(pane);
+        match?.querySelectorAll<HTMLDetailsElement>('details.settings-advanced').forEach(details => {
+            if ((details.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery)) setSettingsSectionExpanded(details, true);
+        });
+        const section = Array.from(match?.querySelectorAll<HTMLElement>('.settings-section') || []).find(element => (element.textContent || '').toLocaleLowerCase(getIntlLocale()).includes(normalizedQuery));
+        requestAnimationFrame(() => (section || match)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    }
+}
+
+const SETTINGS_GROUPS: Record<string, { de: string; en: string }> = {
+    general: { de: 'Allgemein', en: 'General' },
+    api: { de: 'Twitch-Verbindung', en: 'Twitch connection' },
+    downloads: { de: 'Downloads', en: 'Downloads' },
+    automation: { de: 'Automatisierung', en: 'Automation' },
+    storage: { de: 'Speicher & Sicherung', en: 'Storage & backup' },
+    system: { de: 'System & Diagnose', en: 'System & diagnostics' }
+};
+
+function refreshSettingsGroupLabels(): void {
+    renderSettingsSaveStatus();
+    const language = currentLanguage === 'en' ? 'en' : 'de';
+    const pane = byId<HTMLElement>('settingsTab').dataset.settingsPane || 'general';
+    const labels = SETTINGS_GROUPS[pane] || SETTINGS_GROUPS.general;
+    byId('settingsGroupTitle').textContent = labels[language];
+    for (const [id, group] of Object.entries({ settingsGeneralNav: 'general', settingsAutomationNav: 'automation', settingsStorageNav: 'storage', settingsSystemNav: 'system' })) {
+        byId(id).textContent = SETTINGS_GROUPS[group][language];
+    }
 }
 
 function setSettingsPane(pane: string, source?: HTMLElement): void {
     const tab = byId<HTMLElement>('settingsTab');
     const cards = Array.from(tab.querySelectorAll<HTMLElement>('.settings-card[data-settings-pane]'));
-    const targetCard = cards.find((card) => card.dataset.settingsPane === pane);
-    if (!targetCard) return;
-
-    tab.dataset.settingsPane = pane;
+    const group = SETTINGS_GROUPS[pane] ? pane : cards.find((card) => card.dataset.settingsPane === pane)?.dataset.settingsGroup;
+    if (!group) return;
+    const changed = tab.dataset.settingsPane !== group;
+    tab.dataset.settingsPane = group;
     cards.forEach((card) => {
-        card.hidden = card !== targetCard;
+        card.hidden = card.dataset.settingsGroup !== group;
     });
-
     const panel = document.querySelector<HTMLElement>('[data-context-for="settings"]');
     const buttons = Array.from(panel?.querySelectorAll<HTMLButtonElement>('.context-link[data-settings-pane]') || []);
-    const targetButton = source || buttons.find((button) => button.dataset.settingsPane === pane);
     buttons.forEach((button) => {
-        const active = button === targetButton;
+        const active = button.dataset.settingsPane === group;
         button.classList.toggle('active', active);
         if (active) button.setAttribute('aria-current', 'page');
         else button.removeAttribute('aria-current');
     });
-
     if (source) byId<HTMLInputElement>('settingsSearchInput').value = '';
-    tab.scrollTop = 0;
-    const list = panel?.querySelector<HTMLElement>('.context-list');
-    if (list) scheduleSegmentedIndicatorSync(list);
+    if (changed) tab.scrollTop = 0;
+    if (changed) requestAnimationFrame(refreshVisibleSettingsDiagnostics);
+    if (group === 'storage' && !byId('storageSummary').textContent?.trim()) void refreshStorageStats();
+    refreshSettingsGroupLabels();
+    scheduleSegmentedIndicatorsSync();
 }
 
 function changeLanguage(lang: string): void {
+    applyRendererLanguage(lang);
+    markSettingsInputChanged();
+    void flushSettingsAutoSave();
+}
+
+function applyRendererLanguage(lang: string): LanguageCode {
     const normalized = setLanguage(lang);
     byId<HTMLSelectElement>('languageSelect').value = normalized;
     updateLanguagePicker(normalized);
     config.language = normalized;
-    void window.api.saveConfig({ language: normalized });
 
     const currentStatus = byId('statusText').textContent?.trim() || '';
     const statusTone: ConnectionStatusTone = isConnected
@@ -276,8 +404,11 @@ function changeLanguage(lang: string): void {
 
     void refreshRuntimeMetrics();
     void refreshAutomationStatusLine();
+    refreshLocalizedPreflightUi();
     validateFilenameTemplates();
+    refreshSettingsGroupLabels();
     filterSettings(byId<HTMLInputElement>('settingsSearchInput').value);
+    return normalized;
 }
 
 function updateLanguagePicker(lang: string): void {
@@ -296,30 +427,66 @@ function selectLanguageOption(lang: string): void {
     changeLanguage(lang);
 }
 
-function renderPreflightResult(result: PreflightResult): void {
-    const entries = [
-        [UI_TEXT.static.preflightInternet, result.checks.internet],
-        [UI_TEXT.static.preflightStreamlink, result.checks.streamlink],
-        [UI_TEXT.static.preflightFfmpeg, result.checks.ffmpeg],
-        [UI_TEXT.static.preflightFfprobe, result.checks.ffprobe],
-        [UI_TEXT.static.preflightPath, result.checks.downloadPathWritable]
-    ];
+function renderPreflightButtonLabels(): void {
+    const runButton = byId<HTMLButtonElement>('btnPreflightRun');
+    const fixButton = byId<HTMLButtonElement>('btnPreflightFix');
+    runButton.textContent = runButton.disabled ? UI_TEXT.static.preflightChecking : UI_TEXT.static.preflightRun;
+    fixButton.textContent = fixButton.disabled ? UI_TEXT.static.preflightFixing : UI_TEXT.static.preflightFix;
+}
 
+function refreshLocalizedPreflightUi(): void {
+    renderPreflightButtonLabels();
+    if (lastPreflightResult) renderPreflightResult(lastPreflightResult);
+    else if (preflightFailed) renderPreflightError();
+}
+
+function invalidatePreflightResult(): void {
+    preflightGeneration += 1;
+    lastPreflightResult = null;
+    preflightFailed = false;
+    renderUnknownPreflightState(UI_TEXT.static.preflightEmpty);
+}
+
+function renderUnknownPreflightState(message: string): void {
+    byId('preflightResult').textContent = message;
+    const badge = byId('healthBadge');
+    badge.classList.remove('good', 'warn', 'bad', 'unknown');
+    badge.classList.add('unknown');
+    badge.textContent = UI_TEXT.static.healthUnknown;
+}
+
+function renderPreflightError(): void {
+    lastPreflightResult = null;
+    preflightFailed = true;
+    renderUnknownPreflightState(UI_TEXT.static.preflightError);
+}
+
+function renderPreflightResult(result: PreflightResult): void {
+    lastPreflightResult = result;
+    preflightFailed = false;
+    const entries: Array<[string, boolean, string]> = [
+        [UI_TEXT.static.preflightInternet, result.checks.internet, UI_TEXT.static.preflightNoInternet],
+        [UI_TEXT.static.preflightStreamlink, result.checks.streamlink, UI_TEXT.static.preflightStreamlinkMissing],
+        [UI_TEXT.static.preflightFfmpeg, result.checks.ffmpeg, UI_TEXT.static.preflightFfmpegMissing],
+        [UI_TEXT.static.preflightFfprobe, result.checks.ffprobe, UI_TEXT.static.preflightFfprobeMissing],
+        [UI_TEXT.static.preflightPath, result.checks.downloadPathWritable, UI_TEXT.static.preflightDownloadPathNotWritable]
+    ];
+    const localizedIssues = entries.filter(([, ok]) => !ok).map(([, , message]) => message);
     const lines = entries.map(([name, ok]) => `${ok ? 'OK' : 'FAIL'} ${name}`).join('\n');
-    const extra = result.messages.length ? `\n\n${result.messages.join('\n')}` : `\n\n${UI_TEXT.static.preflightReady}`;
+    const extra = localizedIssues.length ? `\n\n${localizedIssues.join('\n')}` : `\n\n${UI_TEXT.static.preflightReady}`;
 
     byId('preflightResult').textContent = `${lines}${extra}`;
 
     const badge = byId('healthBadge');
     badge.classList.remove('good', 'warn', 'bad', 'unknown');
 
-    if (result.ok) {
+    const failCount = localizedIssues.length;
+    if (failCount === 0) {
         badge.classList.add('good');
         badge.textContent = UI_TEXT.static.healthGood;
         return;
     }
 
-    const failCount = Object.values(result.checks).filter((ok) => !ok).length;
     if (failCount <= 2) {
         badge.classList.add('warn');
         badge.textContent = UI_TEXT.static.healthWarn;
@@ -331,16 +498,18 @@ function renderPreflightResult(result: PreflightResult): void {
 
 async function runPreflight(autoFix = false): Promise<void> {
     const btn = byId<HTMLButtonElement>(autoFix ? 'btnPreflightFix' : 'btnPreflightRun');
-    const old = btn.textContent || '';
+    const generation = ++preflightGeneration;
     btn.disabled = true;
-    btn.textContent = autoFix ? UI_TEXT.static.preflightFixing : UI_TEXT.static.preflightChecking;
+    renderPreflightButtonLabels();
 
     try {
         const result = await window.api.runPreflight(autoFix);
-        renderPreflightResult(result);
+        if (generation === preflightGeneration) renderPreflightResult(result);
+    } catch {
+        if (generation === preflightGeneration) renderPreflightError();
     } finally {
         btn.disabled = false;
-        btn.textContent = old;
+        renderPreflightButtonLabels();
     }
 }
 
@@ -358,7 +527,11 @@ function getManagedToolStateLabel(state: ManagedToolStatus['state']): string {
 function renderManagedToolStatus(statuses: ManagedToolStatuses): void {
     const lines = [statuses.streamlink, statuses.ffmpeg].map((status) => {
         const verification = status.verified ? UI_TEXT.static.managedToolsVerified : UI_TEXT.static.managedToolsUnverified;
-        return `${status.id} ${status.version}: ${getManagedToolStateLabel(status.state)} · ${verification}`;
+        const parts = [`${status.id} ${status.version}: ${getManagedToolStateLabel(status.state)} · ${verification}`];
+        if (!status.verified && status.fallbackRunnable) {
+            parts.push(UI_TEXT.static.managedToolsFallbackActive);
+        }
+        return parts.join(' · ');
     });
     byId('managedToolStatus').textContent = lines.join('\n');
 }
@@ -378,7 +551,10 @@ async function repairManagedTools(): Promise<void> {
     byId('managedToolStatus').textContent = UI_TEXT.static.managedToolsRepairing;
     try {
         const result = await window.api.repairManagedTools();
-        if (result) renderManagedToolStatus(result.statuses);
+        if (result) {
+            renderManagedToolStatus(result.statuses);
+            invalidatePreflightResult();
+        }
     } finally {
         for (const button of buttons) button.disabled = false;
     }
@@ -387,50 +563,93 @@ async function repairManagedTools(): Promise<void> {
 async function resetManagedTools(): Promise<void> {
     if (!confirm(UI_TEXT.static.managedToolsResetConfirm)) return;
     const result = await window.api.resetManagedTools();
-    if (result) renderManagedToolStatus(result.statuses);
-}
-
-async function runCleanupDryRun(): Promise<void> {
-    await runCleanupOnce(true);
-}
-
-async function runCleanupNow(): Promise<void> {
-    await runCleanupOnce(false);
-}
-
-async function runCleanupOnce(dryRun: boolean): Promise<void> {
-    const reportEl = byId('cleanupReport');
-    const dryBtn = byId<HTMLButtonElement>('btnCleanupDryRun');
-    const runBtn = byId<HTMLButtonElement>('btnCleanupRunNow');
-    dryBtn.disabled = true;
-    runBtn.disabled = true;
-    reportEl.textContent = UI_TEXT.static.storageScanning;
-
-    try {
-        const report = await window.api.runStorageCleanup({ dryRun });
-        if (report.candidates === 0) {
-            reportEl.textContent = UI_TEXT.static.cleanupReportEmpty.replace('{days}', String(report.cutoffDays));
-        } else if (dryRun) {
-            reportEl.textContent = UI_TEXT.static.cleanupReportPreview
-                .replace('{count}', String(report.candidates))
-                .replace('{size}', formatBytesForMetrics(report.bytesFreed));
-        } else {
-            const failedSuffix = report.failed > 0
-                ? UI_TEXT.static.cleanupReportFailedSuffix.replace('{failed}', String(report.failed))
-                : '';
-            reportEl.textContent = UI_TEXT.static.cleanupReportDone
-                .replace('{count}', String(report.processed))
-                .replace('{size}', formatBytesForMetrics(report.bytesFreed))
-                .replace('{failed}', failedSuffix);
-            // Refresh the storage list since files moved/disappeared.
-            void refreshStorageStats();
-        }
-    } catch (e) {
-        reportEl.textContent = String(e);
-    } finally {
-        dryBtn.disabled = false;
-        runBtn.disabled = false;
+    if (result) {
+        renderManagedToolStatus(result.statuses);
+        invalidatePreflightResult();
     }
+}
+
+let cleanupPreviewToken: string | null = null;
+let cleanupPreviewItems: CleanupReport['items'] = [];
+let cleanupPreviewPage = 0;
+let cleanupRequestBusy = false;
+let cleanupSettingsRevision = 0;
+function initializeCleanupPreview(): void {
+    const host = byId('cleanupReport');
+    const preview = document.createElement('div');
+    preview.id = 'cleanupPreview'; preview.className = 'cleanup-preview'; preview.hidden = true;
+    host.after(preview);
+    for (const id of ['autoCleanupDays', 'autoCleanupTarget', 'autoCleanupAction', 'autoCleanupEnabledToggle', 'downloadPath']) {
+        byId(id).addEventListener('input', () => {
+            cleanupSettingsRevision++; cleanupPreviewToken = null; cleanupPreviewItems = [];
+            preview.hidden = true; byId<HTMLButtonElement>('btnCleanupRunNow').disabled = true;
+        });
+    }
+    byId<HTMLButtonElement>('btnCleanupRunNow').disabled = true;
+}
+function renderCleanupPreview(report: CleanupReport): void {
+    const host = byId('cleanupPreview'); host.replaceChildren();
+    host.hidden = !cleanupPreviewItems.length && !report.recoveryPaths.length;
+    if (report.recoveryPaths.length) {
+        const recovery = document.createElement('button'); recovery.type = 'button'; recovery.className = 'btn-secondary';
+        recovery.textContent = currentLanguage === 'de' ? 'Unterbrochene Bereinigung wiederherstellen' : 'Restore interrupted cleanup';
+        recovery.addEventListener('click', async () => {
+            recovery.disabled = true;
+            try { await window.api.recoverStorageCleanup(); await runCleanupOnce(true); }
+            catch { showAppToast(currentLanguage === 'de' ? 'Wiederherstellung fehlgeschlagen.' : 'Restore failed.', 'warn'); recovery.disabled = false; }
+        }); host.append(recovery);
+    }
+    const list = document.createElement('ul'); list.className = 'cleanup-preview-list';
+    for (const item of cleanupPreviewItems.slice(cleanupPreviewPage * 100, (cleanupPreviewPage + 1) * 100)) {
+        const row = document.createElement('li');
+        const name = document.createElement('strong'); name.textContent = item.videoPath.split(/[\\/]/).pop() || item.videoPath; name.title = item.videoPath;
+        const metadata = document.createElement('span'); metadata.textContent = [formatUiNumber(item.ageDays) + (currentLanguage === 'de' ? ' Tage' : ' days'), formatBytesForMetrics(item.bytes), item.sidecarPaths.length ? formatUiNumber(item.sidecarPaths.length) + (currentLanguage === 'de' ? ' Begleitdateien' : ' sidecars') : ''].filter(Boolean).join(' · ');
+        row.append(name, metadata); list.append(row);
+    }
+    host.append(list);
+    if (cleanupPreviewItems.length > 100) {
+        const navigation = document.createElement('div'); navigation.className = 'cleanup-preview-navigation';
+        for (const direction of [-1, 1]) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'btn-secondary';
+            button.textContent = direction < 0 ? (currentLanguage === 'de' ? 'Zurück' : 'Previous') : (currentLanguage === 'de' ? 'Weiter' : 'Next');
+            button.disabled = direction < 0 ? cleanupPreviewPage === 0 : (cleanupPreviewPage + 1) * 100 >= cleanupPreviewItems.length;
+            button.addEventListener('click', () => { cleanupPreviewPage += direction; renderCleanupPreview(report); }); navigation.append(button);
+        }
+        const count = document.createElement('span'); count.textContent = formatUiNumber(cleanupPreviewPage + 1) + ' / ' + formatUiNumber(Math.ceil(cleanupPreviewItems.length / 100)); navigation.append(count); host.append(navigation);
+    }
+}
+async function runCleanupDryRun(): Promise<void> { await runCleanupOnce(true); }
+async function runCleanupNow(): Promise<void> { await runCleanupOnce(false); }
+async function runCleanupOnce(dryRun: boolean): Promise<void> {
+    if (cleanupRequestBusy || !dryRun && !cleanupPreviewToken) return;
+    const revision = cleanupSettingsRevision;
+    const token = cleanupPreviewToken;
+    cleanupPreviewToken = null; cleanupRequestBusy = true;
+    const reportEl = byId('cleanupReport');
+    const dryBtn = byId<HTMLButtonElement>('btnCleanupDryRun'), runBtn = byId<HTMLButtonElement>('btnCleanupRunNow');
+    dryBtn.disabled = runBtn.disabled = true; reportEl.textContent = UI_TEXT.static.storageScanning;
+    try {
+        const report = await window.api.runStorageCleanup({ dryRun, token: token || undefined });
+        if (revision !== cleanupSettingsRevision) return;
+        cleanupPreviewItems = report.items; cleanupPreviewPage = 0;
+        if (report.dryRun) {
+            cleanupPreviewToken = report.recoveryPaths.length ? null : report.token;
+            reportEl.textContent = formatUiNumber(report.candidates) + (currentLanguage === 'de' ? ' Videos · ' : ' videos · ') + formatBytesForMetrics(report.bytesAffected);
+        } else {
+            const action = report.action === 'delete' ? (currentLanguage === 'de' ? ' Videos im Papierkorb' : ' videos in Recycle Bin') : (currentLanguage === 'de' ? ' Videos archiviert' : ' videos archived');
+            reportEl.textContent = formatUiNumber(report.processed) + action + ' · ' + formatBytesForMetrics(report.bytesAffected);
+            if (report.skipped) reportEl.textContent += ' · ' + formatUiNumber(report.skipped) + (currentLanguage === 'de' ? ' geändert oder in Verwendung' : ' changed or in use');
+            if (report.failed) reportEl.textContent += ' · ' + formatUiNumber(report.failed) + (currentLanguage === 'de' ? ' fehlgeschlagen' : ' failed');
+            cleanupPreviewItems = []; void refreshStorageStats();
+        }
+        renderCleanupPreview(report);
+        if (report.failures.length) {
+            const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = currentLanguage === 'de' ? 'Details' : 'Details';
+            const text = document.createElement('pre'); text.textContent = report.failures.map(item => item.path + ': ' + item.error).join('\n'); details.append(summary, text); byId('cleanupPreview').append(details); byId('cleanupPreview').hidden = false;
+        }
+    } catch (error) {
+        reportEl.textContent = String(error).includes('preview-') ? (currentLanguage === 'de' ? 'Vorschau erneuern.' : 'Refresh preview.') : (currentLanguage === 'de' ? 'Bereinigung fehlgeschlagen.' : 'Cleanup failed.');
+    } finally { cleanupRequestBusy = false; dryBtn.disabled = false; runBtn.disabled = !cleanupPreviewToken || !cleanupPreviewItems.length; }
 }
 
 async function refreshStorageStats(): Promise<void> {
@@ -465,14 +684,14 @@ function renderStorageStats(stats: StorageStatsResult): void {
     }
 
     summary.textContent = UI_TEXT.static.storageSummary
-        .replace('{files}', String(stats.totalFiles))
+        .replace('{files}', formatUiNumber(stats.totalFiles))
         .replace('{size}', formatBytesForMetrics(stats.totalBytes))
         .replace('{free}', stats.freeBytes !== null ? formatBytesForMetrics(stats.freeBytes) : '-');
 
     list.replaceChildren();
     if (stats.streamers.length === 0 && stats.extras.length === 0) return;
 
-    const buildTable = (rows: StreamerStorageEntry[]): HTMLTableElement => {
+    const buildTable = (rows: StreamerStorageEntry[]): HTMLElement => {
         const table = document.createElement('table');
         table.className = 'storage-stats-table';
 
@@ -504,7 +723,7 @@ function renderStorageStats(stats: StorageStatsResult): void {
             const tr = document.createElement('tr');
             const cells: Array<string | HTMLElement> = [
                 row.name,
-                String(row.fileCount),
+                formatUiNumber(row.fileCount),
                 formatBytesForMetrics(row.totalBytes),
                 row.liveBytes > 0 ? formatBytesForMetrics(row.liveBytes) : '-',
                 row.chatBytes > 0 ? formatBytesForMetrics(row.chatBytes) : '-'
@@ -528,7 +747,13 @@ function renderStorageStats(stats: StorageStatsResult): void {
             tbody.appendChild(tr);
         }
         table.appendChild(tbody);
-        return table;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'storage-table-scroll';
+        wrapper.tabIndex = 0;
+        wrapper.setAttribute('role', 'region');
+        wrapper.setAttribute('aria-label', UI_TEXT.static.storageCardTitle);
+        wrapper.appendChild(table);
+        return wrapper;
     };
 
     if (stats.streamers.length > 0) {
@@ -559,17 +784,25 @@ async function importConfigFromFile(): Promise<void> {
     const result = await window.api.importConfig();
     const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
     if (result.success) {
+        invalidatePreflightResult();
         // Reload local config copy + refresh forms / streamer list / VOD grid
         try {
-            config = await window.api.getConfig();
-            if (typeof setLanguage === 'function' && typeof config.language === 'string') {
-                setLanguage(config.language);
-            }
-            if (typeof renderStreamers === 'function') renderStreamers();
+            const currentConfig = config;
+            const importedConfig = await window.api.getConfig();
+            const language = typeof importedConfig.language === 'string'
+                ? importedConfig.language
+                : typeof currentConfig.language === 'string'
+                    ? currentConfig.language
+                    : currentLanguage;
+            const theme = typeof importedConfig.theme === 'string'
+                ? importedConfig.theme
+                : typeof currentConfig.theme === 'string'
+                    ? currentConfig.theme
+                    : byId<HTMLSelectElement>('themeSelect').value || 'twitch';
+            config = { ...currentConfig, ...importedConfig, language, theme };
             if (typeof syncSettingsFormFromConfig === 'function') syncSettingsFormFromConfig();
-            if (typeof renderVodGridFromCurrentState === 'function' && lastLoadedStreamer) {
-                renderVodGridFromCurrentState();
-            }
+            applyRendererTheme(theme);
+            applyRendererLanguage(language);
         } catch { /* ignore — next refresh will catch up */ }
         if (toast) toast(UI_TEXT.static.configImported, 'info');
     } else if (result.cancelled) {
@@ -606,18 +839,18 @@ async function openDebugLogFile(): Promise<void> {
 }
 
 async function refreshDebugLog(): Promise<void> {
-    const text = await window.api.getDebugLog(250);
+    if (debugRefreshInFlight) return;
+    debugRefreshInFlight = true;
     const panel = byId('debugLogOutput');
-    const keepAtBottom = (panel.scrollHeight - panel.scrollTop - panel.clientHeight) < 20;
-
-    if (text !== lastDebugLogOutput) {
-        panel.textContent = text;
-        lastDebugLogOutput = text;
-    }
-
-    if (keepAtBottom) {
-        panel.scrollTop = panel.scrollHeight;
-    }
+    try {
+        const text = await window.api.getDebugLog(250);
+        const keepAtBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 20;
+        if (text !== lastDebugLogOutput) { panel.textContent = text; lastDebugLogOutput = text; }
+        if (keepAtBottom) panel.scrollTop = panel.scrollHeight;
+    } catch {
+        lastDebugLogOutput = null;
+        panel.textContent = currentLanguage === 'de' ? 'Protokoll konnte nicht geladen werden.' : 'Could not load the log.';
+    } finally { debugRefreshInFlight = false; }
 }
 
 function toggleDebugAutoRefresh(enabled: boolean): void {
@@ -628,11 +861,7 @@ function toggleDebugAutoRefresh(enabled: boolean): void {
 
     if (enabled) {
         debugLogAutoRefreshTimer = window.setInterval(() => {
-            if (!canRunSettingsAutoRefresh()) {
-                return;
-            }
-
-            void refreshDebugLog();
+            if (canRunSettingsAutoRefresh('debugLogOutput')) void refreshDebugLog();
         }, 2000);
     }
 }
@@ -694,6 +923,118 @@ function syncPartMinutesFieldState(): void {
     label.classList.toggle('input-disabled', !isSplitMode);
 }
 
+let downloadWindowRowSequence = 0;
+
+function refreshDownloadWindowTexts(): void {
+    const container = document.getElementById('downloadWindowRows');
+    if (!container) return;
+    const rows = container.querySelectorAll<HTMLElement>('.download-window-row');
+    rows.forEach(row => {
+        row.querySelector<HTMLElement>('[data-window-start-label]')!.textContent = UI_TEXT.static.downloadWindowStart;
+        row.querySelector<HTMLElement>('[data-window-end-label]')!.textContent = UI_TEXT.static.downloadWindowEnd;
+        const remove = row.querySelector<HTMLButtonElement>('button')!;
+        remove.setAttribute('aria-label', UI_TEXT.static.downloadWindowRemove);
+        remove.title = UI_TEXT.static.downloadWindowRemove;
+        const start = row.querySelector<HTMLInputElement>('[data-window-time="start"]')!;
+        const end = row.querySelector<HTMLInputElement>('[data-window-time="end"]')!;
+        const nextDay = row.querySelector<HTMLElement>('.download-window-next-day')!;
+        nextDay.textContent = UI_TEXT.static.downloadWindowNextDay;
+        nextDay.hidden = !start.value || !end.value || end.value >= start.value;
+        for (const input of [start, end]) input.lang = currentLanguage === 'de' ? 'de-DE' : 'en-GB';
+    });
+    byId<HTMLElement>('downloadWindowsEmpty').hidden = rows.length > 0;
+}
+
+function updateDownloadWindowValue(): void {
+    const container = byId<HTMLElement>('downloadWindowRows');
+    const windows = Array.from(container.querySelectorAll<HTMLElement>('.download-window-row'), row => {
+        const start = row.querySelector<HTMLInputElement>('[data-window-time="start"]')!.value;
+        const end = row.querySelector<HTMLInputElement>('[data-window-time="end"]')!.value;
+        const invalid = !start || !end || start === end;
+        row.querySelectorAll<HTMLInputElement>('input').forEach(input => input.setAttribute('aria-invalid', String(invalid)));
+        return start + '-' + end;
+    });
+    const input = byId<HTMLTextAreaElement>('downloadWindows');
+    input.value = windows.join('\n');
+    refreshDownloadWindowTexts();
+    updateDownloadPolicyValidation(parseDownloadPolicyFormValue(byId<HTMLInputElement>('downloadThrottleMiBps').value, input.value).error);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function createDownloadWindowRow(start = '', end = ''): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'download-window-row';
+    const id = ++downloadWindowRowSequence;
+    for (const [kind, value] of [['start', start], ['end', end]] as const) {
+        const field = document.createElement('div');
+        field.className = 'download-window-field';
+        const label = document.createElement('label');
+        const caption = document.createElement('span');
+        caption.setAttribute('data-window-' + kind + '-label', '');
+        label.append(caption);
+        if (kind === 'end') {
+            const nextDay = document.createElement('span');
+            nextDay.className = 'download-window-next-day';
+            nextDay.hidden = true;
+            label.append(nextDay);
+        }
+        const input = document.createElement('input');
+        input.id = 'download-window-' + id + '-' + kind;
+        input.type = 'time';
+        input.step = '60';
+        input.required = true;
+        input.value = value;
+        input.dataset.windowTime = kind;
+        input.setAttribute('aria-describedby', 'downloadWindowsHint downloadPolicyValidation');
+        label.htmlFor = input.id;
+        input.addEventListener('input', updateDownloadWindowValue);
+        input.addEventListener('blur', () => { void flushSettingsAutoSave(false); });
+        field.append(label, input);
+        row.append(field);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn-secondary download-window-remove';
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '1.8');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.setAttribute('aria-hidden', 'true');
+    const lines = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    lines.setAttribute('d', 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5');
+    icon.append(lines);
+    remove.append(icon);
+    remove.addEventListener('click', () => {
+        const focusTarget = row.nextElementSibling?.querySelector<HTMLInputElement>('input')
+            || row.previousElementSibling?.querySelector<HTMLInputElement>('input')
+            || byId<HTMLButtonElement>('downloadWindowAddBtn');
+        row.remove();
+        updateDownloadWindowValue();
+        focusTarget.focus();
+        void flushSettingsAutoSave(false);
+    });
+    row.append(remove);
+    return row;
+}
+
+function addDownloadWindow(): void {
+    const row = createDownloadWindowRow();
+    byId<HTMLElement>('downloadWindowRows').append(row);
+    updateDownloadWindowValue();
+    row.querySelector<HTMLInputElement>('input')!.focus();
+}
+
+function syncDownloadWindowRows(): void {
+    const container = document.getElementById('downloadWindowRows');
+    if (!container) return;
+    const windows = config.download_policy?.windows ?? [];
+    container.replaceChildren(...windows.map(window => createDownloadWindowRow(window.start, window.end)));
+    refreshDownloadWindowTexts();
+}
+
 function parseDownloadPolicyFormValue(rateValue: string, windowsValue: string): { value: DownloadPolicy | null; error: string | null } {
     const rate = rateValue.trim();
     let throttle: DownloadPolicy['throttle'] = null;
@@ -741,6 +1082,7 @@ function formatDownloadThrottle(maxBytesPerSecond: number | null | undefined): s
 
 function renderDownloadPolicyStatus(status: DownloadPolicyStatus): void {
     const node = byId<HTMLElement>('downloadPolicyStatus');
+    node.closest('.download-policy-state')?.classList.toggle('is-waiting', status.waiting);
     if (status.waiting && status.nextStart) {
         node.textContent = UI_TEXT.static.downloadPolicyWaiting.replace('{time}', formatUiDateTime(status.nextStart));
         return;
@@ -757,6 +1099,22 @@ async function startDownloadPolicyOverride(): Promise<void> {
     await refreshDownloadPolicyStatus();
 }
 
+function syncPlayerSeekPreference(value = config.player_seek_seconds): void {
+    const seconds = typeof value === 'number' && [10, 30, 60].includes(value) ? value : 10;
+    byId<HTMLInputElement>('playerSeekSeconds').value = String(seconds);
+    document.querySelectorAll<HTMLButtonElement>('[data-player-seek]').forEach(button => {
+        button.setAttribute('aria-pressed', String(Number(button.dataset.playerSeek) === seconds));
+    });
+    window.VodPlayer?.setSeekSeconds(seconds);
+}
+
+function selectPlayerSeekSeconds(seconds: number): void {
+    if (![10, 30, 60].includes(seconds)) return;
+    syncPlayerSeekPreference(seconds);
+    markSettingsInputChanged();
+    void flushSettingsAutoSave(false);
+}
+
 function collectDownloadSettingsPayload(): Partial<AppConfig> {
     const parsedPolicy = parseDownloadPolicyFormValue(
         byId<HTMLInputElement>('downloadThrottleMiBps').value,
@@ -764,12 +1122,14 @@ function collectDownloadSettingsPayload(): Partial<AppConfig> {
     );
     updateDownloadPolicyValidation(parsedPolicy.error);
     return {
+        language: byId<HTMLSelectElement>('languageSelect').value as LanguageCode,
+        theme: byId<HTMLSelectElement>('themeSelect').value,
+        player_seek_seconds: Number(byId<HTMLInputElement>('playerSeekSeconds').value),
         sidebar_split_view: byId<HTMLInputElement>('sidebarSplitViewToggle').checked,
         download_mode: byId<HTMLSelectElement>('downloadMode').value as 'parts' | 'full',
         part_minutes: parseInt(byId<HTMLInputElement>('partMinutes').value, 10) || 120,
         parallel_downloads: parseInt(byId<HTMLSelectElement>('parallelDownloads').value, 10) || 1,
         performance_mode: byId<HTMLSelectElement>('performanceMode').value as 'stability' | 'balanced' | 'speed',
-        smart_queue_scheduler: byId<HTMLInputElement>('smartSchedulerToggle').checked,
         prevent_duplicate_downloads: byId<HTMLInputElement>('duplicatePreventionToggle').checked,
         persist_queue_on_restart: byId<HTMLInputElement>('persistQueueToggle').checked,
         auto_resume_queue_on_startup: byId<HTMLInputElement>('autoResumeQueueToggle').checked,
@@ -791,7 +1151,7 @@ function collectDownloadSettingsPayload(): Partial<AppConfig> {
         auto_cleanup_days: parseInt(byId<HTMLInputElement>('autoCleanupDays').value, 10) || 30,
         auto_cleanup_target: byId<HTMLSelectElement>('autoCleanupTarget').value === 'all' ? 'all' : 'live_only',
         auto_cleanup_action: byId<HTMLSelectElement>('autoCleanupAction').value === 'delete' ? 'delete' : 'archive',
-        streamlink_quality: byId<HTMLSelectElement>('streamlinkQuality').value,
+        streamlink_quality: 'source',
         metadata_cache_minutes: parseInt(byId<HTMLInputElement>('metadataCacheMinutes').value, 10) || 10,
         download_policy: parsedPolicy.value ?? config.download_policy ?? { throttle: null, windows: [] }
     };
@@ -827,6 +1187,9 @@ function collectAutoSavePayload(): Partial<AppConfig> {
 function getSettingsFingerprint(payload: Partial<AppConfig>): string {
     const effective = { ...config, ...payload };
     return JSON.stringify([
+        effective.language ?? currentLanguage,
+        effective.theme ?? 'twitch',
+        effective.player_seek_seconds ?? 10,
         effective.client_id ?? '',
         byId<HTMLInputElement>('clientSecret').value,
         effective.sidebar_split_view !== false,
@@ -834,7 +1197,6 @@ function getSettingsFingerprint(payload: Partial<AppConfig>): string {
         effective.part_minutes ?? 120,
         effective.parallel_downloads ?? 1,
         effective.performance_mode ?? 'balanced',
-        effective.smart_queue_scheduler !== false,
         effective.prevent_duplicate_downloads !== false,
         effective.persist_queue_on_restart !== false,
         effective.auto_resume_queue_on_startup === true,
@@ -857,7 +1219,7 @@ function getSettingsFingerprint(payload: Partial<AppConfig>): string {
         effective.auto_cleanup_days ?? 30,
         effective.auto_cleanup_target ?? 'live_only',
         effective.auto_cleanup_action ?? 'archive',
-        effective.streamlink_quality ?? 'best',
+        'source',
         effective.metadata_cache_minutes ?? 10,
         effective.download_policy?.throttle?.maxBytesPerSecond ?? null,
         effective.download_policy?.windows ?? [],
@@ -868,6 +1230,7 @@ function getSettingsFingerprint(payload: Partial<AppConfig>): string {
 }
 
 function syncSettingsFormFromConfig(syncSecrets = true): void {
+    syncPlayerSeekPreference();
     byId<HTMLInputElement>('clientId').value = config.client_id ?? '';
     if (syncSecrets) syncSecretFields();
     byId<HTMLInputElement>('sidebarSplitViewToggle').checked = config.sidebar_split_view !== false;
@@ -876,7 +1239,6 @@ function syncSettingsFormFromConfig(syncSecrets = true): void {
     byId<HTMLInputElement>('partMinutes').value = String((config.part_minutes as number) || 120);
     byId<HTMLSelectElement>('parallelDownloads').value = String((config.parallel_downloads as number) || 1);
     byId<HTMLSelectElement>('performanceMode').value = (config.performance_mode as string) || 'balanced';
-    byId<HTMLInputElement>('smartSchedulerToggle').checked = (config.smart_queue_scheduler as boolean) !== false;
     byId<HTMLInputElement>('duplicatePreventionToggle').checked = (config.prevent_duplicate_downloads as boolean) !== false;
     byId<HTMLInputElement>('persistQueueToggle').checked = (config.persist_queue_on_restart as boolean) !== false;
     byId<HTMLInputElement>('autoResumeQueueToggle').checked = (config.auto_resume_queue_on_startup as boolean) === true;
@@ -884,6 +1246,7 @@ function syncSettingsFormFromConfig(syncSecrets = true): void {
     byId<HTMLInputElement>('streamlinkDisableAdsToggle').checked = (config.streamlink_disable_ads as boolean) !== false;
     byId<HTMLInputElement>('downloadThrottleMiBps').value = formatDownloadThrottle(config.download_policy?.throttle?.maxBytesPerSecond);
     byId<HTMLTextAreaElement>('downloadWindows').value = (config.download_policy?.windows ?? []).map((window) => `${window.start}-${window.end}`).join('\n');
+    syncDownloadWindowRows();
     updateDownloadPolicyValidation(null);
     byId<HTMLInputElement>('downloadChatReplayToggle').checked = (config.download_chat_replay as boolean) === true;
     byId<HTMLInputElement>('captureLiveChatToggle').checked = (config.capture_live_chat as boolean) === true;
@@ -901,7 +1264,6 @@ function syncSettingsFormFromConfig(syncSecrets = true): void {
     byId<HTMLInputElement>('autoCleanupDays').value = String((config.auto_cleanup_days as number) || 30);
     byId<HTMLSelectElement>('autoCleanupTarget').value = (config.auto_cleanup_target as string) === 'all' ? 'all' : 'live_only';
     byId<HTMLSelectElement>('autoCleanupAction').value = (config.auto_cleanup_action as string) === 'delete' ? 'delete' : 'archive';
-    byId<HTMLSelectElement>('streamlinkQuality').value = (config.streamlink_quality as string) || 'best';
     byId<HTMLInputElement>('metadataCacheMinutes').value = String((config.metadata_cache_minutes as number) || 10);
     byId<HTMLInputElement>('vodFilenameTemplate').value = (config.filename_template_vod as string) || '{title}.mp4';
     byId<HTMLInputElement>('partsFilenameTemplate').value = (config.filename_template_parts as string) || '{date}_Part{part_padded}.mp4';
@@ -934,13 +1296,21 @@ async function persistSettings(options: {
         Object.assign(payload, templatePayload);
     }
 
-    await persistSecretInputs();
-    config = await window.api.saveConfig(payload);
-    syncSettingsFormFromConfig(false);
+    const inputGeneration = settingsInputGeneration;
+    try {
+        await persistSecretInputs();
+        config = await window.api.saveConfig(payload);
+        setSettingsSaveFailed(false);
+    } catch {
+        setSettingsSaveFailed(true);
+        return false;
+    }
+    if (settingsInputGeneration === inputGeneration) syncSettingsFormFromConfig(false);
+    else scheduleSettingsAutoSave(0);
     pendingCredentialsReconnect = false;
 
     if (options.reconnectAfterSave) {
-        await connect();
+        await reconnectSettings();
     }
 
     if (canRunSettingsAutoRefresh()) {
@@ -963,8 +1333,9 @@ async function flushSettingsAutoSave(reconnectAfterSave = false): Promise<void> 
     if (fingerprint === lastPersistedSettingsFingerprint) {
         if (reconnectAfterSave && pendingCredentialsReconnect) {
             pendingCredentialsReconnect = false;
-            await connect();
+            await reconnectSettings();
         }
+        setSettingsSaveFailed(false);
         return;
     }
 
@@ -974,25 +1345,44 @@ async function flushSettingsAutoSave(reconnectAfterSave = false): Promise<void> 
     }
 
     settingsAutoSaveInFlight = true;
+    let saved = false;
     try {
         await persistSecretInputs();
         config = await window.api.saveConfig(payload);
+        saved = true;
+        setSettingsSaveFailed(false);
         if (settingsInputGeneration === inputGeneration) {
             lastPersistedSettingsFingerprint = getSettingsFingerprint({});
         } else {
+            lastPersistedSettingsFingerprint = '';
             pendingSettingsAutoSave = true;
         }
         if (reconnectAfterSave && pendingCredentialsReconnect) {
             pendingCredentialsReconnect = false;
-            await connect();
+            await reconnectSettings();
         }
+    } catch {
+        setSettingsSaveFailed(true);
     } finally {
         settingsAutoSaveInFlight = false;
-        if (pendingSettingsAutoSave) {
-            pendingSettingsAutoSave = false;
+        const retry = pendingSettingsAutoSave && (saved || settingsInputGeneration !== inputGeneration);
+        pendingSettingsAutoSave = false;
+        if (retry) {
             void flushSettingsAutoSave(pendingCredentialsReconnect);
         }
+        if (!settingsAutoSaveInFlight) {
+            for (const resolve of settingsSaveWaiters) resolve();
+            settingsSaveWaiters.clear();
+        }
     }
+}
+
+async function flushSettingsBeforeClose(): Promise<boolean> {
+    await flushSettingsAutoSave(false);
+    while (settingsAutoSaveInFlight) {
+        await new Promise<void>(resolve => settingsSaveWaiters.add(resolve));
+    }
+    return !settingsSaveFailed;
 }
 
 function scheduleSettingsAutoSave(delayMs = 450): void {
@@ -1006,12 +1396,86 @@ function scheduleSettingsAutoSave(delayMs = 450): void {
     }, delayMs);
 }
 
+
+const settingsSectionAnimations = new WeakMap<HTMLDetailsElement, { expanded: boolean; animation: Animation | null }>();
+
+function setSettingsSectionExpanded(details: HTMLDetailsElement, expanded: boolean, animate = true): void {
+    const state = settingsSectionAnimations.get(details);
+    const summary = details.querySelector<HTMLElement>(':scope > summary');
+    const body = details.querySelector<HTMLElement>(':scope > .settings-section-body');
+    if (!state || !summary || !body) {
+        details.open = expanded;
+        return;
+    }
+    const from = details.getBoundingClientRect().height;
+    state.animation?.cancel();
+    state.animation = null;
+    state.expanded = expanded;
+    summary.setAttribute('aria-expanded', String(expanded));
+    const finish = (): void => {
+        state.animation?.cancel();
+        state.animation = null;
+        details.open = state.expanded;
+        details.style.removeProperty('overflow');
+        body.inert = false;
+    };
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches || from === 0) {
+        finish();
+        return;
+    }
+    details.open = true;
+    body.inert = !expanded;
+    const style = getComputedStyle(details);
+    const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const to = expanded ? details.getBoundingClientRect().height : summary.getBoundingClientRect().height + border;
+    if (from === to) {
+        finish();
+        return;
+    }
+    details.style.overflow = 'hidden';
+    const animation = details.animate([{ height: from + 'px' }, { height: to + 'px' }], {
+        duration: 240,
+        easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        fill: 'both'
+    });
+    state.animation = animation;
+    animation.onfinish = () => {
+        if (state.animation === animation) finish();
+    };
+}
+
+function initSettingsSectionAnimations(): void {
+    const sections = document.querySelectorAll<HTMLDetailsElement>('#settingsTab [data-settings-pane="downloads"] details.settings-section');
+    sections.forEach(details => {
+        if (settingsSectionAnimations.has(details)) return;
+        const state = { expanded: details.open, animation: null as Animation | null };
+        settingsSectionAnimations.set(details, state);
+        const summary = details.querySelector<HTMLElement>(':scope > summary');
+        summary?.setAttribute('aria-expanded', String(details.open));
+        summary?.addEventListener('click', event => {
+            event.preventDefault();
+            setSettingsSectionExpanded(details, !state.expanded);
+        });
+        details.addEventListener('toggle', () => {
+            if (!state.animation || !details.open) setSettingsSectionExpanded(details, details.open, false);
+        });
+    });
+    window.addEventListener('resize', () => {
+        sections.forEach(details => {
+            const state = settingsSectionAnimations.get(details);
+            if (state?.animation) setSettingsSectionExpanded(details, state.expanded, false);
+        });
+    });
+}
+
 function initSettingsAutoSave(): void {
     if (settingsAutoSaveBound) {
         return;
     }
 
     settingsAutoSaveBound = true;
+    initSettingsSectionAnimations();
+    document.querySelectorAll<HTMLDetailsElement>('.settings-diagnostics').forEach(details => details.addEventListener('toggle', refreshVisibleSettingsDiagnostics));
     syncSettingsFormFromConfig();
     window.api.onDownloadPolicyStatus(renderDownloadPolicyStatus);
 
@@ -1020,7 +1484,6 @@ function initSettingsAutoSave(): void {
         'sidebarSplitViewToggle',
         'parallelDownloads',
         'performanceMode',
-        'smartSchedulerToggle',
         'duplicatePreventionToggle',
         'persistQueueToggle',
         'autoResumeQueueToggle',
@@ -1029,13 +1492,16 @@ function initSettingsAutoSave(): void {
         'downloadChatReplayToggle',
         'captureLiveChatToggle',
         'logStreamEventsToggle',
+        'autoResumeLiveRecordingToggle',
+        'autoMergeResumedPartsToggle',
+        'deletePartsAfterMergeToggle',
         'discordNotifyLiveStartToggle',
         'discordNotifyLiveEndToggle',
         'discordNotifyVodCompleteToggle',
+        'discordNotifyVodAutoQueuedToggle',
         'autoCleanupEnabledToggle',
         'autoCleanupTarget',
-        'autoCleanupAction',
-        'streamlinkQuality'
+        'autoCleanupAction'
     ] as const;
 
     const debouncedSaveIds = [
@@ -1045,6 +1511,8 @@ function initSettingsAutoSave(): void {
         'partsFilenameTemplate',
         'defaultClipFilenameTemplate',
         'discordWebhookUrl',
+        'autoVodPollMinutes',
+        'autoVodMaxAgeHours',
         'autoCleanupDays',
         'downloadThrottleMiBps',
         'downloadWindows'
@@ -1134,13 +1602,19 @@ async function saveSettings(): Promise<void> {
 }
 
 async function selectFolder(): Promise<void> {
-    const folder = await window.api.selectFolder();
-    if (!folder) {
+    let folder: (FileCapabilityReference & { displayPath: string }) | null;
+    try {
+        folder = await window.api.selectFolder();
+        if (!folder) return;
+        config = await window.api.saveConfig({ download_path: folder.displayPath }, folder.token);
+        byId<HTMLInputElement>('downloadPath').value = folder.displayPath;
+        syncClipStorage();
+        await refreshClipLibraryDirectory();
+    } catch {
+        showAppToast(currentLanguage === 'de' ? 'Download-Ordner konnte nicht gespeichert werden.' : 'Download folder could not be saved.', 'warn');
         return;
     }
-
-    byId<HTMLInputElement>('downloadPath').value = folder.displayPath;
-    config = await window.api.saveConfig({ download_path: folder.displayPath }, folder.token);
+    invalidatePreflightResult();
 
     // Warn-only validation — the user explicitly chose this folder, so don't
     // refuse to save (they might be picking a path on a USB stick that's
@@ -1171,69 +1645,97 @@ function syncWorkspaceThemePicker(theme: string): void {
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', String(active));
     });
+    scheduleSegmentedIndicatorSync(byId<HTMLElement>('workspaceThemePicker'));
+}
+
+const rendererSystemTheme = window.matchMedia('(prefers-color-scheme: light)');
+
+function syncRendererSystemTheme(): void {
+    if (!document.body.classList.contains('theme-system')) return;
+    document.body.classList.toggle('theme-light', rendererSystemTheme.matches);
+}
+
+rendererSystemTheme.addEventListener('change', syncRendererSystemTheme);
+
+function applyRendererTheme(theme: string): void {
+    byId<HTMLSelectElement>('themeSelect').value = theme;
+    for (const name of Array.from(document.body.classList)) {
+        if (name.startsWith('theme-')) document.body.classList.remove(name);
+    }
+    document.body.classList.add(`theme-${theme}`);
+    syncRendererSystemTheme();
+    config.theme = theme;
+    syncWorkspaceThemePicker(theme);
 }
 
 function selectWorkspaceTheme(theme: string): void {
-    byId<HTMLSelectElement>('themeSelect').value = theme;
     changeTheme(theme);
 }
 
 function changeTheme(theme: string): void {
-    document.body.className = `theme-${theme}`;
-    config.theme = theme;
-    syncWorkspaceThemePicker(theme);
-    void window.api.saveConfig({ theme });
+    applyRendererTheme(theme);
+    markSettingsInputChanged();
+    void flushSettingsAutoSave();
 }
 
-function formatRelativeTime(ms: number, future: boolean): string {
-    if (!Number.isFinite(ms) || ms <= 0) {
-        return future ? UI_TEXT.streamers.autoVodScanEmpty || '' : '-';
-    }
-    const seconds = Math.max(0, Math.floor(ms / 1000));
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`;
+function formatRelativeTime(ms: number): string {
+    const seconds = Math.max(0, Math.ceil(ms / 1000));
+    if (seconds < 60) return `${seconds} s`;
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) return `${minutes} min`;
+    return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 async function refreshAutomationStatusLine(): Promise<void> {
     const lineEl = document.getElementById('autoVodStatusLine');
-    if (!lineEl) return;
+    if (!lineEl || automationRefreshInFlight) return;
+    automationRefreshInFlight = true;
     try {
         const status = await window.api.getAutomationStatus();
         const now = Date.now();
+        const de = currentLanguage === 'de';
         const parts: string[] = [];
+        for (const [label, scan] of [['VODs', status.autoVod], [de ? 'Aufnahmen' : 'Recordings', status.autoRecord]] as const) {
+            if (scan.watching <= 0) continue;
+            const count = formatUiNumber(scan.watching);
+            const channels = de ? (scan.watching === 1 ? 'Kanal' : 'Kanäle') : (scan.watching === 1 ? 'channel' : 'channels');
+            const next = scan.inFlight ? (de ? 'Prüfung läuft' : 'Checking')
+                : scan.nextRunAt > now ? (de ? 'nächste Prüfung in ' : 'next check in ') + formatRelativeTime(scan.nextRunAt - now)
+                    : (de ? 'Prüfung ausstehend' : 'Check pending');
+            parts.push(`${label}: ${count} ${channels} · ${next}`);
+        }
+        lineEl.textContent = parts.join(' · ') || (de ? 'Keine Kanäle ausgewählt.' : 'No channels selected.');
+    } catch {
+        lineEl.textContent = currentLanguage === 'de' ? 'Status nicht verfügbar.' : 'Status unavailable.';
+    } finally { automationRefreshInFlight = false; }
+}
 
-        if (status.autoVod.watching > 0) {
-            const lastAgo = status.autoVod.lastRunAt > 0 ? formatRelativeTime(now - status.autoVod.lastRunAt, false) : '-';
-            const nextIn = status.autoVod.nextRunAt > now ? formatRelativeTime(status.autoVod.nextRunAt - now, true) : '-';
-            parts.push(`VOD: ${status.autoVod.watching} watched · last ${lastAgo} ago · next in ${nextIn} · last run +${status.autoVod.lastQueuedCount}`);
-        }
-        if (status.autoRecord.watching > 0) {
-            const lastAgo = status.autoRecord.lastRunAt > 0 ? formatRelativeTime(now - status.autoRecord.lastRunAt, false) : '-';
-            const nextIn = status.autoRecord.nextRunAt > now ? formatRelativeTime(status.autoRecord.nextRunAt - now, true) : '-';
-            parts.push(`REC: ${status.autoRecord.watching} watched · last ${lastAgo} ago · next in ${nextIn}`);
-        }
-        if (parts.length === 0) parts.push('No streamers watched.');
-        lineEl.textContent = parts.join(' · ');
-    } catch (_) {
-        lineEl.textContent = '';
+function showAutomationScanResult(result: import('./types').AutomationScanResult, addedText: string, emptyText: string): void {
+    const de = currentLanguage === 'de';
+    if (result.skipped) {
+        showAppToast(result.skipped === 'busy'
+            ? (de ? 'Prüfung läuft bereits.' : 'A check is already running.')
+            : (de ? 'Prüfung nicht verfügbar.' : 'Check unavailable.'), 'warn');
+    } else if (result.failedCount > 0) {
+        const partial = result.checkedCount > 0 || result.addedCount > 0;
+        const failure = partial ? (de ? 'Prüfung unvollständig.' : 'Check incomplete.')
+            : (de ? 'Prüfung fehlgeschlagen.' : 'Check failed.');
+        showAppToast(result.addedCount > 0 ? addedText + ' ' + failure : failure, 'warn');
+    } else if (result.checkedCount === 0) {
+        showAppToast(de ? 'Keine Kanäle ausgewählt.' : 'No channels selected.', 'info');
+    } else {
+        showAppToast(result.addedCount > 0 ? addedText : emptyText, 'info');
     }
 }
 
 async function triggerManualAutoVodScan(): Promise<void> {
-    const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
     const btn = document.getElementById('btnAutoVodScanNow') as HTMLButtonElement | null;
     if (btn) btn.disabled = true;
     try {
         const result = await window.api.triggerAutoVodScan();
-        if (toast) {
-            const tmpl = result.queuedCount > 0
-                ? UI_TEXT.streamers.autoVodScanQueued
-                : UI_TEXT.streamers.autoVodScanEmpty;
-            toast((tmpl || '').replace('{count}', String(result.queuedCount)), 'info');
-        }
+        showAutomationScanResult(result, UI_TEXT.streamers.autoVodScanQueued.replace('{count}', formatUiNumber(result.queuedCount)), UI_TEXT.streamers.autoVodScanEmpty);
+    } catch {
+        showAppToast(currentLanguage === 'de' ? 'Prüfung fehlgeschlagen.' : 'Check failed.', 'warn');
     } finally {
         if (btn) btn.disabled = false;
         void refreshAutomationStatusLine();
@@ -1241,17 +1743,13 @@ async function triggerManualAutoVodScan(): Promise<void> {
 }
 
 async function triggerManualAutoRecordScan(): Promise<void> {
-    const toast = (window as unknown as { showAppToast?: (msg: string, kind?: 'info' | 'warn') => void }).showAppToast;
     const btn = document.getElementById('btnAutoRecordScanNow') as HTMLButtonElement | null;
     if (btn) btn.disabled = true;
     try {
         const result = await window.api.triggerAutoRecordScan();
-        if (toast) {
-            const tmpl = result.triggered > 0
-                ? UI_TEXT.streamers.autoRecordScanTriggered
-                : UI_TEXT.streamers.autoRecordScanEmpty;
-            toast((tmpl || '').replace('{count}', String(result.triggered)), 'info');
-        }
+        showAutomationScanResult(result, UI_TEXT.streamers.autoRecordScanTriggered.replace('{count}', formatUiNumber(result.triggered)), UI_TEXT.streamers.autoRecordScanEmpty);
+    } catch {
+        showAppToast(currentLanguage === 'de' ? 'Prüfung fehlgeschlagen.' : 'Check failed.', 'warn');
     } finally {
         if (btn) btn.disabled = false;
         void refreshAutomationStatusLine();
@@ -1260,3 +1758,14 @@ async function triggerManualAutoRecordScan(): Promise<void> {
 
 (window as unknown as { triggerManualAutoVodScan: typeof triggerManualAutoVodScan }).triggerManualAutoVodScan = triggerManualAutoVodScan;
 (window as unknown as { triggerManualAutoRecordScan: typeof triggerManualAutoRecordScan }).triggerManualAutoRecordScan = triggerManualAutoRecordScan;
+
+async function runApplicationBackup(restore: boolean): Promise<void> {
+    const buttons = ['btnCreateBackup', 'btnRestoreBackup'].map(id => byId<HTMLButtonElement>(id));
+    buttons.forEach(button => button.disabled = true);
+    try {
+        const result = await (restore ? window.api.restoreApplicationBackup() : window.api.exportApplicationBackup());
+        if (result.cancelled || (restore && result.success)) return;
+        showAppToast(result.success ? UI_TEXT.static.backupSaved : result.error === 'busy' ? UI_TEXT.static.backupBusy : UI_TEXT.static.backupFailed, result.success ? 'info' : 'warn');
+    } catch { showAppToast(UI_TEXT.static.backupFailed, 'warn'); }
+    finally { buttons.forEach(button => button.disabled = false); }
+}

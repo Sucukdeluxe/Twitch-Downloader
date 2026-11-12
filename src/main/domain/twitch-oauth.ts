@@ -93,9 +93,9 @@ export interface CompleteLoginResult {
 export async function awaitAuthorizationCode(login: LoginStart, timeoutMs?: number): Promise<CompleteLoginResult> {
     const params = await login.server.awaitParams({ timeoutMs });
     if (params.has('error')) {
-        const err = params.get('error') ?? 'unknown_error';
-        const desc = params.get('error_description') ?? '';
-        throw new Error(`twitch-oauth: provider error: ${err}${desc ? ` — ${desc}` : ''}`);
+        const rawError = params.get('error') ?? '';
+        const errorCode = /^[A-Za-z0-9_.-]{1,80}$/.test(rawError) ? rawError : 'unknown_error';
+        throw new Error(`twitch-oauth: provider error: ${errorCode}`);
     }
     const returnedState = params.get('state') ?? '';
     if (returnedState !== login.state) {
@@ -126,17 +126,22 @@ export async function exchangeCodeForToken(opts: TokenExchangeOptions): Promise<
         redirect_uri: opts.redirectUri,
     });
 
-    const res = await fetchFn(TWITCH_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-    });
-
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`twitch-oauth: token endpoint ${res.status}: ${text}`);
+    let res: Response;
+    try {
+        res = await fetchFn(TWITCH_TOKEN_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString(),
+        });
+    } catch {
+        throw new Error('twitch-oauth: token request failed');
     }
-    return JSON.parse(text) as TwitchTokenResponse;
+    if (!res.ok) throw new Error(`twitch-oauth: token endpoint returned HTTP ${res.status}`);
+    try {
+        return JSON.parse(await res.text()) as TwitchTokenResponse;
+    } catch {
+        throw new Error('twitch-oauth: invalid token response');
+    }
 }
 
 export async function fetchTwitchUserInfo(
@@ -145,17 +150,24 @@ export async function fetchTwitchUserInfo(
     fetchImpl?: typeof fetch
 ): Promise<TwitchUserInfo> {
     const fetchFn = fetchImpl ?? fetch;
-    const res = await fetchFn(TWITCH_HELIX_USERS_URL, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Client-Id': clientId,
-        },
-    });
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`twitch-oauth: helix /users ${res.status}: ${text}`);
+    let res: Response;
+    try {
+        res = await fetchFn(TWITCH_HELIX_USERS_URL, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': clientId,
+            },
+        });
+    } catch {
+        throw new Error('twitch-oauth: helix /users request failed');
     }
-    const json = JSON.parse(text) as { data?: TwitchUserInfo[] };
+    if (!res.ok) throw new Error(`twitch-oauth: helix /users returned HTTP ${res.status}`);
+    let json: { data?: TwitchUserInfo[] };
+    try {
+        json = JSON.parse(await res.text()) as { data?: TwitchUserInfo[] };
+    } catch {
+        throw new Error('twitch-oauth: invalid helix /users response');
+    }
     const first = json.data?.[0];
     if (!first) throw new Error('twitch-oauth: helix /users returned no user');
     return first;

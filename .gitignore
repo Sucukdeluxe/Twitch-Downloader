@@ -11,3 +11,14 @@ tmp_*/
 .dev-program-data/
 .dev-user-data/
 .DS_Store
+PROJECT_MEMORY.md
+*MEMORY*.md
+artifacts/
+outputs/
+scripts/benchmark-archive-loading*.js
+
+# macOS artifacts
+.cache/
+# Generated native update helpers
+build/macos-updater-arm64
+build/macos-updater-x64

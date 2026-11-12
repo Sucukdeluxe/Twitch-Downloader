@@ -1,72 +1,95 @@
-const fs = require('fs');
-const path = require('path');
-
+// Verify that native regression gates and transported artifact proofs precede publication.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const yaml = require('js-yaml');
 const root = path.resolve(__dirname, '..');
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const failures = [];
-
-function check(condition, message) {
-  if (!condition) failures.push(message);
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const load = name => yaml.load(read(`.github/workflows/${name}.yml`));
+const pkg = require('../package.json');
+const release = load('windows-release');
+const mac = load('macos-ci');
+const relay = load('macos-release');
+const ordinary = load('windows-ci');
+const publisher = read('scripts/publish-unified-release.cjs');
+const relayScript = read('scripts/publish-macos-relay.cjs');
+const dispatch = read('scripts/dispatch-macos-release.cjs');
+const commands = job => (job.steps || []).map(step => step.run || '').join('\n');
+const publication = /(?:gh\s+release\s+(?:create|upload)|publish-(?:unified-release|macos-relay)\.cjs(?! --record-mac))/;
+function failsClosed(job) {
+  assert.ok(!job['continue-on-error']);
+  for (const step of job.steps || []) assert.ok(!step['continue-on-error']);
 }
-
-const requiredScripts = {
-  lint: 'eslint .',
-  'security:check': 'node scripts/security-check.js && node scripts/smoke-test-public-release-config.js',
-  'test:security': 'node --test scripts/security-check.test.js',
-  'test:lint-config': 'node --test scripts/lint-config.test.mjs',
-  'test:ci-contract': 'node scripts/smoke-test-ci-contract.js',
-  'test:e2e:focused': 'npm run test:e2e:isolation && npm run test:e2e:workspace-ui',
-  'test:packaged-launch': 'node scripts/smoke-test-packaged-launch.js',
-  'test:installer': 'node scripts/smoke-test-installer.js',
-  'dist:ci': 'electron-builder --win nsis'
-};
-
-for (const [name, command] of Object.entries(requiredScripts)) {
-  check(packageJson.scripts?.[name] === command, `package script ${name} is missing or changed`);
+assert.equal(pkg.scripts['test:unit'], 'vitest run', 'A missing unit suite must fail');
+for (const name of ['test:security', 'test:lint-config', 'test:ci-contract', 'test:unified-release', 'test:e2e:release', 'test:mac', 'test:mac-update']) {
+  assert.ok(pkg.scripts[name] && !pkg.scripts[name].includes('run-local-check'), `${name} must run directly`);
 }
-
-for (const relativePath of ['.github/workflows/windows-ci.yml', '.gitea/workflows/windows-ci.yml']) {
-  const absolutePath = path.join(root, relativePath);
-  check(fs.existsSync(absolutePath), `${relativePath} is missing`);
-  if (!fs.existsSync(absolutePath)) continue;
-
-  const source = fs.readFileSync(absolutePath, 'utf8');
-  const requiredCommands = [
-    'npm ci',
-    'npm run lint',
-    'npm run test:lint-config',
-    'npm run security:check',
-    'npm run test:security',
-    'npm run test:ci-contract',
-    'npm run test:unit',
-    'npm run test:e2e:focused',
-    'npm run build',
-    'npm run pack',
-    'npm run test:packaged-launch',
-    'npm run dist:ci',
-    'npm run test:installer'
-  ];
-
-  check(/runs-on:\s*windows-latest/.test(source), `${relativePath} does not use a Windows runner`);
-  check(/node-version:\s*['"]?24\.11\.1['"]?/.test(source), `${relativePath} does not pin Node 24.11.1`);
-  for (const command of requiredCommands) {
-    check(source.includes(`run: ${command}`), `${relativePath} is missing ${command}`);
+assert.match(read('scripts/release-checks.mjs'), /scripts\/unified-release\.test\.cjs/);
+assert.match(read('scripts/release-checks.mjs'), /scripts\/smoke-test-precise-trim\.js/);
+for (const command of Object.values(pkg.scripts)) {
+  for (const match of command.matchAll(/\b(scripts\/[\w./-]+\.(?:js|mjs|cjs))\b/g)) {
+    assert.ok(fs.existsSync(path.join(root, match[1])), `Required script missing: ${match[1]}`);
   }
-  const runSteps = source.split(/\r?\n/).filter((line) => /^\s+run:\s+/.test(line));
-  const timeoutSteps = source.split(/\r?\n/).filter((line) => /^\s+timeout-minutes:\s*10\s*$/.test(line));
-  check(timeoutSteps.length >= runSteps.length, `${relativePath} does not cap every command at ten minutes`);
-  check(!/test:[^\s]*authenticated|TWITCH_CLIENT_SECRET|DISCORD_WEBHOOK/i.test(source), `${relativePath} includes authenticated integration inputs`);
 }
-
-for (const relativePath of [
-  'scripts/security-check.js',
-  'scripts/security-check.test.js',
-  'scripts/lint-config.test.mjs',
-  'scripts/smoke-test-packaged-launch.js',
-  'scripts/smoke-test-installer.js'
-]) {
-  check(fs.existsSync(path.join(root, relativePath)), `${relativePath} is missing`);
+for (const workflow of [ordinary, mac]) {
+  assert.ok(Object.hasOwn(workflow.on, 'push') && Object.hasOwn(workflow.on, 'pull_request'));
+  for (const job of Object.values(workflow.jobs)) {
+    assert.ok(!publication.test(commands(job)), 'Ordinary CI cannot publish');
+    failsClosed(job);
+  }
 }
-
-console.log(JSON.stringify({ failures }, null, 2));
-if (failures.length) process.exitCode = 1;
+assert.match(String(ordinary.jobs.verify['runs-on']), /^windows-/);
+for (const cmd of ['npm ci', 'npm run build', 'npm run test:unit', 'npm run test:security', 'npm run test:lint-config', 'npm run test:ci-contract', 'npm run rebuild:electron', 'npm run test:e2e:focused']) {
+  assert.ok(commands(ordinary.jobs.verify).includes(cmd), `Windows CI needs ${cmd}`);
+}
+assert.deepEqual(release.on.push.tags, ['v*']);
+assert.deepEqual(release.on.pull_request.branches, ['main']);
+assert.equal(release.concurrency['cancel-in-progress'], false);
+for (const job of Object.values(release.jobs)) failsClosed(job);
+const win = release.jobs['verify-package'];
+assert.match(String(win['runs-on']), /^windows-/);
+assert.match(commands(win), /npm run release:build/);
+assert.match(pkg.scripts['release:build'], /npm run release:verify\s*&&\s*npm run release:package/);
+assert.doesNotMatch(commands(win), /--ci-candidate|npm run dist:ci|\|\|\s*(?:true|exit\s+0)/);
+assert.ok([win.needs].flat().includes('verify-webkit'));
+const webkit = release.jobs['verify-webkit'];
+assert.match(String(webkit['runs-on']), /^macos-/);
+assert.match(commands(webkit), /node scripts\/release-gate\.mjs --webkit-only/);
+const download = win.steps.find(step => String(step.uses || '').startsWith('actions/download-artifact@'));
+assert.equal(download.with.name, 'webkit-verification-${{ github.sha }}');
+assert.equal(download.with['run-id'], undefined, 'Do not import another run');
+assert.ok(win.steps.some(step => /npm run release:build/.test(step.run || '') && step.env?.RELEASE_WEBKIT_RECEIPT === 'release/webkit/webkit.json'));
+for (const [name, verify, pack] of [['ordinary', mac.jobs.verify, mac.jobs.package], ['release', release.jobs['verify-macos'], release.jobs['package-macos']]]) {
+  for (const job of [verify, pack]) {
+    assert.deepEqual(job.strategy.matrix.include.map(row => row.runner).sort(), ['macos-15', 'macos-15-intel']);
+    assert.deepEqual(job.strategy.matrix.include.map(row => row.arch).sort(), ['arm64', 'x64']);
+  }
+  for (const cmd of ['npm ci', 'npm run lint', 'npm run security:check', 'npm run test:security', 'npm run test:lint-config', 'npm run test:ci-contract', 'npm run test:unit', 'npm run rebuild:electron', 'npm run test:mac-update', 'npm run test:mac', 'npm run test:e2e:release']) {
+    assert.ok(commands(verify).includes(cmd), `${name} Mac checks need ${cmd}`);
+  }
+  for (const cmd of ['npm run dist:mac', '-c.mac.identity=-', 'codesign --verify --deep --strict', 'npm run test:mac', 'scripts/smoke-test-macos-update.js', 'mac-v1.0.10']) assert.ok(commands(pack).includes(cmd), `${name} Mac packaging needs ${cmd}`);
+  const build = pack.steps.find(step => /npm run dist:mac/.test(step.run || ''));
+  assert.equal(build.env.CSC_FOR_PULL_REQUEST, 'true');
+  assert.equal(build.env.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
+  assert.ok(pack.steps.some(step => step.env?.PACKAGED_APP_PATH));
+  assert.ok(pack.steps.some(step => step.env?.MAC_UPDATE_FROM_APP));
+}
+const publish = release.jobs.publish;
+assert.deepEqual([...publish.needs].sort(), ['prepare', 'verify-webkit', 'verify-package', 'verify-macos', 'package-macos'].sort());
+assert.match(publish.if, /github\.repository == 'Sucukdeluxe\/Twitch-Downloader'/);
+assert.match(publish.if, /github\.event_name == 'push'/);
+assert.match(publish.if, /refs\/tags\/v/);
+assert.doesNotMatch(publish.if, /always\s*\(/);
+assert.match(commands(publish), /node scripts\/publish-unified-release\.cjs/);
+for (const term of ['verification/package.json', 'verification/receipt.json', 'proof.candidate !== false', 'receipt.success !== true', 'receipt.tests <= 0', 'receipt.commit !== id.commit', 'proof.fingerprint !== receipt.fingerprint', "createHash('sha256')", "createHash('sha512')", 'mac-proof-', 'actual.sha256 !== file.sha256', 'actual.sha512 !== file.sha512']) assert.ok(publisher.includes(term), `Missing publication proof check: ${term}`);
+assert.ok(publisher.indexOf('preflight: true') < publisher.lastIndexOf('await publishImmutable'), 'Authenticate relay before public release');
+assert.deepEqual(relay.on.push.tags, ['mac-v*']);
+assert.equal(relay.concurrency['cancel-in-progress'], false);
+assert.match(relay.jobs.relay.if, /github\.repository == 'Sucukdeluxe\/Twitch-Downloader-macos'/);
+failsClosed(relay.jobs.relay);
+assert.match(commands(relay.jobs.relay), /node scripts\/publish-macos-relay\.cjs/);
+assert.ok(relay.jobs.relay.steps.some(step => step.env?.MAC_UPDATE_PRIVATE_KEY));
+for (const term of ['validateProvenance', 'resolveTag', 'publishImmutable', 'conclusion', 'success', 'sha256']) assert.ok(relayScript.includes(term), `Relay must verify ${term}`);
+assert.ok(dispatch.includes('StrictHostKeyChecking=yes') && dispatch.includes('refs/tags/${tag}') && dispatch.includes('`mac-v${version}`'), 'Use pinned SSH transport and immutable compatibility tags');
+assert.doesNotMatch(commands(publish), /--ci-candidate|npm run dist:ci/);
+console.log('CI contracts passed: Windows, both native Macs, precise trim, artifact integrity and compatibility update relay');
