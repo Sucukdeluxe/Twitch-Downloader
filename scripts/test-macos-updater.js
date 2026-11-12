@@ -75,7 +75,8 @@ if let token = argument("--mac-update-token="), let state = argument("--mac-upda
 }
 app.run()
 `);
-  run('/usr/bin/xcrun', ['swiftc', fixtureSource, '-o', fixture]);
+  // Keep fixtures runnable on the host even when Xcode defaults to a newer SDK.
+  run('/usr/bin/xcrun', ['swiftc', '-target', `${process.arch === 'x64' ? 'x86_64' : 'arm64'}-apple-macosx12.0`, fixtureSource, '-o', fixture]);
 });
 
 after(async () => {
