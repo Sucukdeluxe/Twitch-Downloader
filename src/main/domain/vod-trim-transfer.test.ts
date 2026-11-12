@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,6 +8,7 @@ import { buildVodSpoolArgs, planVodTrimEpochs, planVodTrimSpools, transferVodSou
 import { createTokenBucketBudget, createTokenBucketTransform } from './token-bucket-transform';
 import { buildPreciseVodTrimArgs, buildVodConcatArgs, probeVodMedia, readVodPlaylistTimeline } from './vod-precise-trim';
 import type { PausableOutput } from './pausable-output';
+import * as pausableOutput from './pausable-output';
 import type { HlsMediaPlaylist } from './vod-live-snapshot';
 
 const toolPath = (value: string | undefined): string | undefined => value && /[/\\]/.test(value) ? path.resolve(value) : value;
@@ -56,29 +57,37 @@ describe('bounded precise VOD transport', () => {
         } finally { abort.abort(); await outcome; await fixture.close(); }
     }, 8000);
 
-    it('preserves cancellation when an outstanding write reports a secondary stream error', async () => {
+    it('preserves cancellation when output completion subsequently rejects', async () => {
         const fixture = await fixtureServer(4 * 1024 * 1024), file = path.join(root(), 'cancelled.ts');
         const abort = new AbortController(), throttle = createTokenBucketTransform(64 * 1024);
-        const originalPipe = throttle.pipe;
-        let target: NodeJS.WritableStream | undefined;
-        throttle.pipe = function <T extends NodeJS.WritableStream>(destination: T, options?: { end?: boolean }): T {
-            target = destination;
-            return originalPipe.call(this, destination, options) as T;
-        };
+        const createOutput = pausableOutput.createPausableOutput;
+        const secondary = new Error('Cannot call write after a stream was destroyed');
+        // Control only the completion boundary, while retaining the real file,
+        // network stream and cancellation. Emitting an artificial error event
+        // on the file would consume its native error listener and could cause a
+        // second, real Windows write callback to become unhandled.
+        const spy = vi.spyOn(pausableOutput, 'createPausableOutput').mockImplementation((...args) => {
+            const output = createOutput(...args);
+            return { ...output, finished: output.finished.then(
+                () => { throw secondary; },
+                () => { throw secondary; },
+            ) };
+        });
         const work = transferVodSource({ command: process.execPath, args: ['-e', client, fixture.url],
             outputPath: file, throttle, signal: abort.signal });
         const outcome = work.then(() => null, failure => failure as Error);
         try {
             await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0);
             abort.abort();
-            // Windows may complete an already queued target write after destroy.
-            // Emit on the actual file stream: emitting on the destroyed throttle
-            // would be a no-op and would not exercise output.finished rejection.
-            expect(target).toBeDefined();
-            target!.emit('error', new Error('Cannot call write after a stream was destroyed'));
+            expect(spy).toHaveBeenCalledOnce();
             expect((await outcome)?.message).toMatch(/cancelled/);
             expect(fs.existsSync(file)).toBe(false);
-        } finally { abort.abort(); await outcome; await fixture.close(); }
+        } finally {
+            abort.abort();
+            await outcome;
+            spy.mockRestore();
+            await fixture.close();
+        }
     });
 
     it('shares the existing byte budget across concurrent source transfers', async () => {
