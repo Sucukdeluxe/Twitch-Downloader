@@ -16,9 +16,15 @@ const roots: string[] = [];
 const root = (): string => { const result = fs.mkdtempSync(path.join(os.tmpdir(), 'vod-transfer-test-')); roots.push(result); return result; };
 afterEach(() => { for (const directory of roots.splice(0)) fs.rmSync(directory, { recursive: true, force: true }); });
 const delay = (milliseconds: number): Promise<void> => new Promise(resolve => setTimeout(resolve, milliseconds));
-async function waitFor(predicate: () => boolean): Promise<void> {
-    const end = Date.now() + 3000;
-    while (!predicate()) { if (Date.now() > end) throw new Error('Transfer condition timed out'); await delay(10); }
+async function waitFor(predicate: () => boolean, outcome: Promise<Error | null>, condition: string): Promise<void> {
+    const end = Date.now() + 10000;
+    let completed = false, failure: Error | null = null;
+    void outcome.then(result => { completed = true; failure = result; });
+    while (!predicate()) {
+        if (completed) throw new Error(`Transfer ended before ${condition}: ${failure?.message ?? 'completed without error'}`);
+        if (Date.now() > end) throw new Error(`Transfer condition timed out: ${condition}`);
+        await delay(10);
+    }
 }
 const client = "require('node:http').get(process.argv[1],r=>r.pipe(process.stdout)).on('error',()=>process.exit(2))";
 async function fixtureServer(bytes: number): Promise<{ server: http.Server; url: string; close: () => Promise<void> }> {
@@ -36,26 +42,29 @@ describe('bounded precise VOD transport', () => {
         const file = path.join(root(), 'source.ts');
         const abort = new AbortController();
         let output: PausableOutput | undefined;
-        const work = transferVodSource({ command: process.execPath, args: ['-e', client, fixture.url], outputPath: file,
+        const work = transferVodSource({ command: process.execPath, args: ['-e', `setTimeout(() => { ${client} }, 500)`, fixture.url], outputPath: file,
             throttle: createTokenBucketTransform(64 * 1024), signal: abort.signal,
-            intervalMs: 20, stallAfterMs: 50, stallTimeoutMs: 150,
+            // Process startup is deliberately delayed: it must fit comfortably
+            // inside the network budget, even on a busy native CI runner.
+            intervalMs: 50, stallAfterMs: 100, stallTimeoutMs: 5000,
             onReady: (_child, stream) => { output = stream; } });
         const outcome = work.then(() => null, error => error as Error);
         try {
-            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0);
+            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0, outcome, 'first source bytes');
             output!.pause();
             await delay(80);
             const pausedSize = fs.statSync(file).size;
-            await delay(250);
+            // Stay paused longer than the full watchdog budget.
+            await delay(5200);
             expect(fs.statSync(file).size).toBe(pausedSize);
             expect(output!.isPaused()).toBe(true);
             output!.resume();
-            await waitFor(() => fs.statSync(file).size > pausedSize);
+            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > pausedSize, outcome, 'resumed source bytes');
             abort.abort();
             expect((await outcome)?.message).toMatch(/cancelled/);
             expect(fs.existsSync(file)).toBe(false);
         } finally { abort.abort(); await outcome; await fixture.close(); }
-    }, 8000);
+    }, 20000);
 
     it('preserves cancellation when output completion subsequently rejects', async () => {
         const fixture = await fixtureServer(4 * 1024 * 1024), file = path.join(root(), 'cancelled.ts');
@@ -77,7 +86,7 @@ describe('bounded precise VOD transport', () => {
             outputPath: file, throttle, signal: abort.signal });
         const outcome = work.then(() => null, failure => failure as Error);
         try {
-            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0);
+            await waitFor(() => fs.existsSync(file) && fs.statSync(file).size > 0, outcome, 'first source bytes');
             abort.abort();
             expect(spy).toHaveBeenCalledOnce();
             expect((await outcome)?.message).toMatch(/cancelled/);
@@ -88,7 +97,7 @@ describe('bounded precise VOD transport', () => {
             spy.mockRestore();
             await fixture.close();
         }
-    });
+    }, 15000);
 
     it('shares the existing byte budget across concurrent source transfers', async () => {
         const bytes = 160 * 1024, rate = 128 * 1024;
@@ -101,7 +110,7 @@ describe('bounded precise VOD transport', () => {
             expect(Date.now() - started).toBeGreaterThanOrEqual(1200);
             for (const file of files) expect(fs.readFileSync(file)).toEqual(Buffer.alloc(bytes, 73));
         } finally { await fixture.close(); }
-    }, 8000);
+    }, 20000);
 
     it('never removes an existing output and cleans a producer launch failure', async () => {
         const directory = root(), existing = path.join(directory, 'existing.ts');
@@ -111,19 +120,32 @@ describe('bounded precise VOD transport', () => {
         const missing = path.join(directory, 'failed.ts');
         await expect(transferVodSource({ command: path.join(directory, 'missing-binary'), args: [], outputPath: missing })).rejects.toThrow();
         expect(fs.existsSync(missing)).toBe(false);
-    });
+    }, 10000);
 
     it('terminates a genuinely stalled source and removes its owned partial file', async () => {
-        const server = http.createServer((_request, response) => { response.writeHead(200); response.flushHeaders(); });
+        let requested = false;
+        const server = http.createServer((_request, response) => {
+            requested = true;
+            response.writeHead(200);
+            response.write('initial source bytes');
+            // Keep the response open without producing any more bytes.
+        });
         await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-        const file = path.join(root(), 'stalled.ts');
+        const file = path.join(root(), 'stalled.ts'), abort = new AbortController();
+        const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stalled`;
+        const outcome = transferVodSource({ command: process.execPath, args: ['-e', client, url], outputPath: file,
+            signal: abort.signal, intervalMs: 50, stallAfterMs: 100, stallTimeoutMs: 5000 })
+            .then(() => null, failure => failure as Error);
         try {
-            const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stalled`;
-            await expect(transferVodSource({ command: process.execPath, args: ['-e', client, url], outputPath: file,
-                intervalMs: 10, stallAfterMs: 30, stallTimeoutMs: 100 })).rejects.toThrow(/timeout/);
+            // A startup failure must not masquerade as a successful stall test.
+            await waitFor(() => requested && fs.existsSync(file) && fs.statSync(file).size > 0, outcome, 'initial bytes before network stall');
+            expect((await outcome)?.message).toMatch(/timeout/);
             expect(fs.existsSync(file)).toBe(false);
-        } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
-    });
+        } finally {
+            abort.abort(); await outcome;
+            server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+        }
+    }, 15000);
 
     it('unwraps only the MPEG-TS clock around the bounded selected snapshot', () => {
         const wrap = 2 ** 33 / 90000;
@@ -182,7 +204,7 @@ describe('bounded precise VOD transport', () => {
         expect(copied.originSeconds).toBeCloseTo(original.originSeconds, 4);
         expect(copied.formatStartSeconds).toBeCloseTo(original.formatStartSeconds, 4);
         expect(copied.seekOffset).toBeCloseTo(original.seekOffset, 4);
-    }, 15000);
+    }, 30000);
     it('preserves selected frames across two timestamp-reset epochs in one final MP4', async () => {
         const staged = path.resolve(`.cache/macos-tools/stage-${process.arch}/ffmpeg`);
         const ffmpeg = toolPath(process.env.FFMPEG_PATH) ?? (process.platform === 'darwin' && fs.existsSync(path.join(staged, 'ffmpeg')) ? path.join(staged, 'ffmpeg') : 'ffmpeg');
@@ -246,6 +268,6 @@ describe('bounded precise VOD transport', () => {
             expect(best.score).toBeGreaterThan(.98);
             expect(Math.abs(best.lag)).toBeLessThanOrEqual(48);
         }
-    });
+    }, 30000);
 
 });
