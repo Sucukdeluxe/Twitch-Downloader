@@ -151,7 +151,7 @@ function Workspace({ options, bind }) {
     selectedPlayback.current = false; setSelectionPlaying(false);
     setRange({ start, end });
     if (!omitting) options.onRange(start, end);
-    if (interaction?.source === 'pointer' && interaction.boundary === 'start') setSeekRequest({ seconds: start });
+    if (interaction?.source === 'pointer') setSeekRequest({ seconds: interaction.boundary === 'end' ? end : start });
   }, [options, omitting, draftBounds?.start, draftBounds?.end, gaps, duration, range]);
   function setExcerpt(start, end, precise = false) {
     const next = wholeRange(start, end, duration, modeRanges.current.excerpt, precise);
@@ -168,7 +168,7 @@ function Workspace({ options, bind }) {
     selectedPlayback.current = false; setSelectionPlaying(false);
     const next = setExcerpt(start, end);
     options.onRange(next.start, next.end);
-    if (interaction?.source === 'pointer' && interaction.boundary === 'start') setSeekRequest({ seconds:next.start });
+    if (interaction?.source === 'pointer') setSeekRequest({ seconds:interaction.boundary === 'end' ? next.end : next.start });
   }
   const seek = useCallback(seconds => { setSeekRequest({ seconds }); }, []);
   bind.current = {

@@ -24,3 +24,7 @@ tests/
 fixtures/
 artifacts/
 scripts/benchmark-archive-loading*.js
+
+!scripts/smoke-test-vod-boundary-preview.cjs
+!scripts/e2e-test-environment.js
+!scripts/smoke-test-hidden-bootstrap.js
