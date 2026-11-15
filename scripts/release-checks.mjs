@@ -31,6 +31,7 @@ export const checks = [
     ['trim-merge-cancel', ['scripts/smoke-test-trim-merge-repair.cjs', '--two-omissions', '--cancel']],
     ['vod-playback', ['scripts/smoke-test-full-vod-audit.js']],
     ['player-seek-preference', ['scripts/smoke-test-player-seek-preference.cjs']],
+    ['vod-boundary-preview', ['scripts/smoke-test-vod-boundary-preview.cjs']],
     ['vod-live-categories', ['scripts/smoke-test-live-categories.cjs']],
     ['vod-loading-lifecycle', ['scripts/smoke-test-vod-loading-lifecycle.cjs']],
     ['vod-opening-source', ['scripts/smoke-test-vod-opening-source.cjs']],

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.22 - 2026-11-15
+
+This update shows the selected end position in the video when adjusting a VOD trim.
+
+- Preview the end boundary while dragging the O marker, just as with the I marker.
+- Use the end-position preview in both compact and expanded trim views, including when excluding ranges.
+
 ## 1.1.21 - 2026-11-11
 
 - Give the Trim VOD preview more room with collapsible details and a compact footer.
