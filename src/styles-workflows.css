@@ -3323,6 +3323,11 @@ input[type="checkbox"].vod-select-checkbox {
     scrollbar-width: thin;
 }
 
+/* Zoom reads the final width immediately to preserve the pointer's time anchor. */
+.cutter-timeline-scroll > .timeline {
+    transition: none !important;
+}
+
 .timeline {
     width: 100%;
     min-width: 100%;

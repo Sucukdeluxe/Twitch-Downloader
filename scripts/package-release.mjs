@@ -17,7 +17,7 @@ if (ciCandidate && process.env.CI !== 'true') throw new Error('CI candidate pack
 const verificationDirectory = resolve(root, 'release/verification');
 await mkdir(verificationDirectory, { recursive: true });
 await rm(resolve(verificationDirectory, 'package.json'), { force: true });
-if (!ciCandidate) for (const file of ['scripts/smoke-test-release-package.js', 'scripts/smoke-test-roadmap-native.js']) await access(resolve(root, file));
+if (!ciCandidate) for (const file of ['scripts/smoke-test-release-package.js', 'scripts/smoke-test-roadmap-native.js', 'scripts/smoke-test-installer.js']) await access(resolve(root, file));
 const receipt = ciCandidate ? null : await verifyReceipt(root);
 const fingerprint = await releaseFingerprint(root);
 const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
@@ -40,11 +40,30 @@ const actual = entries.filter(name => name.startsWith('dist/') && /\.(js|css|htm
 if (JSON.stringify(actual) !== JSON.stringify(runtime)) throw new Error('Package runtime file list differs from the verified build');
 for (const name of runtime) if (!extractFile(archive, normalize(name)).equals(await readFile(resolve(root, name)))) throw new Error('Package file mismatch: ' + name);
 if (JSON.parse(extractFile(archive, 'package.json')).version !== pkg.version) throw new Error('Package version mismatch');
+async function checkPackage(name, args, timeout) {
+    console.log('Checking ' + name);
+    try {
+        const result = await execute(process.execPath, args, { cwd: root, windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024 });
+        await writeFile(resolve(verificationDirectory, name + '.log'), result.stdout + result.stderr);
+    } catch (error) {
+        await writeFile(resolve(verificationDirectory, name + '.log'), String(error.stdout || '') + String(error.stderr || '') + String(error));
+        throw error;
+    }
+}
 if (!ciCandidate) {
-    const result = await execute(process.execPath, ['scripts/smoke-test-release-package.js'], { cwd: root, windowsHide: true, timeout: 180000, maxBuffer: 16 * 1024 * 1024 });
-    await writeFile(resolve(verificationDirectory, 'native-package.log'), result.stdout + result.stderr);
-    const roadmap = await execute(process.execPath, ['scripts/smoke-test-roadmap-native.js', '--packaged'], { cwd: root, windowsHide: true, timeout: 240000, maxBuffer: 16 * 1024 * 1024 });
-    await writeFile(resolve(verificationDirectory, 'native-roadmap-package.log'), roadmap.stdout + roadmap.stderr);
+    const failures = [];
+    for (const [name, args, timeout] of [
+        ['native-package', ['scripts/smoke-test-release-package.js'], 180000],
+        ['native-roadmap-package', ['scripts/smoke-test-roadmap-native.js', '--packaged'], 240000],
+        ['native-installer', ['scripts/smoke-test-installer.js'], 600000],
+    ]) {
+        try { await checkPackage(name, args, timeout); }
+        catch (error) {
+            console.error(String(error.stdout || '') + String(error.stderr || '') + String(error));
+            failures.push(new Error(name + ' failed; see release/verification/' + name + '.log', { cause: error }));
+        }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Native package verification failed');
     await verifyReceipt(root);
 }
 const files = [];

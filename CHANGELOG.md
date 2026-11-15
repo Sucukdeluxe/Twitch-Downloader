@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.21 - 2026-11-11
+
+- Give the Trim VOD preview more room with collapsible details and a compact footer.
+- Keep start time, end time and video length available while details are hidden, with mirrored I/O controls and Set here actions.
+- Place Close on the left and Add to queue on the right.
+- Preserve range selection, playback, focus and omission controls when switching layouts.
+- Keep the cutter zoom anchored correctly when reduced motion is enabled.
+- Update the HTTP redirect dependency to its patched version.
+- Include reproducible release checks in the public repository.
+
 ## 1.1.20 - 2026-11-08
 
 This update keeps the sidebar layout consistent when switching between Settings and Twitch VODs.

@@ -177,6 +177,7 @@ function applyLanguageToStaticUI(): void {
     setText('clipDialogConfirmBtn', UI_TEXT.clips.dialogConfirm);
     setText('clipTimeHint', UI_TEXT.clips.timeInputHint);
     setText('clipSelectionTitle', UI_TEXT.clips.selectionTitle);
+    if (typeof refreshClipDetailsToggle === 'function') refreshClipDetailsToggle();
     setText('clipSeekStart', UI_TEXT.clips.seekStart);
     setText('clipSeekEnd', UI_TEXT.clips.seekEnd);
     setText('clipFilenameOptionsTitle', UI_TEXT.clips.filenameOptions);

@@ -650,6 +650,8 @@ const UI_TEXT_DE = {
         timeLater: 'Um 1 Sekunde erhöhen',
         timeInputHint: "HH:MM:SS oder Sekunden",
         selectionTitle: 'Schnittbereich',
+        showDetails: 'Details einblenden',
+        hideDetails: 'Details ausblenden',
         seekStart: 'Zum Start',
         seekEnd: 'Zum Ende',
         filenameOptions: 'Dateiname und Fortsetzung',

@@ -650,6 +650,8 @@ const UI_TEXT_EN = {
         timeLater: 'Increase by 1 second',
         timeInputHint: "HH:MM:SS or seconds",
         selectionTitle: 'Selected range',
+        showDetails: 'Show details',
+        hideDetails: 'Hide details',
         seekStart: 'Go to start',
         seekEnd: 'Go to end',
         filenameOptions: 'File name and continuation',

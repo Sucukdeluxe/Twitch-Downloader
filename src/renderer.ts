@@ -1725,6 +1725,58 @@ let clipSavedNaming: { format: CustomClip['filenameFormat']; template: string } 
 
 let clipQueueInFlight = false;
 let clipQueueError = '';
+let clipDetailsCollapsedPreference: boolean | null = null;
+
+function refreshClipDetailsToggle(): void {
+    const modal = byId('clipModal');
+    const toggle = byId<HTMLButtonElement>('clipDetailsToggle');
+    const collapsed = modal.classList.contains('is-range-collapsed');
+    toggle.hidden = false;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    byId('clipDetailsToggleLabel').textContent = collapsed ? UI_TEXT.clips.showDetails : UI_TEXT.clips.hideDetails;
+    // Reuse the actual inputs and their player portals so both layouts edit
+    // exactly the same range, including sub-second boundaries and validation.
+    const fields = byId('clipRangeFields');
+    const inFooter = collapsed && !modal.classList.contains('is-omitting');
+    const parent = byId(inFooter ? 'clipFooterFields' : 'clipCutPanel');
+    const focused = document.activeElement instanceof HTMLElement && fields.contains(document.activeElement) ? document.activeElement : null;
+    const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] as const : null;
+    let moved = false;
+    if (fields.parentElement !== parent) {
+        parent.insertBefore(fields, inFooter ? null : byId('clipOmissionPanel'));
+        moved = true;
+    }
+    // Mirror the end boundary while keeping visual and keyboard order aligned.
+    for (const side of ['Start', 'End']) {
+        const mark = byId(`clipMark${side}`);
+        const row = mark.closest('.clip-modal-time-row');
+        const heading = row?.querySelector('.vod-time-heading');
+        const entry = row?.querySelector('.vod-time-entry');
+        if (!row || !heading || !entry) continue;
+        if (!inFooter && mark.parentElement !== heading) {
+            heading.appendChild(mark);
+            moved = true;
+        }
+        const order = !inFooter ? [heading, entry] : side === 'End' ? [mark, entry, heading] : [heading, entry, mark];
+        order.forEach((element, index) => {
+            if (row.children[index] !== element) {
+                row.insertBefore(element, row.children[index] ?? null);
+                moved = true;
+            }
+        });
+    }
+    if (moved) {
+        focused?.focus({ preventScroll: true });
+        if (focused instanceof HTMLInputElement && selection) focused.setSelectionRange(selection[0], selection[1]);
+    }
+}
+
+function toggleClipDetails(): void {
+    const modal = byId('clipModal');
+    clipDetailsCollapsedPreference = !modal.classList.contains('is-range-collapsed');
+    modal.classList.toggle('is-range-collapsed', clipDetailsCollapsedPreference);
+    refreshClipDetailsToggle();
+}
 
 function getClipStartPart(): number {
     const value = byId<HTMLInputElement>('clipStartPart').value.trim();
@@ -1754,6 +1806,13 @@ function updateClipOmissionState(): void {
     if (invalidPart) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Startnummer: 1–100.000.' : 'Starting number: 1–100,000.';
     else if (clipOmissionState?.editing) byId('clipQueueHint').textContent = currentLanguage === 'de' ? 'Bereich bestätigen oder abbrechen.' : 'Confirm or cancel the range.';
     else if (clipQueueError) byId('clipQueueHint').textContent = clipQueueError;
+    // Range inputs stay visible in either layout. Only hidden filename options
+    // need expansion; partial time entry must not move or blur the active input.
+    if (invalidPart) {
+        byId('clipModal').classList.remove('is-range-collapsed');
+        refreshClipDetailsToggle();
+    }
+    byId<HTMLButtonElement>('clipDetailsToggle').disabled = invalidPart;
 }
 
 function formatClipOutputSummary(fileCount: number, durationSec: number, partSeconds: number): string {
@@ -1800,12 +1859,25 @@ function openClipDialog(url: string, title: string, date: string, streamer: stri
 
     updateClipDuration();
     updateFilenameExamples();
+    byId('clipModal').classList.add('is-compact-trim');
+    {
+        const close = byId('clipCancelBtn');
+        if (close.parentElement?.firstElementChild !== close) close.parentElement?.prepend(close);
+    }
+    byId('clipModal').classList.toggle('is-range-collapsed', !byId<HTMLButtonElement>('clipDetailsToggle').disabled
+        && (clipDetailsCollapsedPreference ?? true));
+    refreshClipDetailsToggle();
     RendererAccessibility.openDialog('clipModal', { onEscape: closeClipDialog, onBackdrop: closeClipDialog });
     clipPlayer = window.VodPlayer.mount(byId('clipPlayer'), {
         url, title, date, duration: clipTotalSeconds, language: config.language || 'de', start: 0, end: clipTotalSeconds,
         partMinutes: config.part_minutes || 60, downloadMode: config.download_mode,
         outputSettings: () => ({ startPart: getClipStartPart() }),
         filename: previewEditedFilename,
+        onMode(active) {
+            if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
+            byId('clipModal').classList.toggle('is-omitting', active);
+            refreshClipDetailsToggle();
+        },
         onOmissions(state) {
             if (generation !== clipDialogGeneration || clipDialogData !== currentDialog) return;
             const changed = Boolean(state) !== Boolean(clipOmissionState);
