@@ -46,6 +46,9 @@ const report = { checks: [] };
         async function dragBoundary(selector, boundary, delta, omitting = false) {
             await win.evaluate(() => { clipPlayer.applyExcerpt({ range: { start: 2, end: 18 }, omissions: [] }); });
             await win.waitForFunction(() => Math.abs(document.querySelector('#clipPlayer video.active').currentTime - 2) < .15);
+            const expanded = selector.startsWith('.vod-selection');
+            const collapsed = await win.locator('#clipModal').evaluate(element => element.classList.contains('is-range-collapsed'));
+            if (expanded === collapsed) await win.locator('#clipDetailsToggle').click();
             if (omitting) await win.locator('.vod-omission-modes button').nth(1).click();
             const handle = win.locator(selector + ' .is-' + boundary).first();
             await handle.scrollIntoViewIfNeeded();
