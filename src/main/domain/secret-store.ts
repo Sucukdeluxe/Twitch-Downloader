@@ -1,7 +1,7 @@
 import type { DbHandle } from '../infra/db';
 import type { SecureStorage } from '../infra/secure-storage';
 
-export type AppSecretKey = 'twitch_client_secret' | 'discord_webhook_url';
+export type AppSecretKey = 'twitch_client_secret' | 'discord_webhook_url' | 'mcp_access_token';
 
 export interface SecretStatus {
     encryptionAvailable: boolean;

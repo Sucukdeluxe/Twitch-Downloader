@@ -206,6 +206,25 @@ interface DownloadPolicyStatus {
     nextStart: string | null;
 }
 
+interface McpState {
+    available: boolean;
+    enabled: boolean;
+    port: number;
+    networkAccess: boolean;
+    publicUrl: string;
+    tokenConfigured: boolean;
+    running: boolean;
+    error: 'port-in-use' | 'no-access' | 'failed' | null;
+    localUrl: string;
+    networkUrls: string[];
+    requests: number;
+    lastActivityAt: number | null;
+    lastTool: string | null;
+}
+
+interface McpSettingsInput { enabled?: boolean; port?: number; networkAccess?: boolean; publicUrl?: string }
+type McpCopyKind = 'url' | 'token' | 'secret-url' | 'claude-code' | 'json';
+
 interface SecretStatus {
     encryptionAvailable: boolean;
     clientSecretConfigured: boolean;
@@ -481,6 +500,11 @@ interface ApiBridge {
     clearClientSecret(): Promise<SecretStatus>;
     setDiscordWebhook(value: string): Promise<SecretStatus>;
     clearDiscordWebhook(): Promise<SecretStatus>;
+    getMcpState(): Promise<McpState | null>;
+    setMcpSettings(settings: McpSettingsInput): Promise<McpState | null>;
+    regenerateMcpToken(): Promise<McpState | null>;
+    copyMcpValue(kind: McpCopyKind, target: 'public' | 'local'): Promise<boolean>;
+    onMcpStateChanged(callback: (state: McpState) => void): void;
     login(): Promise<boolean>;
     getUserId(username: string): Promise<string | null>;
     getVODs(userId: string, forceRefresh?: boolean): Promise<VOD[]>;

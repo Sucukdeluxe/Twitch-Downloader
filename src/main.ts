@@ -16,6 +16,7 @@ import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-librar
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
 import { registerEditingWorkflows } from './main/editing-workflows';
+import { McpService, MediaJobQueue, composeLossless, formatDifferences, probeComposeSource, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type McpHost, type McpRecordingEvent } from './main/mcp';
 import { createApplicationBackup, inspectApplicationBackup, queueApplicationRestore, applyPendingApplicationRestore } from './main/domain/application-backup';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode } from './main/domain/media-format';
 import { createDevelopmentLiveUpdates } from './main/development-live';
@@ -25,12 +26,13 @@ import { randomUUID } from 'node:crypto';
 import { createDownloadHistoryStore, downloadOutputBytes, emptyLifetimeDownloadStats, type DownloadHistoryStore } from './main/domain/download-history-store';
 import { requestPublicClipInfo } from './main/twitch/clip-info';
 import { parseTwitchClipId } from './main/twitch/clip-url';
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Notification, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, dialog, shell, nativeTheme, Notification, type IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess, execFile } from 'child_process';
 import { promisify } from 'node:util';
 import { connect as tlsConnect, TLSSocket } from 'node:tls';
+import { networkInterfaces } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import type { Transform } from 'node:stream';
 import axios from 'axios';
@@ -40,7 +42,7 @@ import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
 import { remuxMp4 } from './main/domain/mp4-remux';
 import { VodPlaybackService } from './main/domain/vod-playback-service';
-import { VodTimelineService } from './main/domain/vod-timeline';
+import { VodTimelineService, type VodTimeline } from './main/domain/vod-timeline';
 import { compareUpdateVersions, createUpdateCheckCoordinator, normalizeUpdateVersion, UpdateLifecycle } from './main/updates';
 import { writeFileAtomicSync } from './main/infra/fs-atomic';
 import { parseDuration, formatDuration, formatDurationDashed } from './main/infra/duration';
@@ -48,6 +50,7 @@ import {
     sanitizeFilenamePart,
     sanitizeClipFilename,
     formatDateWithPattern,
+    formatTwitchDurationFromSeconds,
     getMergeGroupPhaseText as getMergeGroupPhaseTextCore,
 } from './main/infra/format-helpers';
 import { tBackend as tBackendCore, type BackendMessageKey } from './main/domain/i18n-backend';
@@ -339,6 +342,10 @@ interface Config {
     auto_resume_live_recording: boolean;
     auto_merge_resumed_parts: boolean;
     delete_parts_after_merge: boolean;
+    mcp_enabled: boolean;
+    mcp_port: number;
+    mcp_network_access: boolean;
+    mcp_public_url: string;
 }
 
 interface DownloadPolicyStatus {
@@ -545,7 +552,11 @@ const defaultConfig: Config = {
     auto_vod_max_age_hours: 24,
     auto_resume_live_recording: true,
     auto_merge_resumed_parts: false,
-    delete_parts_after_merge: false
+    delete_parts_after_merge: false,
+    mcp_enabled: false,
+    mcp_port: MCP_DEFAULT_PORT,
+    mcp_network_access: false,
+    mcp_public_url: ''
 };
 
 function getStreamlinkStreamArg(quality?: string): string {
@@ -629,7 +640,11 @@ function normalizeConfigTemplates(input: Config): Config {
         })(),
         auto_resume_live_recording: input.auto_resume_live_recording !== false,
         auto_merge_resumed_parts: input.auto_merge_resumed_parts === true,
-        delete_parts_after_merge: input.delete_parts_after_merge === true
+        delete_parts_after_merge: input.delete_parts_after_merge === true,
+        mcp_enabled: input.mcp_enabled === true,
+        mcp_port: normalizeMcpPort(input.mcp_port),
+        mcp_network_access: input.mcp_network_access === true,
+        mcp_public_url: normalizeMcpPublicUrl(input.mcp_public_url)
     };
 }
 
@@ -7872,7 +7887,9 @@ registerTrustedIpcHandler(ipcMain, 'add-to-queue-with-result', isTrustedRenderer
     return addRendererQueueItemWithResult(input, false);
 });
 
-registerTrustedIpcHandler(ipcMain, 'remove-from-queue', isTrustedRendererEvent, () => Promise.resolve(downloadQueue), async (_, id: string) => {
+registerTrustedIpcHandler(ipcMain, 'remove-from-queue', isTrustedRendererEvent, () => Promise.resolve(downloadQueue), (_, id: string) => removeQueueItemById(id));
+
+async function removeQueueItemById(id: string): Promise<QueueItem[]> {
     if (typeof id !== 'string' || !id) return downloadQueue;
     const wasActiveItem = activeQueueItemId === id || activeDownloads.has(id) || queueProcessRegistry.activeItemIds().includes(id);
     const removedItem = downloadQueue.find((item) => item.id === id);
@@ -7914,12 +7931,18 @@ registerTrustedIpcHandler(ipcMain, 'remove-from-queue', isTrustedRendererEvent, 
     );
     emitQueueUpdated();
     return downloadQueue;
-});
+}
+
+function clearCompletedQueueItems(): number {
+    const before = downloadQueue.length;
+    downloadQueue = persistStateChange(downloadQueue, (current) => current.filter((item) => item.status !== 'completed'), saveQueue);
+    emitQueueUpdated();
+    return before - downloadQueue.length;
+}
 
 ipcMain.handle('clear-completed', (event) => {
     if (!isTrustedRendererEvent(event)) return downloadQueue;
-    downloadQueue = persistStateChange(downloadQueue, (current) => current.filter((item) => item.status !== 'completed'), saveQueue);
-    emitQueueUpdated();
+    clearCompletedQueueItems();
     return downloadQueue;
 });
 
@@ -7937,48 +7960,40 @@ ipcMain.handle('reorder-queue', (event, orderIds: string[]) => {
     return downloadQueue;
 });
 
-ipcMain.handle('retry-failed-downloads', async (event) => {
-    if (!isTrustedRendererEvent(event)) return downloadQueue;
-    const failedIds = downloadQueue.filter((item) => item.status === 'error' && !item.mergeRecoveryBlocked).map((item) => item.id);
-    await Promise.all(failedIds.map((id) => queueProcessRegistry.cancelItem(id)));
-    for (const id of failedIds) queueProcessRegistry.resetItem(id);
-    const nextQueue: QueueItem[] = downloadQueue.map((item) => {
-        if (item.status !== 'error' || item.mergeRecoveryBlocked) return item;
-
-        return { ...clearQueueTransferState(item, 'pending', 0), last_error: '' };
-    });
-
-    downloadQueue = persistStateChange(downloadQueue, () => nextQueue, saveQueue);
+async function retryQueueItems(ids: string[] | null): Promise<string[]> {
+    const retryIds = downloadQueue
+        .filter((item) => item.status === 'error' && !item.mergeRecoveryBlocked && (ids === null || ids.includes(item.id)))
+        .map((item) => item.id);
+    if (ids !== null && retryIds.length === 0) return [];
+    await Promise.all(retryIds.map((id) => queueProcessRegistry.cancelItem(id)));
+    for (const id of retryIds) queueProcessRegistry.resetItem(id);
+    const selected = new Set(retryIds);
+    downloadQueue = persistStateChange(downloadQueue, (current) => current.map((candidate) => selected.has(candidate.id) && candidate.status === 'error' && !candidate.mergeRecoveryBlocked
+        ? { ...clearQueueTransferState(candidate, 'pending', 0), last_error: '' }
+        : candidate), saveQueue);
     emitQueueUpdated();
 
     if (!isDownloading) {
         scheduleQueueProcessing();
     }
 
+    return retryIds;
+}
+
+ipcMain.handle('retry-failed-downloads', async (event) => {
+    if (!isTrustedRendererEvent(event)) return downloadQueue;
+    await retryQueueItems(null);
     return downloadQueue;
 });
 
 ipcMain.handle('retry-queue-item', async (event, id: string) => {
     if (!isTrustedRendererEvent(event)) return downloadQueue;
     if (typeof id !== 'string' || !id) return downloadQueue;
-    const idx = downloadQueue.findIndex((it) => it.id === id);
-    if (idx < 0) return downloadQueue;
-    const item = downloadQueue[idx];
+    const item = downloadQueue.find((candidate) => candidate.id === id);
+    if (!item) return downloadQueue;
     if (item.status !== 'error' || item.mergeRecoveryBlocked) return downloadQueue;
-
-    await queueProcessRegistry.cancelItem(id);
-    queueProcessRegistry.resetItem(id);
-
-    downloadQueue = persistStateChange(downloadQueue, (current) => current.map((candidate) => candidate.id === id
-        ? { ...clearQueueTransferState(candidate, 'pending', 0), last_error: '' }
-        : candidate), saveQueue);
-    emitQueueUpdated();
+    await retryQueueItems([id]);
     appendDebugLog('queue-item-retry-single', { id, title: item.title });
-
-    if (!isDownloading) {
-        scheduleQueueProcessing();
-    }
-
     return downloadQueue;
 });
 
@@ -8063,8 +8078,7 @@ ipcMain.handle('create-merge-group', (event, itemIds: string[]) => {
     return downloadQueue;
 });
 
-ipcMain.handle('start-download', async (event, manualOverride: unknown = false) => {
-    if (!isTrustedRendererEvent(event)) return false;
+async function startDownloadQueue(manualOverride: boolean): Promise<boolean> {
     if (isDownloading && queuePaused) {
         const nextQueue = downloadQueue.map((item) => item.status === 'paused'
             ? clearQueueTransferState(item, 'downloading', item.progress)
@@ -8095,10 +8109,14 @@ ipcMain.handle('start-download', async (event, manualOverride: unknown = false) 
         scheduleQueueProcessing(manualOverride === true);
     }
     return true;
+}
+
+ipcMain.handle('start-download', async (event, manualOverride: unknown = false) => {
+    if (!isTrustedRendererEvent(event)) return false;
+    return startDownloadQueue(manualOverride === true);
 });
 
-ipcMain.handle('pause-download', async (event) => {
-    if (!isTrustedRendererEvent(event)) return false;
+async function pauseDownloadQueue(): Promise<boolean> {
     if (!isDownloading || queuePaused) return false;
 
     const nextQueue = downloadQueue.map((item) => {
@@ -8128,6 +8146,11 @@ ipcMain.handle('pause-download', async (event) => {
     emitQueueUpdated(true);
     mainWindow?.webContents.send('download-paused');
     return true;
+}
+
+ipcMain.handle('pause-download', async (event) => {
+    if (!isTrustedRendererEvent(event)) return false;
+    return pauseDownloadQueue();
 });
 
 ipcMain.handle('cancel-download', async (event) => {
@@ -9372,6 +9395,10 @@ app.whenReady().then(async () => {
         discordWebhookUrl = readSecretSafely(appSecretStore, 'discord_webhook_url', (error) => {
             appendDebugLog('secret-load-failed', { key: 'discord_webhook_url', error: String(error) });
         });
+        const storedMcpAccessToken = readSecretSafely(appSecretStore, 'mcp_access_token', (error) => {
+            appendDebugLog('secret-load-failed', { key: 'mcp_access_token', error: String(error) });
+        });
+        mcpAccessToken = isValidAccessToken(storedMcpAccessToken) ? storedMcpAccessToken : '';
     } catch (e) {
         appendDebugLog('sqlite-open-failed', {
             error: e instanceof Error ? e.message : String(e),
@@ -9392,6 +9419,7 @@ app.whenReady().then(async () => {
         lastPersistedQueueSnapshot = [];
         twitchClientSecret = '';
         discordWebhookUrl = '';
+        mcpAccessToken = '';
     }
 
     restartAutoRecordPoller();
@@ -9409,6 +9437,7 @@ app.whenReady().then(async () => {
     applicationWorkflowBusy = () => editingWorkflows?.busy ?? false;
     applicationWorkflowFlush = async () => { await editingWorkflows?.flush(); };
     createWindow();
+    startMcpService();
     void cleanupStaleCutterMediaDirectories().then(count => {
         if (count > 0) appendDebugLog('cutter-media-cleaned-on-startup', { count });
     });
@@ -9480,6 +9509,9 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
     let frameProcessesExited = frameProcesses.length === 0;
 
     await runResilientSteps([
+        ['mcp-server', async () => { await mcpService?.stop(); }],
+        ['mcp-file-jobs', () => mcpMediaJobs.dispose()],
+        ['mcp-timeline', () => mcpTimelineService.close()],
         ['storage-cleanup', async () => { cleanupAbortController.abort(); await cleanupPending; }],
         ['editing-workflows', async () => { await editingWorkflows?.dispose(); }],
         ['merge-media', () => mergeMedia.dispose()],
@@ -9622,7 +9654,7 @@ function applicationRestoreBusy(allowPausedQueue = false): boolean {
     const queueBusy = allowPausedQueue && queuePaused && !downloadQueue.some(item => item.status === 'downloading')
         ? false
         : isDownloading || activeDownloads.size > 0;
-    return queueBusy || clipRequests.size > 0 || activeClipProcesses.size > 0 || cutterExportActive || workspaceMergeActive || applicationWorkflowBusy() || autoRecordPollInFlight || autoVodPollInFlight || appShutdownStarted;
+    return queueBusy || clipRequests.size > 0 || activeClipProcesses.size > 0 || cutterExportActive || workspaceMergeActive || applicationWorkflowBusy() || mcpMediaJobs.busy || autoRecordPollInFlight || autoVodPollInFlight || appShutdownStarted;
 }
 
 ipcMain.handle('export-application-backup', async event => {
@@ -9742,4 +9774,367 @@ ipcMain.handle('preview-auto-vod-rule', async (event, channel: string, value: un
     const vods = await getVODs(userId, true, true);
     const now = Date.now();
     return vods.slice(0, 100).map(vod => ({ id: vod.id, title: vod.title, duration: vod.duration, result: evaluateAutoVodRule(rule, vod, now, config.auto_vod_max_age_hours), downloaded: config.downloaded_vod_ids.includes(vod.id) }));
+});
+let mcpAccessToken = '';
+let mcpService: McpService | null = null;
+let mcpTimelineChain: Promise<unknown> = Promise.resolve();
+let mcpToolAvailability: { expires: number; value: { ffmpeg: boolean; streamlink: boolean } } | null = null;
+const mcpTimelineService = new VodTimelineService();
+const mcpTimelineRequests = new Map<string, Promise<VodTimeline | null>>();
+const MCP_FRAME_QUALITIES = ['480p', '480p30', '360p', '360p30', '720p', '720p30', '720p60', 'source'];
+
+const mcpMediaJobs = new MediaJobQueue(async (request, context) => {
+    if (appShutdownStarted || applicationBackupBusy) throw new Error('The application is busy or closing.');
+    if (!(await ensureFfmpegInstalled())) throw new Error(tBackend('ffmpegAutoInstallFailed'));
+    const result = await composeLossless({
+        segments: request.segments,
+        outputPath: request.outputPath,
+        ffmpegPath: await getFFmpegPath(),
+        ffprobePath: await getFFprobePath(),
+        signal: context.signal,
+        onProgress: context.onProgress,
+        checkSpace(directory, bytes) {
+            const check = ensureDiskSpace(directory, bytes, 'MP4');
+            if (!check.success) throw new Error(check.error);
+        },
+    });
+    readArchiveInventory.invalidate();
+    appendDebugLog('mcp-file-job-completed', { output: path.basename(result.outputPath), bytes: result.bytes });
+    return result;
+});
+
+function loadMcpTimeline(vodId: string, refresh: boolean): Promise<VodTimeline | null> {
+    const key = vodId + (refresh ? ':fresh' : '');
+    const pending = mcpTimelineRequests.get(key);
+    if (pending) return pending;
+    const request = mcpTimelineChain.then(async () => {
+        if (appShutdownStarted) return null;
+        try {
+            return await mcpTimelineService.load({ id: 'mcp-' + randomUUID(), url: 'https://www.twitch.tv/videos/' + vodId, refresh }, config.download_path);
+        } catch (error) {
+            appendDebugLog('mcp-timeline-failed', { vodId, error: String(error) });
+            return null;
+        }
+    });
+    mcpTimelineChain = request;
+    mcpTimelineRequests.set(key, request);
+    void request.finally(() => mcpTimelineRequests.delete(key));
+    return request;
+}
+
+async function getMcpToolAvailability(): Promise<{ ffmpeg: boolean; streamlink: boolean }> {
+    if (mcpToolAvailability && mcpToolAvailability.expires > Date.now()) return mcpToolAvailability.value;
+    const streamlink = await getStreamlinkCommand();
+    const value = {
+        ffmpeg: await canExecuteCommand(await getFFmpegPath(), ['-version']),
+        streamlink: await canExecuteCommand(streamlink.command, [...streamlink.prefixArgs, '--version']),
+    };
+    mcpToolAvailability = { expires: Date.now() + 60000, value };
+    return value;
+}
+
+function isWithinMcpRoots(candidate: string): boolean {
+    return [config.download_path, clipDownloadRoot()].some(root => Boolean(root)
+        && (normalizeComparablePath(root) === normalizeComparablePath(candidate) || isPathInsideDirectory(root, candidate)));
+}
+
+async function resolveMcpRecording(file: string): Promise<string | null> {
+    if (typeof file !== 'string' || file.length > 1024 || file.includes('\0') || !path.isAbsolute(file) || !isSupportedVideoEditorInput(file)) return null;
+    try {
+        const real = await fs.promises.realpath(file);
+        if (!(await fs.promises.stat(real)).isFile() || !isSupportedVideoEditorInput(real)) return null;
+        if (real.split(path.sep).some(segment => /^\.(?:mcp-compose|vod-edit)-/.test(segment))) return null;
+        return isWithinMcpRoots(real) ? real : null;
+    } catch {
+        return null;
+    }
+}
+
+async function readMcpRecordingEvents(file: string): Promise<McpRecordingEvent[] | null> {
+    const eventsPath = eventsLogPathFor(file);
+    try {
+        const stat = await fs.promises.stat(eventsPath);
+        if (!stat.isFile() || stat.size > 4 * 1024 * 1024) return null;
+        const rows = (await fs.promises.readFile(eventsPath, 'utf8')).split('\n').flatMap((line) => {
+            if (!line.trim() || line.length > 65536) return [];
+            try {
+                const row = JSON.parse(line) as Record<string, unknown>;
+                return isPlainObject(row) && typeof row.t === 'string' && typeof row.type === 'string' && Number.isFinite(Date.parse(row.t)) ? [row] : [];
+            } catch {
+                return [];
+            }
+        });
+        const startedAt = Date.parse(String(rows.find(row => row.type === 'recording_start')?.t ?? rows[0]?.t));
+        if (!Number.isFinite(startedAt)) return [];
+        const text = (value: unknown): string | undefined => typeof value === 'string' && value ? value.slice(0, 500) : undefined;
+        return rows.slice(0, 2000).map((row): McpRecordingEvent => ({
+            offsetSeconds: Math.max(0, Math.round((Date.parse(String(row.t)) - startedAt) / 1000)),
+            at: String(row.t),
+            type: String(row.type).slice(0, 40),
+            title: text(row.title),
+            category: text(row.game),
+            from: text(row.from),
+            to: text(row.to),
+        }));
+    } catch {
+        return null;
+    }
+}
+
+function createMcpHost(): McpHost {
+    return {
+        async status() {
+            const policy = getDownloadPolicyStatus();
+            return {
+                version: APP_VERSION,
+                language: config.language === 'en' ? 'en' : 'de',
+                downloadFolder: config.download_path,
+                downloadMode: config.download_mode,
+                partMinutes: config.part_minutes,
+                freeBytes: getFreeDiskBytes(config.download_path),
+                parallelDownloads: Math.min(Math.max(1, config.parallel_downloads || 1), 2),
+                defaultQuality: config.streamlink_quality,
+                downloading: isDownloading && !queuePaused,
+                paused: isDownloading && queuePaused,
+                waitingForTimeWindow: policy.waiting,
+                nextDownloadWindowStart: policy.nextStart,
+                tools: await getMcpToolAvailability(),
+                autoVodChannels: [...(config.auto_vod_download_streamers || [])],
+                autoRecordChannels: [...(config.auto_record_streamers || [])],
+            };
+        },
+        streamers() {
+            return (config.streamers || []).map(login => ({
+                login,
+                displayName: config.streamer_display_names?.[login] || login,
+                live: liveStatusByLogin.get(login) ?? null,
+                liveVodId: liveVodIdByLogin.get(login) ?? null,
+            }));
+        },
+        async listVods(channel, refresh) {
+            const login = normalizeLogin(channel);
+            const userId = login ? await getUserId(login) : null;
+            if (!userId) return null;
+            const downloaded = new Set(config.downloaded_vod_ids || []);
+            return (await getVODs(userId, refresh)).map(vod => ({
+                id: vod.id,
+                title: vod.title,
+                startedAt: vod.created_at,
+                durationSeconds: parseDuration(vod.duration),
+                url: 'https://www.twitch.tv/videos/' + vod.id,
+                channel: login,
+                live: liveVodIdByLogin.get(login) === vod.id,
+                downloaded: downloaded.has(vod.id),
+            }));
+        },
+        timeline: loadMcpTimeline,
+        storyboard(vodId, from, to, signal) {
+            return loadStoryboard(vodId, from, to, {
+                signal,
+                fetch,
+                manifestUrl: async id => (await fetchPublicTwitchGql<{ video: { seekPreviewsURL: string | null } | null }>(
+                    'query($id: ID!) { video(id: $id) { seekPreviewsURL } }', { id }))?.video?.seekPreviewsURL ?? null,
+            });
+        },
+        async vodFrames(vodId, times, width, signal) {
+            const unavailable = times.map(time => ({ time, jpeg: null }));
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return unavailable;
+            let source: string | null = null;
+            for (const quality of MCP_FRAME_QUALITIES) {
+                source = await resolveVodPlaybackSource('https://www.twitch.tv/videos/' + vodId, quality, signal);
+                if (source || signal.aborted) break;
+            }
+            if (!source) return unavailable;
+            return grabFrames({
+                ffmpegPath: await getFFmpegPath(), input: source, inputArgs: ['-rw_timeout', '20000000'], times, width, signal,
+                onProcess: command => recordManagedToolExecution('ffmpeg', command),
+            });
+        },
+        queue: () => downloadQueue,
+        queueState: () => ({ downloading: isDownloading && !queuePaused, paused: isDownloading && queuePaused }),
+        addToQueue(drafts) {
+            return drafts.map((draft) => {
+                const item = createRendererQueueItem({
+                    url: draft.url, title: draft.title, date: draft.date, streamer: draft.streamer,
+                    duration_str: formatTwitchDurationFromSeconds(draft.durationSeconds),
+                    ...(draft.quality ? { quality: draft.quality } : {}),
+                    ...(draft.customClip ? { customClip: draft.customClip } : {}),
+                }, generateQueueItemId());
+                if (!item) return { accepted: false, reason: 'invalid', item: null };
+                item.createdAt = new Date().toISOString();
+                if (draft.outputPath) {
+                    const outputPath = path.resolve(draft.outputPath);
+                    if (path.extname(outputPath).toLowerCase() !== '.mp4' || path.basename(outputPath).length > 240 || !isPathInsideDirectory(config.download_path, outputPath)) {
+                        return { accepted: false, reason: 'invalid', item: null };
+                    }
+                    item.outputPath = outputPath;
+                }
+                const result = commitQueueItemWithResult(item, false);
+                if (result.accepted) appendDebugLog('mcp-queue-item-added', { id: item.id, title: item.title });
+                return result.accepted ? { accepted: true, reason: null, item } : { accepted: false, reason: result.reason, item: null };
+            });
+        },
+        partOutputFolder(channel, startedAt) {
+            const date = new Date(startedAt);
+            const dateFolder = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+            return path.join(path.resolve(config.download_path), channel.replace(/[^a-zA-Z0-9_-]/g, ''), dateFolder);
+        },
+        startQueue: ignoreTimeWindow => startDownloadQueue(ignoreTimeWindow === true),
+        pauseQueue: pauseDownloadQueue,
+        async removeQueueItem(id) {
+            if (!downloadQueue.some(item => item.id === id)) return false;
+            await removeQueueItemById(id);
+            appendDebugLog('mcp-queue-item-removed', { id });
+            return !downloadQueue.some(item => item.id === id);
+        },
+        retryQueueItems,
+        clearCompletedQueueItems,
+        waitForQueueChange(timeoutMs, signal) {
+            return new Promise((resolve) => {
+                const finish = (): void => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
+                const timer = setTimeout(finish, Math.max(1, Math.min(1000, timeoutMs)));
+                signal.addEventListener('abort', finish, { once: true });
+            });
+        },
+        async searchRecordings(filter) {
+            const { inventory } = await readCompleteArchive(filter.refresh === true);
+            return searchArchiveInventory(inventory, filter);
+        },
+        resolveRecording: resolveMcpRecording,
+        async resolveOutputFolder(folder, fallbackSource) {
+            if (folder !== null && (typeof folder !== 'string' || !path.isAbsolute(folder) || folder.includes('\0'))) return null;
+            const target = path.resolve(folder ?? path.dirname(fallbackSource));
+            return isWithinMcpRoots(target) ? target : null;
+        },
+        async videoInfo(file) {
+            const info = await getVideoInfo(file, currentEditorProcesses);
+            const stat = await fs.promises.stat(file).catch(() => null);
+            if (!info || !stat) return null;
+            return {
+                path: file, sizeBytes: stat.size, durationSeconds: info.duration, width: info.width, height: info.height, fps: info.fps,
+                videoCodec: info.videoCodec, audioCodec: info.audioCodec, audioTracks: info.audioStreams.length,
+            };
+        },
+        async sourceFormatDifferences(files, signal) {
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return [];
+            const ffprobePath = await getFFprobePath();
+            const sources = [];
+            for (const file of files) sources.push(await probeComposeSource(ffprobePath, file, signal));
+            return formatDifferences(sources);
+        },
+        recordingEvents: readMcpRecordingEvents,
+        async fileFrames(file, times, width, signal) {
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return times.map(time => ({ time, jpeg: null }));
+            return grabFrames({ ffmpegPath: await getFFmpegPath(), input: file, times, width, signal, onProcess: command => recordManagedToolExecution('ffmpeg', command) });
+        },
+        enqueueMediaJob(request) {
+            if (appShutdownStarted || applicationBackupBusy) throw new Error('The application is busy or closing.');
+            const job = mcpMediaJobs.enqueue(request);
+            appendDebugLog('mcp-file-job-added', { id: job.id, output: path.basename(job.outputPath), segments: job.segments.length });
+            return job;
+        },
+        mediaJobs: () => mcpMediaJobs.list(),
+        cancelMediaJob: id => mcpMediaJobs.cancel(id),
+        waitForMediaJobChange: (timeoutMs, signal) => mcpMediaJobs.waitForChange(Math.max(1, Math.min(2000, timeoutMs)), signal),
+    };
+}
+
+function mcpEncryptionAvailable(): boolean {
+    try { return appSecretStore?.status().encryptionAvailable === true; } catch { return false; }
+}
+
+function storeMcpAccessToken(token: string): boolean {
+    if (!appSecretStore || !mcpEncryptionAvailable()) return false;
+    try {
+        appSecretStore.set('mcp_access_token', token);
+        mcpAccessToken = token;
+        return true;
+    } catch (error) {
+        appendDebugLog('mcp-token-store-failed', String(error));
+        return false;
+    }
+}
+
+function getMcpState() {
+    const status = mcpService?.status() ?? { running: false, bindAddress: null, port: null, error: null, requests: 0, lastActivity: null };
+    const addresses = Object.values(networkInterfaces()).flatMap(entries => entries || [])
+        .filter(entry => entry.family === 'IPv4' && !entry.internal).map(entry => entry.address);
+    return {
+        available: mcpEncryptionAvailable(),
+        enabled: config.mcp_enabled,
+        port: config.mcp_port,
+        networkAccess: config.mcp_network_access,
+        publicUrl: config.mcp_public_url,
+        tokenConfigured: Boolean(mcpAccessToken),
+        running: status.running,
+        error: status.error,
+        localUrl: `http://127.0.0.1:${config.mcp_port}${MCP_ENDPOINT_PATH}`,
+        networkUrls: status.running && config.mcp_network_access ? addresses.map(address => `http://${address}:${config.mcp_port}${MCP_ENDPOINT_PATH}`) : [],
+        requests: status.requests,
+        lastActivityAt: status.lastActivity?.at ?? null,
+        lastTool: status.lastActivity?.tool ?? null,
+    };
+}
+
+function applyMcpSettings(): Promise<void> {
+    if (!mcpService) return Promise.resolve();
+    if (config.mcp_enabled && !mcpAccessToken) storeMcpAccessToken(generateAccessToken());
+    return mcpService.apply({ enabled: config.mcp_enabled && Boolean(mcpAccessToken) && !appShutdownStarted, port: config.mcp_port, network: config.mcp_network_access });
+}
+
+function startMcpService(): void {
+    mcpService = new McpService({
+        host: createMcpHost(),
+        version: APP_VERSION,
+        token: () => mcpAccessToken || null,
+        log: (event, details) => appendDebugLog(event, details),
+        onStatusChange: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp-state-changed', getMcpState());
+        },
+    });
+    void applyMcpSettings();
+}
+
+ipcMain.handle('get-mcp-state', (event) => {
+    if (!isTrustedRendererEvent(event)) return null;
+    return getMcpState();
+});
+
+ipcMain.handle('set-mcp-settings', async (event, value: unknown) => {
+    if (!isTrustedRendererEvent(event)) return null;
+    if (appShutdownStarted || !isPlainObject(value)) return getMcpState();
+    const next = { ...config };
+    if (typeof value.enabled === 'boolean') next.mcp_enabled = value.enabled && mcpEncryptionAvailable();
+    if (typeof value.networkAccess === 'boolean') next.mcp_network_access = value.networkAccess;
+    if (typeof value.port === 'number' && Number.isInteger(value.port) && value.port >= MCP_MIN_PORT && value.port <= MCP_MAX_PORT) next.mcp_port = value.port;
+    if (typeof value.publicUrl === 'string') next.mcp_public_url = normalizeMcpPublicUrl(value.publicUrl);
+    if (next.mcp_enabled && !mcpAccessToken && !storeMcpAccessToken(generateAccessToken())) next.mcp_enabled = false;
+    config = persistStateChange(config, () => next, saveConfig);
+    await applyMcpSettings();
+    return getMcpState();
+});
+
+ipcMain.handle('regenerate-mcp-token', async (event) => {
+    if (!isTrustedRendererEvent(event)) return null;
+    if (!appShutdownStarted && storeMcpAccessToken(generateAccessToken())) {
+        appendDebugLog('mcp-token-regenerated');
+        await applyMcpSettings();
+    }
+    return getMcpState();
+});
+
+ipcMain.handle('copy-mcp-value', (event, kind: unknown, target: unknown): boolean => {
+    if (!isTrustedRendererEvent(event)) return false;
+    const base = target === 'public' && config.mcp_public_url ? config.mcp_public_url : `http://127.0.0.1:${config.mcp_port}`;
+    const url = base + MCP_ENDPOINT_PATH;
+    if (kind !== 'url' && !mcpAccessToken) return false;
+    const text = kind === 'url' ? url
+        : kind === 'token' ? mcpAccessToken
+            : kind === 'secret-url' ? `${url}/${mcpAccessToken}`
+                : kind === 'claude-code' ? `claude mcp add --transport http twitch-downloader ${url} --header "Authorization: Bearer ${mcpAccessToken}"`
+                    : kind === 'json' ? JSON.stringify({ mcpServers: { 'twitch-downloader': { type: 'http', url, headers: { Authorization: `Bearer ${mcpAccessToken}` } } } }, null, 2)
+                        : null;
+    if (text === null) return false;
+    clipboard.writeText(text);
+    return true;
 });

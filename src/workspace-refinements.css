@@ -3187,3 +3187,8 @@ body.theme-light #updateModal .update-preserve svg { color: #39774f; }
 .vod-card .vod-actions .vod-btn.primary:hover { background: #186638; }
 .vod-card .vod-actions .vod-btn:focus-visible { outline: 2px solid var(--workspace-focus-ring); outline-offset: -4px; box-shadow: none; }
 @media(prefers-reduced-motion: reduce) { .vod-card .vod-actions .vod-btn { transition: none; } }
+#settingsTab .mcp-status { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; white-space: pre-line; color: var(--workspace-text); }
+#settingsTab .mcp-status::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--workspace-border-strong); transform: translateY(-1px); }
+#settingsTab .mcp-status[data-state="active"]::before { background: var(--success); }
+#settingsTab .mcp-status[data-state="error"]::before { background: var(--error); }
+#settingsTab .mcp-copy-actions { flex-wrap: wrap; }

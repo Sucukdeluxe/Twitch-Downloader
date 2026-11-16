@@ -46,6 +46,7 @@ async function init(): Promise<void> {
     byId<HTMLInputElement>('partsFilenameTemplate').value = (config.filename_template_parts as string) || DEFAULT_PARTS_TEMPLATE;
     byId<HTMLInputElement>('defaultClipFilenameTemplate').value = (config.filename_template_clip as string) || DEFAULT_CLIP_TEMPLATE;
     initSettingsAutoSave();
+    initMcpSettings();
     initializeCleanupPreview();
 
     applyRendererTheme(config.theme ?? 'twitch');

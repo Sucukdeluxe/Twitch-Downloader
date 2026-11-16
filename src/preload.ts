@@ -158,6 +158,13 @@ contextBridge.exposeInMainWorld('api', {
     clearClientSecret: () => ipcRenderer.invoke('clear-client-secret'),
     setDiscordWebhook: (value: string) => ipcRenderer.invoke('set-discord-webhook', value),
     clearDiscordWebhook: () => ipcRenderer.invoke('clear-discord-webhook'),
+    getMcpState: () => ipcRenderer.invoke('get-mcp-state'),
+    setMcpSettings: (settings: { enabled?: boolean; port?: number; networkAccess?: boolean; publicUrl?: string }) => ipcRenderer.invoke('set-mcp-settings', settings),
+    regenerateMcpToken: () => ipcRenderer.invoke('regenerate-mcp-token'),
+    copyMcpValue: (kind: string, target: string) => ipcRenderer.invoke('copy-mcp-value', kind, target),
+    onMcpStateChanged: (callback: (state: unknown) => void) => {
+        ipcRenderer.on('mcp-state-changed', (_, state) => callback(state));
+    },
 
     // Auth
     login: () => ipcRenderer.invoke('login'),

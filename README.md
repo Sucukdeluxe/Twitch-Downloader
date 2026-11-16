@@ -43,6 +43,7 @@ The application works in public mode without a Twitch login. Connecting a Twitch
 - Pause and continue an active download without restarting it
 - Save optional chat replays and stream events alongside recordings
 - Record live streams automatically with retry and merge controls
+- Let AI assistants plan and queue topic-based parts through the built-in MCP server
 
 ### Desktop experience
 
@@ -86,6 +87,35 @@ Public VODs are available immediately. Twitch authentication can be configured u
 Twitch Downloader stores its configuration, local database, queue state and history on the computer where it runs. OAuth credentials are handled through the local application flow and are never included in this repository or in release files.
 
 Public mode does not require a Twitch login. It supports public VOD discovery and downloads, while authenticated access depends on the permissions of the connected Twitch account.
+
+## MCP server
+
+Twitch Downloader includes a [Model Context Protocol](https://modelcontextprotocol.io) server. AI assistants such as Claude or ChatGPT use it to list VODs, read the categories, title changes and preview frames of a VOD, queue downloads and join video files. Video is always copied without re-encoding, so the work is fast on a server without a graphics card.
+
+Enable the server under **Settings → AI connection (MCP)**. It listens on `http://127.0.0.1:47821/mcp` and accepts requests only with the access key created on that page. The key is kept in the protected Windows credential storage, never in the configuration file, and can be replaced at any time. The MCP settings cannot be changed by importing a configuration.
+
+| Client | Setup |
+| --- | --- |
+| Claude Code | **Copy command for Claude Code**, then run it in a terminal |
+| Clients with a JSON configuration and header support | **Copy JSON configuration** |
+| ChatGPT and claude.ai connectors | **Copy address with key**, authentication "None"; requires a public HTTPS address |
+
+To reach the app on another machine, allow access from the network and put an HTTPS reverse proxy or tunnel in front of the port. Enter its address as the public address so the copy buttons use it. The built-in server speaks plain HTTP and should not be exposed to the internet directly.
+
+The server supports the MCP revisions 2026-07-28, 2025-11-25, 2025-06-18 and 2025-03-26 over Streamable HTTP.
+
+| Tools | Purpose |
+| --- | --- |
+| `get_status`, `list_streamers`, `list_vods` | App state, saved channels and the VODs of any channel, optionally for one day |
+| `get_vod_timeline`, `get_vod_storyboard`, `get_vod_frames` | Categories, title changes and viewer numbers with timestamps; contact sheets and single frames read directly from Twitch |
+| `suggest_vod_parts`, `queue_vod_parts`, `queue_vod` | A baseline split by category, the download of named parts and of complete VODs |
+| `get_queue`, `wait_for_queue`, `start_queue`, `pause_queue`, `retry_queue_items`, `remove_queue_items`, `clear_completed_queue_items` | Queue progress and control |
+| `list_recordings`, `get_video_info`, `get_recording_events`, `get_video_frames` | Files in the download folder, their details, logged stream events and frames |
+| `create_videos_from_files`, `get_file_jobs`, `wait_for_file_jobs`, `cancel_file_job` | Cut and join downloaded files as background jobs |
+
+`queue_vod_parts` turns a VOD into one MP4 file per topic. A part can combine several separate time ranges, for example the same category at two different times of the stream; the ranges are downloaded and joined in chronological order. Unless told otherwise, the tool only accepts plans that cover the whole VOD exactly once and reports every gap or double coverage with its timestamps. Parts are saved as `<download folder>/<channel>/<date>/<date>_Part01_<name>.mp4`.
+
+Cuts land on keyframes: a boundary can move by about two seconds and neighbouring parts can share a moment, but nothing is dropped. Range-based parts support VODs of up to 24 hours. Files are written only inside the download folder and existing files are never overwritten. File jobs are kept until the application closes.
 
 ## Updates
 
@@ -143,6 +173,7 @@ The Windows installer and updater metadata are written to `release/`. Verificati
 | `src/main/updates/` | Update lifecycle coordination |
 | `src/main/storage/` | Persistence integration surface |
 | `src/main/domain/` | Shared domain logic and validation |
+| `src/main/mcp/` | MCP server, access control, tools and lossless file jobs |
 | `src/renderer-*.ts` | Workspace features and renderer behavior |
 | `src/index.html` | Application shell and settings pages |
 | `src/styles*.css` | Shared components, workflows and overlays |

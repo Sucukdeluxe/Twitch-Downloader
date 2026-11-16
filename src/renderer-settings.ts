@@ -324,6 +324,7 @@ const SETTINGS_GROUPS: Record<string, { de: string; en: string }> = {
     api: { de: 'Twitch-Verbindung', en: 'Twitch connection' },
     downloads: { de: 'Downloads', en: 'Downloads' },
     automation: { de: 'Automatisierung', en: 'Automation' },
+    mcp: { de: 'KI-Anbindung (MCP)', en: 'AI connection (MCP)' },
     storage: { de: 'Speicher & Sicherung', en: 'Storage & backup' },
     system: { de: 'System & Diagnose', en: 'System & diagnostics' }
 };
@@ -337,6 +338,8 @@ function refreshSettingsGroupLabels(): void {
     for (const [id, group] of Object.entries({ settingsGeneralNav: 'general', settingsAutomationNav: 'automation', settingsStorageNav: 'storage', settingsSystemNav: 'system' })) {
         byId(id).textContent = SETTINGS_GROUPS[group][language];
     }
+    byId('settingsMcpNav').textContent = language === 'de' ? 'KI-Anbindung' : 'AI connection';
+    renderMcpSettings();
 }
 
 function setSettingsPane(pane: string, source?: HTMLElement): void {
@@ -361,6 +364,7 @@ function setSettingsPane(pane: string, source?: HTMLElement): void {
     if (changed) tab.scrollTop = 0;
     if (changed) requestAnimationFrame(refreshVisibleSettingsDiagnostics);
     if (group === 'storage' && !byId('storageSummary').textContent?.trim()) void refreshStorageStats();
+    if (group === 'mcp' && changed) void refreshMcpState();
     refreshSettingsGroupLabels();
     scheduleSegmentedIndicatorsSync();
 }

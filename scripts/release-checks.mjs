@@ -38,6 +38,7 @@ export const checks = [
     ['vod-read-timeout', ['scripts/smoke-test-vod-stall-production-timeout.js', 'ffmpeg']],
     ['vod-stall-queue', ['scripts/smoke-test-vod-stall-native.js', 'ffmpeg', 'ffprobe']],
     ['vod-healthy-ranges', ['scripts/smoke-test-vod-stall-healthy.js', 'ffmpeg', 'ffprobe']],
+    ['mcp-lossless-compose', ['scripts/smoke-test-mcp-compose.cjs', 'ffmpeg', 'ffprobe']],
 ];
 
 export const webkitChecks = checks.filter(([name]) => name.endsWith("-webkit"));
