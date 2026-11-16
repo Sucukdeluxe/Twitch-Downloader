@@ -4,6 +4,7 @@ import type { QueueItem } from '../../types';
 import type { VodTimeline } from '../domain/vod-timeline';
 import { McpService, type McpHost, type McpQueueDraft } from './index';
 import { MediaJobQueue, type MediaJobRequest } from './media-jobs';
+import type { StoredPlan } from './part-plan-store';
 
 const TOKEN = 't'.repeat(43);
 const ROOT = path.resolve('/fixture-downloads');
@@ -22,10 +23,15 @@ const timeline: VodTimeline = {
     viewerGaps: [], chaptersStatus: 'available', titlesStatus: 'local',
 };
 
-interface Fixture { host: McpHost; queue: QueueItem[]; drafts: McpQueueDraft[]; jobRequests: MediaJobRequest[]; starts: boolean[]; jobs: MediaJobQueue }
+interface Fixture { host: McpHost; queue: QueueItem[]; drafts: McpQueueDraft[]; jobRequests: MediaJobRequest[]; starts: boolean[]; jobs: MediaJobQueue; plans: StoredPlan[]; automation: { vod: Set<string>; record: Set<string> }; grabs: Array<{ times: number[]; width: number; height: number }>; live: Set<string> }
 
 function createFixture(): Fixture {
-    const queue: QueueItem[] = [], drafts: McpQueueDraft[] = [], jobRequests: MediaJobRequest[] = [], starts: boolean[] = [];
+    const queue: QueueItem[] = [], drafts: McpQueueDraft[] = [], jobRequests: MediaJobRequest[] = [], starts: boolean[] = [], plans: StoredPlan[] = [];
+    const automation = { vod: new Set<string>(['kanal']), record: new Set<string>() };
+    const grabs: Array<{ times: number[]; width: number; height: number }> = [];
+    const live = new Set<string>(['kanal']);
+    const rawFrames = (times: number[], width: number, height: number) => { grabs.push({ times, width, height }); return times.map((_time, index) => index === 2 ? null : Buffer.alloc(width * height * 3, 90)); };
+    const chat = Array.from({ length: 400 }, (_value, index) => ({ id: 'm' + index, offset: 1000 + index * 3, user: 'user' + (index % 7), text: index % 50 === 0 ? 'TIKTOK ZEIT' : 'lol ' + index }));
     const jobs = new MediaJobQueue(async (request, context) => {
         jobRequests.push(request);
         context.onProgress(50);
@@ -46,6 +52,27 @@ function createFixture(): Fixture {
         timeline: async vodId => vodId === '900' ? structuredClone(timeline) : null,
         storyboard: async () => ({ vodId: '900', intervalSeconds: 108, frameCount: 200, columns: 5, rows: 10, cellWidth: 220, cellHeight: 124, sheets: [0, 1, 2, 3].map(index => ({ index, firstFrame: index * 50, frameCount: 50, jpeg: JPEG })) }),
         vodFrames: async (_vodId, times) => times.map((time, index) => ({ time, jpeg: index === 1 ? null : JPEG })),
+        vodRawFrames: async (_vodId, times, width, height) => rawFrames(times, width, height),
+        fileRawFrames: async (_file, times, width, height) => rawFrames(times, width, height),
+        encodeJpeg: async image => image.rgb.length === image.width * image.height * 3 ? Buffer.concat([JPEG, Buffer.from(`${image.width}x${image.height}`)]) : null,
+        decodeJpeg: async (_jpeg, width, height) => Buffer.alloc(width * height * 3, 40),
+        chatRange: async (_vodId, from, to, maximum) => {
+            const matching = chat.filter(message => message.offset >= from && message.offset < to);
+            return { messages: matching.slice(0, maximum), nextFrom: matching.length > maximum ? matching[maximum].offset : null };
+        },
+        chatActivity: async (_vodId, from, to, step) => Array.from({ length: Math.ceil((to - from) / step) }, (_value, index) => ({ start: from + index * step, messagesPerMinute: index === 1 ? 240 : 12, samples: index === 1 ? ['TIKTOK ZEIT', 'endlich'] : ['hallo'] })),
+        vodClips: async vodId => vodId !== '900' ? null : [{ slug: 'KlarerClip-abc', title: 'rewi anruf', views: 308, duration: 60, offset: 6570, createdAt: '2026-11-14T13:00:00Z' }],
+        savePartPlan: async (plan) => { plans.push(plan); },
+        partPlans: async vodId => plans.filter(plan => plan.vodId === vodId).reverse(),
+        plannedVodIds: async () => new Set(plans.map(plan => plan.vodId)),
+        fileSize: async file => file.endsWith('TikTok.mp4') ? 5 * 1024 ** 3 : null,
+        channelAutomation: channel => ({ autoDownloadVods: automation.vod.has(channel), autoRecord: automation.record.has(channel) }),
+        setChannelAutomation: (channel, change) => {
+            if (change.autoDownloadVods !== undefined) automation.vod[change.autoDownloadVods ? 'add' : 'delete'](channel);
+            if (change.autoRecord !== undefined) automation.record[change.autoRecord ? 'add' : 'delete'](channel);
+            return { autoDownloadVods: automation.vod.has(channel), autoRecord: automation.record.has(channel) };
+        },
+        startLiveRecording: async channel => live.has(channel) ? { started: true, reason: null, title: 'Live jetzt' } : { started: false, reason: 'offline', title: null },
         queue: () => queue,
         queueState: () => ({ downloading: starts.length > 0, paused: false }),
         addToQueue(items) {
@@ -82,7 +109,7 @@ function createFixture(): Fixture {
         cancelMediaJob: id => jobs.cancel(id),
         waitForMediaJobChange: (timeoutMs, signal) => jobs.waitForChange(Math.min(timeoutMs, 50), signal),
     };
-    return { host, queue, drafts, jobRequests, starts, jobs };
+    return { host, queue, drafts, jobRequests, starts, jobs, plans, automation, grabs, live };
 }
 
 async function startService(fixture: Fixture) {
@@ -140,8 +167,9 @@ describe('MCP service protocol', () => {
         const { result } = await rpc('tools/list');
         expect(result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
             'cancel_file_job', 'clear_completed_queue_items', 'create_videos_from_files', 'get_file_jobs', 'get_queue', 'get_recording_events', 'get_status',
-            'get_video_frames', 'get_video_info', 'get_vod_frames', 'get_vod_storyboard', 'get_vod_timeline', 'list_recordings', 'list_streamers', 'list_vods',
-            'pause_queue', 'queue_vod', 'queue_vod_parts', 'remove_queue_items', 'retry_queue_items', 'start_queue', 'suggest_vod_parts', 'wait_for_file_jobs', 'wait_for_queue',
+            'get_video_frames', 'get_video_info', 'get_vod_chat', 'get_vod_chat_activity', 'get_vod_clips', 'get_vod_frames', 'get_vod_parts_state', 'get_vod_storyboard',
+            'get_vod_timeline', 'list_recordings', 'list_streamers', 'list_vods', 'pause_queue', 'queue_vod', 'queue_vod_parts', 'remove_queue_items', 'retry_queue_items',
+            'scan_video_frames', 'scan_vod_frames', 'set_channel_automation', 'start_live_recording', 'start_queue', 'suggest_vod_parts', 'wait_for_file_jobs', 'wait_for_queue',
         ]);
         for (const tool of result.tools) {
             expect(tool.description.length).toBeGreaterThan(40);
@@ -202,13 +230,14 @@ describe('MCP VOD tools', () => {
         expect(data.coverage.complete).toBe(true);
     });
 
-    it('returns storyboard sheets as images with a time legend', async () => {
+    it('returns storyboard sheets with the time printed below every frame', async () => {
         const { call } = await startService(createFixture());
         const result = await call('get_vod_storyboard', { vod_id: '900', from: '00:10:00', to: '01:00:00' });
-        expect(result.content.filter((block: any) => block.type === 'image')).toHaveLength(1);
-        expect(result.structuredContent.images[0]).toMatchObject({ image: 1, first_frame_tc: '00:00:00', frames: 50 });
-        expect(result.structuredContent.images[0].row_start_times[1]).toBe('00:09:00');
-        expect(result.content.find((block: any) => block.type === 'image')).toMatchObject({ mimeType: 'image/jpeg', data: JPEG.toString('base64') });
+        const images = result.content.filter((block: any) => block.type === 'image');
+        expect(images).toHaveLength(1);
+        expect(result.structuredContent.images[0]).toMatchObject({ image: 1, first_frame_tc: '00:00:00', last_frame_tc: '01:28:12', frames: 50 });
+        expect(result.structuredContent.how_to_read).toContain('printed below it');
+        expect(Buffer.from(images[0].data, 'base64').subarray(4).toString()).toBe('1108x1458');
     });
 
     it('labels every returned frame with its time and marks unavailable frames', async () => {

@@ -165,6 +165,9 @@ contextBridge.exposeInMainWorld('api', {
     onMcpStateChanged: (callback: (state: unknown) => void) => {
         ipcRenderer.on('mcp-state-changed', (_, state) => callback(state));
     },
+    onConfigChanged: (callback: () => void) => {
+        ipcRenderer.on('config-changed', () => callback());
+    },
 
     // Auth
     login: () => ipcRenderer.invoke('login'),

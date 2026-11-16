@@ -1063,6 +1063,11 @@ Speicherort: Download-Ordner → Clips → Kanal.</p></aside>
                         <p id="mcpClientNote" class="form-note">Claude Code und Claude Desktop senden den Schlüssel als Bearer-Token. Für ChatGPT und claude.ai die Adresse mit Schlüssel eintragen und „Keine Authentifizierung“ wählen; beide benötigen eine öffentliche HTTPS-Adresse.</p>
                         <div class="form-row"><button type="button" class="btn-secondary" id="mcpRegenerateToken" onclick="regenerateMcpToken()">Neuen Zugriffsschlüssel erzeugen</button></div>
                         <p id="mcpNotice" class="form-note" role="status" aria-live="polite"></p>
+                    </div></details><details class="settings-section settings-advanced" open=""><summary><div class="settings-section-copy"><span id="mcpActivityTitle" class="settings-section-title">Aktivität</span><span id="mcpActivityHint" class="settings-section-hint">Letzte Aufrufe der KI und Dateiaufträge.</span></div></summary><div class="settings-section-body">
+                        <h4 id="mcpCallsTitle" class="mcp-list-title">Letzte Aufrufe</h4>
+                        <ul id="mcpRecentCalls" class="mcp-list"></ul>
+                        <h4 id="mcpJobsTitle" class="mcp-list-title">Dateiaufträge</h4>
+                        <ul id="mcpFileJobs" class="mcp-list"></ul>
                     </div></details></div><div class="settings-card settings-organized" data-settings-pane="system" data-settings-group="system" hidden=""><details class="settings-section settings-advanced settings-diagnostics" open=""><summary><div class="settings-section-copy"><span id="preflightTitle" class="settings-section-title">System-Check</span><span id="settingsSystemHint" class="settings-section-hint">Verbindung, Werkzeuge und Download-Voraussetzungen testen.</span></div></summary><div class="settings-section-body">
 
                         <div class="form-row settings-actions">

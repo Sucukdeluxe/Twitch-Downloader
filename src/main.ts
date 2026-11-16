@@ -16,7 +16,7 @@ import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-librar
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
 import { registerEditingWorkflows } from './main/editing-workflows';
-import { McpService, MediaJobQueue, composeLossless, formatDifferences, probeComposeSource, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type McpHost, type McpRecordingEvent } from './main/mcp';
+import { McpService, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
 import { createApplicationBackup, inspectApplicationBackup, queueApplicationRestore, applyPendingApplicationRestore } from './main/domain/application-backup';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode } from './main/domain/media-format';
 import { createDevelopmentLiveUpdates } from './main/development-live';
@@ -7789,6 +7789,11 @@ ipcMain.handle('get-queue', (event) => {
 
 ipcMain.handle('start-live-recording', async (event, streamerName: string) => {
     if (!isTrustedRendererEvent(event) || appShutdownStarted) return { success: false, error: 'Access denied' };
+    return startLiveRecordingFor(streamerName);
+});
+
+async function startLiveRecordingFor(streamerName: string): Promise<{ success: boolean; error?: string; streamer?: string; title?: string }> {
+    if (appShutdownStarted) return { success: false, error: 'Access denied' };
     if (typeof streamerName !== 'string' || !streamerName) {
         return { success: false, error: 'Invalid streamer name' };
     }
@@ -7833,7 +7838,7 @@ ipcMain.handle('start-live-recording', async (event, streamerName: string) => {
     if (!isDownloading) scheduleQueueProcessing();
     appendDebugLog('live-recording-queued', { streamer: login, title: liveItem.title });
     return { success: true, streamer: login, title: liveInfo.title || login };
-});
+}
 
 function commitQueueItemWithResult(item: QueueItem | null, notifyDuplicate: boolean): QueueAdditionResult<QueueItem> {
     if (appShutdownStarted) {
@@ -9512,6 +9517,7 @@ async function shutdownCleanup(reason: 'window-all-closed' | 'before-quit'): Pro
         ['mcp-server', async () => { await mcpService?.stop(); }],
         ['mcp-file-jobs', () => mcpMediaJobs.dispose()],
         ['mcp-timeline', () => mcpTimelineService.close()],
+        ['mcp-part-plans', () => mcpPartPlans.flush()],
         ['storage-cleanup', async () => { cleanupAbortController.abort(); await cleanupPending; }],
         ['editing-workflows', async () => { await editingWorkflows?.dispose(); }],
         ['merge-media', () => mergeMedia.dispose()],
@@ -9781,7 +9787,45 @@ let mcpTimelineChain: Promise<unknown> = Promise.resolve();
 let mcpToolAvailability: { expires: number; value: { ffmpeg: boolean; streamlink: boolean } } | null = null;
 const mcpTimelineService = new VodTimelineService();
 const mcpTimelineRequests = new Map<string, Promise<VodTimeline | null>>();
-const MCP_FRAME_QUALITIES = ['480p', '480p30', '360p', '360p30', '720p', '720p30', '720p60', 'source'];
+const MCP_FILE_JOBS_FILE = path.join(APPDATA_DIR, 'mcp-file-jobs.json');
+const mcpPartPlans = new PartPlanStore(path.join(APPDATA_DIR, 'mcp-part-plans.json'), error => appendDebugLog('mcp-part-plans-failed', String(error)));
+const mcpGql: GqlRequest = (query, variables) => fetchPublicTwitchGql(query, variables);
+
+function notifyMcpStateChanged(): void {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp-state-changed', getMcpState());
+}
+
+async function resolveMcpFrameSource(vodId: string, width: number, signal: AbortSignal): Promise<string | null> {
+    for (const quality of qualitiesForWidth(width)) {
+        const source = await resolveVodPlaybackSource('https://www.twitch.tv/videos/' + vodId, quality, signal);
+        if (source || signal.aborted) return source;
+    }
+    return null;
+}
+
+function mcpChannelAutomation(channel: string): McpChannelAutomation {
+    const login = normalizeLogin(channel);
+    return {
+        autoDownloadVods: (config.auto_vod_download_streamers || []).includes(login),
+        autoRecord: (config.auto_record_streamers || []).includes(login),
+    };
+}
+
+function setMcpChannelAutomation(channel: string, change: Partial<McpChannelAutomation>): McpChannelAutomation {
+    const login = normalizeLogin(channel);
+    if (!login || appShutdownStarted) return mcpChannelAutomation(login);
+    const toggle = (list: string[], enabled: boolean | undefined): string[] => enabled === undefined ? list
+        : enabled ? (list.includes(login) ? list : [...list, login]) : list.filter(entry => entry !== login);
+    const previous = config;
+    applyConfigTransition(previous, normalizeConfigTemplates({
+        ...previous,
+        auto_vod_download_streamers: toggle(previous.auto_vod_download_streamers || [], change.autoDownloadVods),
+        auto_record_streamers: toggle(previous.auto_record_streamers || [], change.autoRecord),
+    }));
+    appendDebugLog('mcp-channel-automation', { channel: login, ...change });
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('config-changed');
+    return mcpChannelAutomation(login);
+}
 
 const mcpMediaJobs = new MediaJobQueue(async (request, context) => {
     if (appShutdownStarted || applicationBackupBusy) throw new Error('The application is busy or closing.');
@@ -9801,6 +9845,12 @@ const mcpMediaJobs = new MediaJobQueue(async (request, context) => {
     readArchiveInventory.invalidate();
     appendDebugLog('mcp-file-job-completed', { output: path.basename(result.outputPath), bytes: result.bytes });
     return result;
+}, {
+    persist(jobs) {
+        try { writeFileAtomicSync(MCP_FILE_JOBS_FILE, JSON.stringify({ version: 1, jobs })); }
+        catch (error) { appendDebugLog('mcp-file-jobs-save-failed', String(error)); }
+    },
+    onChange: () => notifyMcpStateChanged(),
 });
 
 function loadMcpTimeline(vodId: string, refresh: boolean): Promise<VodTimeline | null> {
@@ -9939,16 +9989,57 @@ function createMcpHost(): McpHost {
         async vodFrames(vodId, times, width, signal) {
             const unavailable = times.map(time => ({ time, jpeg: null }));
             if (appShutdownStarted || !(await ensureFfmpegInstalled())) return unavailable;
-            let source: string | null = null;
-            for (const quality of MCP_FRAME_QUALITIES) {
-                source = await resolveVodPlaybackSource('https://www.twitch.tv/videos/' + vodId, quality, signal);
-                if (source || signal.aborted) break;
-            }
+            const source = await resolveMcpFrameSource(vodId, width, signal);
             if (!source) return unavailable;
             return grabFrames({
                 ffmpegPath: await getFFmpegPath(), input: source, inputArgs: ['-rw_timeout', '20000000'], times, width, signal,
                 onProcess: command => recordManagedToolExecution('ffmpeg', command),
             });
+        },
+        async vodRawFrames(vodId, times, width, height, signal) {
+            const unavailable = times.map(() => null);
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return unavailable;
+            const source = await resolveMcpFrameSource(vodId, width, signal);
+            if (!source) return unavailable;
+            return grabRawFrames({
+                ffmpegPath: await getFFmpegPath(), input: source, inputArgs: ['-rw_timeout', '20000000'], times, width, height, signal,
+                onProcess: command => recordManagedToolExecution('ffmpeg', command),
+            });
+        },
+        async fileRawFrames(file, times, width, height, signal) {
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return times.map(() => null);
+            return grabRawFrames({ ffmpegPath: await getFFmpegPath(), input: file, times, width, height, signal, onProcess: command => recordManagedToolExecution('ffmpeg', command) });
+        },
+        async encodeJpeg(image, signal) {
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return null;
+            return encodeJpeg(image, { ffmpegPath: await getFFmpegPath(), signal, onProcess: command => recordManagedToolExecution('ffmpeg', command) });
+        },
+        async decodeJpeg(jpeg, width, height, signal) {
+            if (appShutdownStarted || !(await ensureFfmpegInstalled())) return null;
+            return decodeToRgb(jpeg, width, height, { ffmpegPath: await getFFmpegPath(), signal, onProcess: command => recordManagedToolExecution('ffmpeg', command) });
+        },
+        chatRange: (vodId, from, to, maximum, signal) => loadChatRange(mcpGql, vodId, from, to, maximum, signal),
+        chatActivity: (vodId, from, to, stepSeconds, signal) => loadChatActivity(mcpGql, vodId, from, to, stepSeconds, signal),
+        vodClips: vodId => loadVodClips(mcpGql, vodId),
+        savePartPlan: plan => mcpPartPlans.save(plan),
+        partPlans: vodId => mcpPartPlans.history(vodId),
+        plannedVodIds: () => mcpPartPlans.vodIds(),
+        async fileSize(file) {
+            if (!isWithinMcpRoots(file)) return null;
+            const stat = await fs.promises.stat(file).catch(() => null);
+            return stat?.isFile() ? stat.size : null;
+        },
+        channelAutomation: mcpChannelAutomation,
+        setChannelAutomation: setMcpChannelAutomation,
+        async startLiveRecording(channel) {
+            const result = await startLiveRecordingFor(channel);
+            if (result.success) appendDebugLog('mcp-live-recording-started', { channel });
+            return {
+                started: result.success,
+                reason: result.success ? null : result.error === 'OFFLINE' ? 'offline' : result.error === 'ALREADY_RECORDING' ? 'already-recording'
+                    : result.error?.startsWith('Could not check') ? 'unavailable' : 'rejected',
+                title: result.title ?? null,
+            };
         },
         queue: () => downloadQueue,
         queueState: () => ({ downloading: isDownloading && !queuePaused, paused: isDownloading && queuePaused }),
@@ -10056,7 +10147,7 @@ function storeMcpAccessToken(token: string): boolean {
 }
 
 function getMcpState() {
-    const status = mcpService?.status() ?? { running: false, bindAddress: null, port: null, error: null, requests: 0, lastActivity: null };
+    const status = mcpService?.status() ?? { running: false, bindAddress: null, port: null, error: null, requests: 0, lastActivity: null, recentCalls: [] };
     const addresses = Object.values(networkInterfaces()).flatMap(entries => entries || [])
         .filter(entry => entry.family === 'IPv4' && !entry.internal).map(entry => entry.address);
     return {
@@ -10073,6 +10164,8 @@ function getMcpState() {
         requests: status.requests,
         lastActivityAt: status.lastActivity?.at ?? null,
         lastTool: status.lastActivity?.tool ?? null,
+        recentCalls: status.recentCalls.slice(-8).reverse().map(call => ({ at: call.at, tool: call.tool || call.method || 'MCP', client: call.client })),
+        fileJobs: mcpMediaJobs.list().slice(-8).reverse().map(job => ({ id: job.id, name: job.name, status: job.status, progress: Math.round(job.progress), error: job.error })),
     };
 }
 
@@ -10088,10 +10181,15 @@ function startMcpService(): void {
         version: APP_VERSION,
         token: () => mcpAccessToken || null,
         log: (event, details) => appendDebugLog(event, details),
-        onStatusChange: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp-state-changed', getMcpState());
-        },
+        onStatusChange: () => notifyMcpStateChanged(),
     });
+    try {
+        const stored = fs.existsSync(MCP_FILE_JOBS_FILE) ? parseMediaJobs(JSON.parse(fs.readFileSync(MCP_FILE_JOBS_FILE, 'utf8'))) : [];
+        const waiting = mcpMediaJobs.restore(stored, job => isWithinMcpRoots(job.outputPath));
+        if (waiting > 0) appendDebugLog('mcp-file-jobs-resumed', { waiting });
+    } catch (error) {
+        appendDebugLog('mcp-file-jobs-load-failed', String(error));
+    }
     void applyMcpSettings();
 }
 

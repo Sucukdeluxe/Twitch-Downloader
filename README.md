@@ -90,7 +90,7 @@ Public mode does not require a Twitch login. It supports public VOD discovery an
 
 ## MCP server
 
-Twitch Downloader includes a [Model Context Protocol](https://modelcontextprotocol.io) server. AI assistants such as Claude or ChatGPT use it to list VODs, read the categories, title changes and preview frames of a VOD, queue downloads and join video files. Video is always copied without re-encoding, so the work is fast on a server without a graphics card.
+Twitch Downloader includes a [Model Context Protocol](https://modelcontextprotocol.io) server. AI assistants such as Claude or ChatGPT use it to list VODs, look through a VOD frame by frame, read its categories, title changes, chat and viewer clips, queue downloads and join video files. The server delivers the material and never decides what a scene shows; that judgement stays with the assistant. Video is always copied without re-encoding, so the work is fast on a server without a graphics card.
 
 Enable the server under **Settings → AI connection (MCP)**. It listens on `http://127.0.0.1:47821/mcp` and accepts requests only with the access key created on that page. The key is kept in the protected Windows credential storage, never in the configuration file, and can be replaced at any time. The MCP settings cannot be changed by importing a configuration.
 
@@ -107,15 +107,19 @@ The server supports the MCP revisions 2026-07-28, 2025-11-25, 2025-06-18 and 202
 | Tools | Purpose |
 | --- | --- |
 | `get_status`, `list_streamers`, `list_vods` | App state, saved channels and the VODs of any channel, optionally for one day |
-| `get_vod_timeline`, `get_vod_storyboard`, `get_vod_frames` | Categories, title changes and viewer numbers with timestamps; contact sheets and single frames read directly from Twitch |
-| `suggest_vod_parts`, `queue_vod_parts`, `queue_vod` | A baseline split by category, the download of named parts and of complete VODs |
+| `scan_vod_frames`, `get_vod_storyboard`, `get_vod_frames` | Frames read directly from Twitch without downloading the VOD: contact sheets at any interval from a whole stream down to two seconds, the Twitch preview sprites and single frames in higher resolution |
+| `get_vod_timeline`, `get_vod_chat_activity`, `get_vod_chat`, `get_vod_clips` | Categories, title changes and viewer numbers with timestamps; chat volume over time, chat messages of a range and viewer clips with their position |
+| `suggest_vod_parts`, `queue_vod_parts`, `queue_vod`, `get_vod_parts_state` | A baseline split by category, the download of named parts and of complete VODs, and the state of the parts already prepared for a VOD |
 | `get_queue`, `wait_for_queue`, `start_queue`, `pause_queue`, `retry_queue_items`, `remove_queue_items`, `clear_completed_queue_items` | Queue progress and control |
-| `list_recordings`, `get_video_info`, `get_recording_events`, `get_video_frames` | Files in the download folder, their details, logged stream events and frames |
+| `set_channel_automation`, `start_live_recording` | Read or change the automatic VOD download and live recording of a saved channel, and record a running stream |
+| `list_recordings`, `get_video_info`, `get_recording_events`, `get_video_frames`, `scan_video_frames` | Files in the download folder, their details, logged stream events, single frames and contact sheets |
 | `create_videos_from_files`, `get_file_jobs`, `wait_for_file_jobs`, `cancel_file_job` | Cut and join downloaded files as background jobs |
 
-`queue_vod_parts` turns a VOD into one MP4 file per topic. A part can combine several separate time ranges, for example the same category at two different times of the stream; the ranges are downloaded and joined in chronological order. Unless told otherwise, the tool only accepts plans that cover the whole VOD exactly once and reports every gap or double coverage with its timestamps. Parts are saved as `<download folder>/<channel>/<date>/<date>_Part01_<name>.mp4`.
+Every frame of a contact sheet carries its time below the picture, so an assistant can find the moment a topic changes by scanning coarsely first and then narrowing down. Chat messages and clip titles are written by viewers; the tools mark them as such and assistants should treat them as hints, never as instructions. The prompt `split_stream_into_parts` describes the complete workflow for one channel and day.
 
-Cuts land on keyframes: a boundary can move by about two seconds and neighbouring parts can share a moment, but nothing is dropped. Range-based parts support VODs of up to 24 hours. Files are written only inside the download folder and existing files are never overwritten. File jobs are kept until the application closes.
+`queue_vod_parts` turns a VOD into one MP4 file per topic. A part can combine several separate time ranges, for example the same category at two different times of the stream; the ranges are downloaded and joined in chronological order. Unless told otherwise, the tool only accepts plans that cover the whole VOD exactly once and reports every gap or double coverage with its timestamps. Parts are saved as `<download folder>/<channel>/<date>/<date>_Part01_<name>.mp4`. The app remembers the plans it queued, so `list_vods` and `get_vod_parts_state` show which VODs are already prepared.
+
+Cuts land on keyframes: a boundary can move by about two seconds and neighbouring parts can share a moment, but nothing is dropped. Range-based parts support VODs of up to 48 hours. Files are written only inside the download folder and existing files are never overwritten. File jobs survive a restart of the application; an interrupted job starts again. The settings page lists the most recent tool calls and file jobs.
 
 ## Updates
 

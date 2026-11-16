@@ -33,6 +33,17 @@ const MCP_TEXT = {
         invalidPort: 'Port zwischen 1024 und 65535 eintragen.',
         invalidUrl: 'Adresse mit http:// oder https:// eintragen.',
         saveFailed: 'Die Einstellung wurde nicht gespeichert.',
+        activityTitle: 'Aktivität',
+        activityHint: 'Letzte Aufrufe der KI und Dateiaufträge.',
+        callsTitle: 'Letzte Aufrufe',
+        callsEmpty: 'Noch keine Aufrufe seit Programmstart.',
+        jobsTitle: 'Dateiaufträge',
+        jobsEmpty: 'Keine Dateiaufträge.',
+        jobQueued: 'Wartet',
+        jobRunning: 'Läuft, {progress} %',
+        jobCompleted: 'Fertig',
+        jobFailed: 'Fehlgeschlagen: {error}',
+        jobCancelled: 'Abgebrochen',
     },
     en: {
         serverTitle: 'MCP server',
@@ -68,6 +79,17 @@ const MCP_TEXT = {
         invalidPort: 'Enter a port between 1024 and 65535.',
         invalidUrl: 'Enter an address starting with http:// or https://.',
         saveFailed: 'The setting was not saved.',
+        activityTitle: 'Activity',
+        activityHint: 'Recent calls by the AI and file jobs.',
+        callsTitle: 'Recent calls',
+        callsEmpty: 'No calls since the app started.',
+        jobsTitle: 'File jobs',
+        jobsEmpty: 'No file jobs.',
+        jobQueued: 'Waiting',
+        jobRunning: 'Running, {progress} %',
+        jobCompleted: 'Finished',
+        jobFailed: 'Failed: {error}',
+        jobCancelled: 'Cancelled',
     },
 };
 
@@ -90,6 +112,7 @@ function renderMcpSettings(): void {
         mcpPortLabel: text.port, mcpPublicUrlLabel: text.publicUrl, mcpConnectTitle: text.connectTitle, mcpConnectHint: text.connectHint,
         mcpCopyClaudeCode: text.copyClaudeCode, mcpCopyJson: text.copyJson, mcpCopySecretUrl: text.copySecretUrl, mcpCopyUrl: text.copyUrl,
         mcpCopyToken: text.copyToken, mcpClientNote: text.clientNote, mcpRegenerateToken: text.regenerate, mcpNetworkNote: text.networkNote,
+        mcpActivityTitle: text.activityTitle, mcpActivityHint: text.activityHint, mcpCallsTitle: text.callsTitle, mcpJobsTitle: text.jobsTitle,
     };
     for (const [id, value] of Object.entries(labels)) {
         const element = document.getElementById(id);
@@ -128,6 +151,39 @@ function renderMcpSettings(): void {
         byId<HTMLButtonElement>(id).disabled = !state.tokenConfigured;
     }
     byId<HTMLElement>('mcpNotice').textContent = mcpNotice;
+    const time = new Intl.DateTimeFormat(getIntlLocale(), { timeStyle: 'medium' });
+    renderMcpList('mcpRecentCalls', state.recentCalls.map(call => ({ lead: time.format(new Date(call.at)), text: call.tool, state: '' })), text.callsEmpty);
+    renderMcpList('mcpFileJobs', state.fileJobs.map(job => ({
+        lead: job.status === 'queued' ? text.jobQueued : job.status === 'running' ? text.jobRunning.replace('{progress}', String(job.progress))
+            : job.status === 'completed' ? text.jobCompleted : job.status === 'cancelled' ? text.jobCancelled : text.jobFailed.replace('{error}', job.error || '–'),
+        text: job.name,
+        state: job.status,
+    })), text.jobsEmpty, true);
+}
+
+function renderMcpList(id: string, rows: Array<{ lead: string; text: string; state: string }>, emptyText: string, leadLast = false): void {
+    const list = document.getElementById(id);
+    if (!list) return;
+    const items = rows.length ? rows.map((row) => {
+        const item = document.createElement('li');
+        const lead = document.createElement('span'), main = document.createElement('span');
+        lead.textContent = leadLast ? row.text : row.lead;
+        main.textContent = leadLast ? row.lead : row.text;
+        if (row.state) item.dataset.state = row.state;
+        if (leadLast) item.classList.add('mcp-list-job');
+        item.append(lead, main);
+        return item;
+    }) : [Object.assign(document.createElement('li'), { className: 'mcp-list-empty', textContent: emptyText })];
+    list.replaceChildren(...items);
+}
+
+async function reloadConfigAfterExternalChange(): Promise<void> {
+    try {
+        config = { ...config, ...(await window.api.getConfig()) };
+        renderStreamers();
+    } catch {
+        return;
+    }
 }
 
 function setMcpNotice(message: string): void {
@@ -197,6 +253,7 @@ function initMcpSettings(): void {
         }
         void saveMcpSettings({ publicUrl: value });
     });
+    window.api.onConfigChanged(() => { void reloadConfigAfterExternalChange(); });
     window.api.onMcpStateChanged((state) => {
         mcpState = state;
         renderMcpSettings();

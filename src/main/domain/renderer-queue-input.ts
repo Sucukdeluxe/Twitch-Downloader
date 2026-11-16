@@ -1,5 +1,5 @@
 import { normalizeVodQuality } from './vod-quality';
-import { parseOmissionConfig } from './vod-edit-plan';
+import { MAX_EDITED_VOD_SECONDS, parseOmissionConfig } from './vod-edit-plan';
 import type { CustomClip, QueueItem } from '../../types';
 
 export type RendererQueueInput = Pick<QueueItem, 'url' | 'title' | 'date' | 'streamer' | 'duration_str' | 'quality' | 'qualityLabel'> & { customClip?: CustomClip };
@@ -14,7 +14,7 @@ function normalizeCustomClip(value: unknown): CustomClip | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const raw = value as Record<string, unknown>;
     if (!Number.isFinite(raw.startSec) || Number(raw.startSec) < 0) return null;
-    if (!Number.isFinite(raw.durationSec) || Number(raw.durationSec) <= 0 || Number(raw.durationSec) > 24 * 60 * 60) return null;
+    if (!Number.isFinite(raw.durationSec) || Number(raw.durationSec) <= 0 || Number(raw.durationSec) > MAX_EDITED_VOD_SECONDS) return null;
     if (!Number.isInteger(raw.startPart) || Number(raw.startPart) < 1 || Number(raw.startPart) > 100000) return null;
     if (!['simple', 'timestamp', 'template', 'parts'].includes(String(raw.filenameFormat))) return null;
     const filenameFormat = raw.filenameFormat as CustomClip['filenameFormat'];

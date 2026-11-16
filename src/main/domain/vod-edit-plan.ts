@@ -1,10 +1,11 @@
+export const MAX_EDITED_VOD_SECONDS = 172800;
 export interface OmittedRange { start: number; end: number }
 export interface OmissionConfig { version: 1; partDurationSec: number; ranges: OmittedRange[]; selection?: OmittedRange }
 export interface EditedVodPart { number: number; start: number; duration: number; ranges: OmittedRange[] }
 export interface EditedVodPlan { duration: number; omittedDuration: number; ranges: OmittedRange[]; omitted: OmittedRange[]; skippedNumbers: number[]; parts: EditedVodPart[] }
 
 export function normalizeOmissions(ranges: OmittedRange[], duration: number): OmittedRange[] {
-    if (!Number.isFinite(duration) || duration <= 0 || duration > 86400 || !Array.isArray(ranges) || ranges.length > 256) throw new Error('Invalid VOD exclusion range');
+    if (!Number.isFinite(duration) || duration <= 0 || duration > MAX_EDITED_VOD_SECONDS || !Array.isArray(ranges) || ranges.length > 256) throw new Error('Invalid VOD exclusion range');
     const total = Math.round(duration * 1000);
     const normalized = ranges.map(range => {
         if (!range || !Number.isFinite(range.start) || !Number.isFinite(range.end) || range.start < 0 || range.end > duration || range.end <= range.start) throw new Error('Invalid VOD exclusion range');
@@ -22,7 +23,7 @@ export function normalizeOmissions(ranges: OmittedRange[], duration: number): Om
 }
 
 export function planEditedVod(duration: number, partDuration: number, omissions: OmittedRange[], startPart = 1, selection?: OmittedRange): EditedVodPlan {
-    if (!Number.isFinite(partDuration) || partDuration < .1 || partDuration > 86400 || !Number.isInteger(startPart) || startPart < 1 || startPart > 100000) throw new Error('Invalid VOD part settings');
+    if (!Number.isFinite(partDuration) || partDuration < .1 || partDuration > MAX_EDITED_VOD_SECONDS || !Number.isInteger(startPart) || startPart < 1 || startPart > 100000) throw new Error('Invalid VOD part settings');
     const normalized = normalizeOmissions(omissions, duration);
     const selected = selection === undefined ? { start: 0, end: duration } : normalizeOmissions([selection], duration)[0];
     const omitted = normalized.map(range => ({ start: Math.max(selected.start, range.start), end: Math.min(selected.end, range.end) })).filter(range => range.end > range.start);
@@ -65,7 +66,7 @@ export function planEditedVod(duration: number, partDuration: number, omissions:
 export function parseOmissionConfig(value: unknown, duration: number): OmissionConfig | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const raw = value as Partial<OmissionConfig>;
-    if (raw.version !== 1 || !Number.isInteger(raw.partDurationSec) || raw.partDurationSec! < 60 || raw.partDurationSec! > 86400 || !Array.isArray(raw.ranges)) return null;
+    if (raw.version !== 1 || !Number.isInteger(raw.partDurationSec) || raw.partDurationSec! < 60 || raw.partDurationSec! > MAX_EDITED_VOD_SECONDS || !Array.isArray(raw.ranges)) return null;
     try {
         const ranges = normalizeOmissions(raw.ranges, duration);
         const selection = raw.selection === undefined ? undefined : normalizeOmissions([raw.selection], duration)[0];

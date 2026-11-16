@@ -5,10 +5,13 @@ import { createMcpServer } from './tools';
 
 export { MediaJobQueue, type MediaJob, type MediaJobRequest } from './media-jobs';
 export { composeLossless, formatDifferences, probeComposeSource } from './lossless-compose';
-export { grabFrames } from './frame-grab';
+export { decodeToRgb, encodeJpeg, grabFrames, grabRawFrames, qualitiesForWidth } from './frame-grab';
+export { loadChatActivity, loadChatRange, loadVodClips, type GqlRequest } from './vod-signals';
+export { PartPlanStore } from './part-plan-store';
+export { parseMediaJobs } from './media-jobs';
 export { loadStoryboard } from './vod-storyboard';
 export { generateAccessToken, isValidAccessToken, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT } from './access';
-export type { McpHost, McpAppStatus, McpQueueDraft, McpQueueAddResult, McpRecordingEvent, McpStreamer, McpVideoInfo, McpVod } from './host';
+export type { McpChannelAutomation, McpLiveRecordingResult, McpHost, McpAppStatus, McpQueueDraft, McpQueueAddResult, McpRecordingEvent, McpStreamer, McpVideoInfo, McpVod } from './host';
 
 export interface McpServiceSettings { enabled: boolean; port: number; network: boolean }
 export interface McpServiceStatus {
@@ -18,6 +21,7 @@ export interface McpServiceStatus {
     error: 'port-in-use' | 'no-access' | 'failed' | null;
     requests: number;
     lastActivity: McpHttpActivity | null;
+    recentCalls: McpHttpActivity[];
 }
 export interface McpServiceOptions {
     host: McpHost;
@@ -33,6 +37,7 @@ export class McpService {
     private error: McpServiceStatus['error'] = null;
     private requests = 0;
     private lastActivity: McpHttpActivity | null = null;
+    private recentCalls: McpHttpActivity[] = [];
     private pending: Promise<void> = Promise.resolve();
     private readonly handler;
 
@@ -51,6 +56,7 @@ export class McpService {
             error: this.error,
             requests: this.requests,
             lastActivity: this.lastActivity,
+            recentCalls: [...this.recentCalls],
         };
     }
 
@@ -88,7 +94,11 @@ export class McpService {
                     onActivity: activity => {
                         this.requests += 1;
                         this.lastActivity = activity;
-                        if (activity.tool) this.options.log('mcp-tool-call', { tool: activity.tool, client: activity.client });
+                        if (activity.tool) {
+                            this.recentCalls = [...this.recentCalls, activity].slice(-30);
+                            this.options.log('mcp-tool-call', { tool: activity.tool, client: activity.client });
+                            this.options.onStatusChange?.();
+                        }
                     },
                 });
                 this.options.log('mcp-server-started', { bindAddress, port: this.server.port });

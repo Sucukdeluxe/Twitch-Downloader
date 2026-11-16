@@ -3192,3 +3192,14 @@ body.theme-light #updateModal .update-preserve svg { color: #39774f; }
 #settingsTab .mcp-status[data-state="active"]::before { background: var(--success); }
 #settingsTab .mcp-status[data-state="error"]::before { background: var(--error); }
 #settingsTab .mcp-copy-actions { flex-wrap: wrap; }
+#settingsTab .mcp-list-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--workspace-text); }
+#settingsTab .mcp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+#settingsTab .mcp-list li { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.4; color: var(--workspace-text); }
+#settingsTab .mcp-list li > span:first-child { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+#settingsTab .mcp-list li > span:last-child { overflow-wrap: anywhere; }
+#settingsTab .mcp-list li.mcp-list-empty { grid-template-columns: minmax(0, 1fr); color: var(--text-secondary); }
+#settingsTab .mcp-list li[data-state="failed"] > span:last-child { color: var(--error); }
+#settingsTab .mcp-list li.mcp-list-job { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 3px 0; }
+#settingsTab .mcp-list li.mcp-list-job > span:first-child { color: var(--workspace-text); overflow-wrap: anywhere; }
+#settingsTab .mcp-list li.mcp-list-job > span:last-child { color: var(--text-secondary); }
+#settingsTab .mcp-list li.mcp-list-job[data-state="failed"] > span:last-child { color: var(--error); }

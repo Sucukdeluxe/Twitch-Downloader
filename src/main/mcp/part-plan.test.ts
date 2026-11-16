@@ -119,10 +119,17 @@ describe('partOmissions', () => {
         expect(omissions).toEqual({ version: 1, partDurationSec: 60, ranges: [], selection: { start: 100, end: 130 } });
     });
 
-    it('refuses sources longer than 24 hours with a usable alternative', () => {
-        const duration = 30 * 3600;
-        const plan = planParts([{ name: 'Lang', ranges: [{ start: 0, end: duration }] }], duration);
-        expect(() => partOmissions(plan.parts[0], duration)).toThrow(/up to 24 hours/);
+    it('supports sources of up to 48 hours and names a usable alternative beyond that', () => {
+        const long = 30 * 3600;
+        const longPlan = planParts([{ name: 'Lang', ranges: [{ start: 0, end: 3600 }, { start: 26 * 3600, end: long }] }], long);
+        const omissions = partOmissions(longPlan.parts[0], long);
+        expect(omissions.ranges).toEqual([{ start: 3600, end: 26 * 3600 }]);
+        expect(planEditedVod(long, omissions.partDurationSec, omissions.ranges, 1, omissions.selection).parts).toHaveLength(1);
+        const whole = planParts([{ name: 'Ganz', ranges: [{ start: 0, end: 47 * 3600 }] }], 47 * 3600);
+        expect(partOmissions(whole.parts[0], 47 * 3600).partDurationSec).toBe(47 * 3600);
+        const tooLong = 50 * 3600;
+        const plan = planParts([{ name: 'Zu lang', ranges: [{ start: 0, end: tooLong }] }], tooLong);
+        expect(() => partOmissions(plan.parts[0], tooLong)).toThrow(/up to 48 hours/);
     });
 });
 

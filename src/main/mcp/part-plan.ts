@@ -1,4 +1,4 @@
-import { parseOmissionConfig, planEditedVod, type OmissionConfig } from '../domain/vod-edit-plan';
+import { MAX_EDITED_VOD_SECONDS, parseOmissionConfig, planEditedVod, type OmissionConfig } from '../domain/vod-edit-plan';
 import { sanitizeFilenamePart } from '../infra/format-helpers';
 
 export interface TimeRange { start: number; end: number }
@@ -21,7 +21,7 @@ export const MIN_RANGE_SECONDS = 10;
 export const COVERAGE_TOLERANCE_SECONDS = 1;
 export const MAX_PARTS = 100;
 export const MAX_RANGES_PER_PART = 64;
-export const MAX_PART_SOURCE_SECONDS = 86400;
+export const MAX_PART_SOURCE_SECONDS = MAX_EDITED_VOD_SECONDS;
 export const DEFAULT_PART_FILENAME_TEMPLATE = '{date}_Part{part_padded}_{name}.mp4';
 export const PART_FILENAME_PLACEHOLDERS = ['date', 'date_iso', 'part', 'part_padded', 'name', 'title', 'channel', 'vod_id'] as const;
 
@@ -166,7 +166,7 @@ export function describeCoverageProblems(coverage: CoverageReport): string[] {
 
 export function partOmissions(part: PlannedPart, sourceDuration: number): OmissionConfig {
     if (sourceDuration > MAX_PART_SOURCE_SECONDS) {
-        throw new PartPlanError('Range-based parts support VODs of up to 24 hours. Download the VOD completely and build the parts from the downloaded files.');
+        throw new PartPlanError('Range-based parts support VODs of up to 48 hours. Download the VOD completely and build the parts from the downloaded files.');
     }
     const selection = { start: part.ranges[0].start, end: part.ranges[part.ranges.length - 1].end };
     const omitted = part.ranges.slice(1).map((range, index) => ({ start: part.ranges[index].end, end: range.start }));

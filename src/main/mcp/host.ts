@@ -4,6 +4,9 @@ import type { ArchiveSearchFilter, ArchiveSearchResult } from '../domain/archive
 import type { MediaJob, MediaJobRequest } from './media-jobs';
 import type { Storyboard } from './vod-storyboard';
 import type { GrabbedFrame } from './frame-grab';
+import type { ComposedSheet } from './frame-sheet';
+import type { ChatActivityBucket, ChatRange, VodClip } from './vod-signals';
+import type { StoredPlan } from './part-plan-store';
 
 export interface McpAppStatus {
     version: string;
@@ -63,6 +66,9 @@ export interface McpVideoInfo {
 
 export interface McpRecordingEvent { offsetSeconds: number; at: string; type: string; title?: string; category?: string; from?: string; to?: string }
 
+export interface McpChannelAutomation { autoDownloadVods: boolean; autoRecord: boolean }
+export interface McpLiveRecordingResult { started: boolean; reason: 'offline' | 'already-recording' | 'unavailable' | 'rejected' | null; title: string | null }
+
 export interface McpHost {
     status(): Promise<McpAppStatus>;
     streamers(): McpStreamer[];
@@ -70,6 +76,20 @@ export interface McpHost {
     timeline(vodId: string, refresh: boolean): Promise<VodTimeline | null>;
     storyboard(vodId: string, from: number | null, to: number | null, signal: AbortSignal): Promise<Storyboard | null>;
     vodFrames(vodId: string, times: number[], width: number, signal: AbortSignal): Promise<GrabbedFrame[]>;
+    vodRawFrames(vodId: string, times: number[], width: number, height: number, signal: AbortSignal): Promise<Array<Buffer | null>>;
+    fileRawFrames(file: string, times: number[], width: number, height: number, signal: AbortSignal): Promise<Array<Buffer | null>>;
+    encodeJpeg(image: ComposedSheet, signal: AbortSignal): Promise<Buffer | null>;
+    decodeJpeg(jpeg: Buffer, width: number, height: number, signal: AbortSignal): Promise<Buffer | null>;
+    chatRange(vodId: string, from: number, to: number, maximum: number, signal: AbortSignal): Promise<ChatRange | null>;
+    chatActivity(vodId: string, from: number, to: number, stepSeconds: number, signal: AbortSignal): Promise<ChatActivityBucket[] | null>;
+    vodClips(vodId: string): Promise<VodClip[] | null>;
+    savePartPlan(plan: StoredPlan): Promise<void>;
+    partPlans(vodId: string): Promise<StoredPlan[]>;
+    plannedVodIds(): Promise<Set<string>>;
+    fileSize(file: string): Promise<number | null>;
+    channelAutomation(channel: string): McpChannelAutomation;
+    setChannelAutomation(channel: string, change: Partial<McpChannelAutomation>): McpChannelAutomation;
+    startLiveRecording(channel: string): Promise<McpLiveRecordingResult>;
     queue(): QueueItem[];
     queueState(): { downloading: boolean; paused: boolean };
     addToQueue(drafts: McpQueueDraft[]): McpQueueAddResult[];

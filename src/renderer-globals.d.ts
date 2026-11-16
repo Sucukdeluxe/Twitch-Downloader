@@ -220,6 +220,8 @@ interface McpState {
     requests: number;
     lastActivityAt: number | null;
     lastTool: string | null;
+    recentCalls: Array<{ at: number; tool: string; client: string }>;
+    fileJobs: Array<{ id: string; name: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; progress: number; error: string | null }>;
 }
 
 interface McpSettingsInput { enabled?: boolean; port?: number; networkAccess?: boolean; publicUrl?: string }
@@ -505,6 +507,7 @@ interface ApiBridge {
     regenerateMcpToken(): Promise<McpState | null>;
     copyMcpValue(kind: McpCopyKind, target: 'public' | 'local'): Promise<boolean>;
     onMcpStateChanged(callback: (state: McpState) => void): void;
+    onConfigChanged(callback: () => void): void;
     login(): Promise<boolean>;
     getUserId(username: string): Promise<string | null>;
     getVODs(userId: string, forceRefresh?: boolean): Promise<VOD[]>;
