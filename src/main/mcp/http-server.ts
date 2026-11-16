@@ -21,6 +21,7 @@ export interface McpHttpServer {
 }
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const IDLE_CONNECTION_MS = 120000;
 const CORS_ALLOWED_HEADERS = 'authorization, content-type, accept, mcp-protocol-version, mcp-method, mcp-name, mcp-session-id, last-event-id';
 const FORWARDED_REQUEST_HEADERS = ['content-type', 'accept', 'mcp-protocol-version', 'mcp-method', 'mcp-name', 'mcp-session-id', 'last-event-id', 'user-agent'];
 
@@ -89,6 +90,8 @@ export function startMcpHttpServer(options: McpHttpServerOptions): Promise<McpHt
             else response.destroy();
         });
     });
+    server.keepAliveTimeout = IDLE_CONNECTION_MS;
+    server.headersTimeout = IDLE_CONNECTION_MS + 5000;
 
     async function handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
         const origin = typeof request.headers.origin === 'string' ? request.headers.origin : undefined;
