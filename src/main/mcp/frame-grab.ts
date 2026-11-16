@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
 
 export interface GrabbedFrame { time: number; jpeg: Buffer | null }
-export interface FrameSource {
+export interface FramePosition { input: string; seek: number }
+export type FrameLocator = (time: number) => FramePosition | null;
+export interface FrameInput { input: string; inputArgs?: string[]; locate?: FrameLocator }
+export interface PlaylistSegment { uri: string; start: number; duration: number; map?: string; byteRange?: string }
+export interface FrameSource extends FrameInput {
     ffmpegPath: string;
-    input: string;
-    inputArgs?: string[];
     signal: AbortSignal;
     onProcess?(command: string): void;
     timeoutMs?: number;
@@ -21,7 +23,29 @@ const MAX_FRAME_BYTES = 3 * 1024 * 1024;
 const MAX_SHEET_BYTES = 8 * 1024 * 1024;
 const PARALLEL_FRAMES = 3;
 const PARALLEL_RAW_FRAMES = 6;
+const SEGMENT_END_MARGIN_SECONDS = 0.25;
 const QUALITY_LADDER = ['160p', '160p30', '360p', '360p30', '480p', '480p30', '720p', '720p30', '720p60', '1080p', '1080p60', 'source'];
+
+export function segmentFrameLocator(segments: PlaylistSegment[]): FrameLocator | null {
+    if (!segments.length || segments.some(segment => segment.map || segment.byteRange || !(segment.duration > 0))) return null;
+    return (time) => {
+        let low = 0, high = segments.length - 1;
+        while (low < high) {
+            const middle = (low + high + 1) >> 1;
+            if (segments[middle].start <= time) low = middle;
+            else high = middle - 1;
+        }
+        const segment = segments[low];
+        const seek = Math.max(0, Math.min(time - segment.start, segment.duration - SEGMENT_END_MARGIN_SECONDS));
+        return { input: segment.uri, seek: Math.round(seek * 1000) / 1000 };
+    };
+}
+
+export function frameInputArgs(source: FrameInput, time: number): string[] {
+    const position = source.locate?.(time) ?? null;
+    if (!position) return [...(source.inputArgs ?? []), '-ss', time.toFixed(3), '-i', source.input];
+    return [...(source.inputArgs ?? []), '-i', position.input, ...(position.seek > 0 ? ['-ss', position.seek.toFixed(3)] : [])];
+}
 
 export function qualitiesForWidth(width: number): string[] {
     const first = width <= 256 ? '160p' : width <= 480 ? '360p' : width <= 720 ? '480p' : width <= 1024 ? '720p' : '1080p';
@@ -81,8 +105,7 @@ export async function grabFrames(options: FrameGrabOptions): Promise<GrabbedFram
     const times = options.times.slice(0, MAX_FRAMES_PER_REQUEST);
     const frames = await inParallel<Buffer | null>(times.length, PARALLEL_FRAMES, options.signal, async (index) => {
         const jpeg = await runBinary(options.ffmpegPath, [
-            '-hide_banner', '-loglevel', 'error', '-nostdin', ...(options.inputArgs ?? []),
-            '-ss', times[index].toFixed(3), '-i', options.input, '-frames:v', '1', '-an', '-sn', '-dn',
+            '-hide_banner', '-loglevel', 'error', '-nostdin', ...frameInputArgs(options, times[index]), '-frames:v', '1', '-an', '-sn', '-dn',
             '-vf', `scale=${width}:-2`, '-q:v', '5', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1',
         ], { maxBytes: MAX_FRAME_BYTES, timeoutMs: options.timeoutMs ?? 45000, signal: options.signal, onProcess: options.onProcess });
         return isJpeg(jpeg) ? jpeg : null;
@@ -96,8 +119,7 @@ export function grabRawFrames(options: RawFrameGrabOptions): Promise<Array<Buffe
     const filter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`;
     return inParallel<Buffer | null>(times.length, options.parallel ?? PARALLEL_RAW_FRAMES, options.signal, async (index) => {
         const raw = await runBinary(options.ffmpegPath, [
-            '-hide_banner', '-loglevel', 'error', '-nostdin', ...(options.inputArgs ?? []),
-            '-ss', times[index].toFixed(3), '-i', options.input, '-frames:v', '1', '-an', '-sn', '-dn',
+            '-hide_banner', '-loglevel', 'error', '-nostdin', ...frameInputArgs(options, times[index]), '-frames:v', '1', '-an', '-sn', '-dn',
             '-vf', filter, '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1',
         ], { maxBytes: width * height * 3, timeoutMs: options.timeoutMs ?? 45000, signal: options.signal, onProcess: options.onProcess });
         return raw && raw.length === width * height * 3 ? raw : null;

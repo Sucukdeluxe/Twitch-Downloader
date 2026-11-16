@@ -16,7 +16,7 @@ import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-librar
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
 import { registerEditingWorkflows } from './main/editing-workflows';
-import { McpService, MediaJobDeferred, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, mcpCopyAddresses, normalizeMcpPort, normalizeMcpPublicUrl, resolveMcpCopyAddress, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
+import { McpService, MediaJobDeferred, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, segmentFrameLocator, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, mcpCopyAddresses, normalizeMcpPort, normalizeMcpPublicUrl, resolveMcpCopyAddress, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type FrameLocator, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
 import { createApplicationBackup, inspectApplicationBackup, queueApplicationRestore, applyPendingApplicationRestore } from './main/domain/application-backup';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode } from './main/domain/media-format';
 import { createDevelopmentLiveUpdates } from './main/development-live';
@@ -9796,10 +9796,27 @@ async function requestVodSegmentBoundaries(url: string, quality: string | undefi
         return null;
     }
 }
-async function resolveMcpFrameSource(vodId: string, width: number, signal: AbortSignal): Promise<string | null> {
+const mcpFrameLocators = new Map<string, { expires: number; locate: FrameLocator | null }>();
+
+async function loadMcpFrameLocator(source: string, signal: AbortSignal): Promise<FrameLocator | null> {
+    const cached = mcpFrameLocators.get(source);
+    if (cached && cached.expires > Date.now()) return cached.locate;
+    try {
+        const locate = segmentFrameLocator((await fetchHlsMediaPlaylist(source, signal)).segments);
+        if (mcpFrameLocators.size >= 4) mcpFrameLocators.delete(mcpFrameLocators.keys().next().value!);
+        mcpFrameLocators.set(source, { expires: Date.now() + 60000, locate });
+        return locate;
+    } catch (error) {
+        if (!signal.aborted) appendDebugLog('mcp-frame-playlist-failed', String(error));
+        return null;
+    }
+}
+
+async function resolveMcpFrameSource(vodId: string, width: number, signal: AbortSignal): Promise<{ input: string; locate?: FrameLocator } | null> {
     for (const quality of qualitiesForWidth(width)) {
         const source = await resolveVodPlaybackSource('https://www.twitch.tv/videos/' + vodId, quality, signal);
-        if (source || signal.aborted) return source;
+        if (source) return { input: source, locate: await loadMcpFrameLocator(source, signal) ?? undefined };
+        if (signal.aborted) return null;
     }
     return null;
 }
@@ -10009,7 +10026,7 @@ function createMcpHost(): McpHost {
             const source = await resolveMcpFrameSource(vodId, width, signal);
             if (!source) return unavailable;
             return grabFrames({
-                ffmpegPath: await getFFmpegPath(), input: source, inputArgs: ['-rw_timeout', '20000000'], times, width, signal,
+                ffmpegPath: await getFFmpegPath(), ...source, inputArgs: ['-rw_timeout', '20000000'], times, width, signal,
                 onProcess: command => recordManagedToolExecution('ffmpeg', command),
             });
         },
@@ -10019,7 +10036,7 @@ function createMcpHost(): McpHost {
             const source = await resolveMcpFrameSource(vodId, width, signal);
             if (!source) return unavailable;
             return grabRawFrames({
-                ffmpegPath: await getFFmpegPath(), input: source, inputArgs: ['-rw_timeout', '20000000'], times, width, height, signal,
+                ffmpegPath: await getFFmpegPath(), ...source, inputArgs: ['-rw_timeout', '20000000'], times, width, height, signal,
                 onProcess: command => recordManagedToolExecution('ffmpeg', command),
             });
         },

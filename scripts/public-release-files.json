@@ -267,6 +267,7 @@
     "src/main/infra/secure-storage.ts",
     "src/main/mcp/access.test.ts",
     "src/main/mcp/access.ts",
+    "src/main/mcp/frame-grab.test.ts",
     "src/main/mcp/frame-grab.ts",
     "src/main/mcp/frame-sheet.test.ts",
     "src/main/mcp/frame-sheet.ts",

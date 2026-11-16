@@ -5,7 +5,8 @@ import { createMcpServer } from './tools';
 
 export { MediaJobDeferred, MediaJobQueue, type MediaJob, type MediaJobRequest } from './media-jobs';
 export { composeLossless, formatDifferences, probeComposeSource } from './lossless-compose';
-export { decodeToRgb, encodeJpeg, grabFrames, grabRawFrames, qualitiesForWidth } from './frame-grab';
+export { decodeToRgb, encodeJpeg, grabFrames, grabRawFrames, qualitiesForWidth, segmentFrameLocator } from './frame-grab';
+export type { FrameLocator } from './frame-grab';
 export { loadChatActivity, loadChatRange, loadVodClips, type GqlRequest } from './vod-signals';
 export { PartPlanStore } from './part-plan-store';
 export { parseMediaJobs } from './media-jobs';
