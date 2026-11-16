@@ -10,6 +10,20 @@ describe('merge compatibility', () => {
         for (const rate of ['25/1', '24/1', '60/1', '0/0']) expect(pair(p => p.streams[0].avg_frame_rate = rate).differences).toContain('frame_rate');
         expect(pair(p => p.streams[1].avg_frame_rate = '0/0').copyAllowed).toBe(true);
     });
+    test('uses matching base frame rates when dropped frames change the averages', () => {
+        const first = structuredClone(base), second = structuredClone(base);
+        Object.assign(first.streams[0], { r_frame_rate: '60000/1001', avg_frame_rate: '5771/100' });
+        Object.assign(second.streams[0], { r_frame_rate: '60000/1001', avg_frame_rate: '5994/100' });
+        const report = compareMergeMedia([first, second], ['first.mp4', 'second.mp4']);
+        expect(report.copyAllowed).toBe(true);
+        expect(report.files.map(file => file.fps)).toEqual([57.71, 59.94]);
+        Object.assign(second.streams[0], { r_frame_rate: '50/1', avg_frame_rate: '5771/100' });
+        expect(compareMergeMedia([first, second], ['first.mp4', 'second.mp4']).differences).toContain('frame_rate');
+    });
+    test.each(['0/0', '0/1', '-30/1', 'NaN', 'Infinity', '30/0', '30/1/2'])('falls back to average FPS for invalid base rate %s', rate => {
+        expect(pair(p => Object.assign(p.streams[0], { r_frame_rate: rate, avg_frame_rate: '30/1' })).copyAllowed).toBe(true);
+        expect(pair(p => Object.assign(p.streams[0], { r_frame_rate: rate, avg_frame_rate: '25/1' })).differences).toContain('frame_rate');
+    });
     test('requires an explicit encoding choice for differing dimensions', () => { const report = pair(p => p.streams[0].width = 1280); expect(report.copyAllowed).toBe(false); expect(report.encodeAllowed).toBe(true); expect(report.differences).toContain('width'); });
     test('does not concatenate different bitstream headers', () => { expect(pair(p => p.streams[0].extradata_hash = 'hash-b').copyAllowed).toBe(false); });
     test('refuses implicit HDR and bitdepth conversion', () => { const report = pair(p => { p.streams[0].pix_fmt = 'yuv420p10le'; p.streams[0].color_transfer = 'smpte2084'; }); expect(report.copyAllowed).toBe(false); expect(report.encodeAllowed).toBe(false); });

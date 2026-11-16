@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.25 - 2026-11-16
+
+Compatible VOD parts can now be joined directly even when dropped frames make their average frame rates differ.
+
 ## 1.1.24 - 2026-11-16
 
 This update makes the AI connection reliable for very long VODs, including the VODs of 48-hour streams, and simplifies connecting from another computer.

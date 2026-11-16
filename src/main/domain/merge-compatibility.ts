@@ -13,6 +13,17 @@ export interface MergeCompatibility {
 }
 const fields = ['codec_type', 'codec_name', 'width', 'height', 'pix_fmt', 'sample_rate', 'channels', 'channel_layout', 'color_primaries', 'color_transfer', 'color_space', 'color_range', 'time_base', 'profile', 'level', 'extradata_hash', 'sample_aspect_ratio'] as const;
 const fps = (stream: Record<string, unknown>) => { const [n, d = 1] = String(stream.avg_frame_rate || '0').split('/').map(Number); return d ? n / d : 0; };
+export function mergeFrameRate(stream: Record<string, unknown>): number {
+    for (const value of [stream.r_frame_rate, stream.avg_frame_rate]) {
+        const text = String(value ?? '').trim();
+        const parts = text.split('/');
+        if (parts.length > 2 || parts.some(part => !part || !/^[0-9.]+$/.test(part))) continue;
+        const [numerator, denominator = 1] = parts.map(Number);
+        const rate = numerator / denominator;
+        if (denominator > 0 && Number.isFinite(rate) && rate > 0) return rate;
+    }
+    return 0;
+}
 export const FRAME_RATE_TOLERANCE = 0.02;
 export function frameRatesMatch(left: number, right: number): boolean {
     const a = Number.isFinite(left) ? left : 0, b = Number.isFinite(right) ? right : 0;
@@ -29,7 +40,7 @@ export function compareMergeMedia(probes: MergeProbe[], names: string[]): MergeC
             const left = base[index], right = probe.streams[index];
             if (!left || !right) continue;
             for (const field of fields) if (left[field] !== right[field]) differences.add(field);
-            if (!frameRatesMatch(fps(left), fps(right))) differences.add('frame_rate');
+            if (!frameRatesMatch(mergeFrameRate(left), mergeFrameRate(right))) differences.add('frame_rate');
             if (rotation(left) !== rotation(right)) differences.add('rotation');
             if (left.tags?.language !== right.tags?.language) differences.add('language');
         }

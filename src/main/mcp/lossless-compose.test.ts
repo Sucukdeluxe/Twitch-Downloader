@@ -24,6 +24,24 @@ describe('formatDifferences', () => {
         expect(formatDifferences([first, second])).toEqual([]);
     });
 
+    it('joins matching base frame rates directly despite different measured averages', () => {
+        const first = source('a.mp4', 60, { video: { r_frame_rate: '60000/1001', avg_frame_rate: '5771/100' } });
+        const second = source('b.mp4', 40, { video: { r_frame_rate: '60000/1001', avg_frame_rate: '5994/100' } });
+        expect(formatDifferences([first, second])).toEqual([]);
+        const plan = planCompose([{ path: first.path }, { path: second.path }], [first, second]);
+        expect(plan.duration).toBe(100);
+        expect(plan.temporaryBytes).toBe(0);
+        expect(plan.segments.every(segment => segment.whole)).toBe(true);
+        const different = source('c.mp4', 40, { video: { r_frame_rate: '50/1', avg_frame_rate: '5771/100' } });
+        expect(formatDifferences([first, different])).toEqual(['frame rate']);
+    });
+
+    it.each(['0/0', '0/1', '-60/1', 'NaN', 'Infinity', '60/0', '60/1/2'])('uses average FPS when the base rate is invalid: %s', rate => {
+        const first = source('a.mp4', 60);
+        expect(formatDifferences([first, source('b.mp4', 40, { video: { r_frame_rate: rate } })])).toEqual([]);
+        expect(formatDifferences([first, source('c.mp4', 40, { video: { r_frame_rate: rate, avg_frame_rate: '30/1' } })])).toEqual(['frame rate']);
+    });
+
     it('refuses sources whose time bases differ', () => {
         const first = source('a.mp4', 60, { video: { time_base: '1/90000' } });
         expect(formatDifferences([first, source('b.mp4', 60, { video: { time_base: '1/90000' } })])).toEqual([]);

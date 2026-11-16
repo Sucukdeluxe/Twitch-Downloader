@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runMediaProcess } from '../domain/media-process';
-import { frameRatesMatch } from '../domain/merge-compatibility';
+import { frameRatesMatch, mergeFrameRate } from '../domain/merge-compatibility';
 
 export interface ComposeSegmentInput { path: string; start?: number | null; end?: number | null }
 export interface ComposeSegment { path: string; start: number; end: number; whole: boolean }
@@ -88,11 +88,6 @@ const FORMAT_LABELS: Record<string, string> = {
     sample_rate: 'audio sample rate', channels: 'audio channels', channel_layout: 'audio channel layout', time_base: 'time base',
 };
 
-function frameRate(stream: Record<string, unknown>): number {
-    const [numerator, denominator = 1] = String(stream.avg_frame_rate || '0').split('/').map(Number);
-    return denominator ? numerator / denominator : 0;
-}
-
 export function formatDifferences(sources: ComposeSourceInfo[]): string[] {
     const differences = new Set<string>();
     const layout = (source: ComposeSourceInfo) => ({
@@ -103,7 +98,7 @@ export function formatDifferences(sources: ComposeSourceInfo[]): string[] {
     for (const source of sources.slice(1)) {
         const current = layout(source);
         for (const field of VIDEO_FORMAT_FIELDS) if (base.video[field] !== current.video[field]) differences.add('video ' + FORMAT_LABELS[field]);
-        const rates = [frameRate(base.video), frameRate(current.video)];
+        const rates = [mergeFrameRate(base.video), mergeFrameRate(current.video)];
         if (rates[0] > 0 && rates[1] > 0 && !frameRatesMatch(rates[0], rates[1])) differences.add('frame rate');
         if (base.audio.length !== current.audio.length) { differences.add('number of audio tracks'); continue; }
         for (const [index, track] of base.audio.entries()) {

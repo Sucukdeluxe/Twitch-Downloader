@@ -10,10 +10,10 @@ const ffprobe = process.argv[3] || process.env.FFPROBE_PATH || 'ffprobe';
 const { composeLossless } = require('../dist/main/mcp/lossless-compose.js');
 const run = (command, args) => execFileSync(command, args, { encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
 
-function fixture(directory, name, seconds, size, frequency) {
+function fixture(directory, name, seconds, size, frequency, dropFrames = false) {
     const file = path.join(directory, name);
     run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-n', '-f', 'lavfi', '-i', `testsrc2=size=${size}:rate=30`, '-f', 'lavfi', '-i', `sine=frequency=${frequency}:sample_rate=48000`,
-        '-t', String(seconds), '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '96k', '-shortest', file]);
+        '-t', String(seconds), ...(dropFrames ? ['-vf', "select='not(eq(mod(n,10),5))'", '-fps_mode', 'vfr'] : []), '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '96k', '-shortest', file]);
     return file;
 }
 
@@ -22,7 +22,7 @@ function probe(file) {
 }
 
 function decodedFrameHashes(file, count) {
-    return run(ffmpeg, ['-v', 'error', '-nostdin', '-i', file, '-map', '0:v:0', '-frames:v', String(count), '-f', 'framemd5', '-'])
+    return run(ffmpeg, ['-v', 'error', '-nostdin', '-i', file, '-map', '0:v:0', '-frames:v', String(count), '-fps_mode', 'passthrough', '-f', 'framemd5', '-'])
         .split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')).map(line => line.split(',').at(-1).trim());
 }
 
@@ -63,6 +63,18 @@ async function main() {
         run(ffmpeg, ['-v', 'error', '-xerror', '-i', joined, '-f', 'null', '-']);
         assert.deepEqual(leftovers(directory), []);
 
+        const dropped = fixture(directory, 'dropped.mp4', 8, '640x360', 880, true);
+        const droppedVideo = probe(dropped).streams.find(stream => stream.codec_type === 'video');
+        const rate = value => { const [n, d = 1] = value.split('/').map(Number); return n / d; };
+        assert.equal(droppedVideo.r_frame_rate, sourceVideo.r_frame_rate);
+        assert.ok(Math.abs(rate(droppedVideo.avg_frame_rate) - rate(sourceVideo.avg_frame_rate)) > 1);
+        const variableJoined = path.join(directory, 'variable-joined.mp4');
+        await compose([{ path: a }, { path: dropped }], variableJoined);
+        const variableProbe = probe(variableJoined);
+        assert.ok(Math.abs(Number(variableProbe.format.duration) - 20) < 0.1);
+        assert.deepEqual(decodedFrameHashes(variableJoined, 1000), [...decodedFrameHashes(a, 1000), ...decodedFrameHashes(dropped, 1000)], 'all source frames remain in order despite average FPS differences');
+        run(ffmpeg, ['-v', 'error', '-xerror', '-i', variableJoined, '-f', 'null', '-']);
+
         const before = fs.statSync(joined);
         await assert.rejects(compose([{ path: a }, { path: b }], joined), /already exists/);
         assert.equal(fs.statSync(joined).size, before.size);
@@ -79,8 +91,8 @@ async function main() {
         await assert.rejects(cancelled);
         assert.equal(fs.existsSync(path.join(directory, 'cancelled.mp4')), false);
         assert.deepEqual(leftovers(directory), []);
-        assert.deepEqual(fs.readdirSync(directory).sort(), ['a.mp4', 'b.mp4', 'joined.mp4', 'other.mp4']);
-        console.log(`PASS MCP lossless compose: ${Number(output.format.duration).toFixed(2)} s joined from 3 segments without re-encoding; overwrite, format mismatch and cancellation rejected`);
+        assert.deepEqual(fs.readdirSync(directory).sort(), ['a.mp4', 'b.mp4', 'dropped.mp4', 'joined.mp4', 'other.mp4', 'variable-joined.mp4']);
+        console.log(`PASS MCP lossless compose: ${Number(output.format.duration).toFixed(2)} s joined from 3 segments without re-encoding; differing average FPS joined with every frame preserved; overwrite, format mismatch and cancellation rejected`);
     } finally {
         fs.rmSync(directory, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });
     }
