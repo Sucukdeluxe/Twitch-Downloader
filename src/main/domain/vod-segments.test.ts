@@ -39,11 +39,11 @@ describe('snapping', () => {
     it('requests whole segments by placing the start offset inside the previous segment and the limit inside the last one', () => {
         expect(segmentWindow(boundaries, 0, 20)).toEqual({ start: 0, end: 20, offset: 0, limit: 15, lead: 0, tail: 0 });
         const window = segmentWindow(boundaries, 20, 42.233)!;
-        expect(window.offset).toBe(15);
+        expect(window.offset).toBe(19);
         expect(window.limit).toBeCloseTo(22.233 - 10.767 / 2, 6);
         expect([window.lead, window.tail]).toEqual([0, 0]);
         const tail = segmentWindow(boundaries, 31.466, 42.301)!;
-        expect(tail.offset).toBeCloseTo(25.733, 6);
+        expect(tail.offset).toBe(31);
         expect(tail.limit).toBeCloseTo(10.835 - 0.034, 6);
         expect(tail.limit).toBeGreaterThan(10.767);
     });
@@ -51,12 +51,29 @@ describe('snapping', () => {
     it('covers a requested range with the segments that contain it and reports what has to be trimmed', () => {
         const window = segmentWindow(boundaries, 23.5, 40)!;
         expect([window.start, window.end]).toEqual([20, 42.233]);
-        expect(window.offset).toBe(15);
+        expect(window.offset).toBe(19);
         expect(window.lead).toBeCloseTo(3.5, 6);
         expect(window.tail).toBeCloseTo(2.233, 6);
         expect(segmentWindow(boundaries, 9.9995, 20.0004)).toMatchObject({ start: 10, end: 20, lead: 0, tail: 0 });
         expect(segmentWindow(boundaries, 41, 500)).toMatchObject({ start: 31.466, end: 42.301, tail: 0 });
         expect(segmentWindow(boundaries, 4, 5)).toMatchObject({ start: 0, end: 10, offset: 0, lead: 4, tail: 5 });
+    });
+
+    it('uses whole seconds for the start offset because Streamlink drops the fraction', () => {
+        const uneven = [0, 10, 10.4, 10.9, 20, 30, 40.001, 50];
+        for (let index = 1; index < uneven.length - 1; index++) {
+            const window = segmentWindow(uneven, uneven[index], uneven[index] + 5)!;
+            expect(Number.isInteger(window.offset)).toBe(true);
+            const reached = uneven.find(boundary => boundary >= window.offset)!;
+            expect(reached).toBe(window.start);
+            expect(window.start).toBeLessThanOrEqual(uneven[index]);
+            expect(window.lead).toBeCloseTo(uneven[index] - window.start, 6);
+        }
+        expect(segmentWindow(uneven, 10.9, 20)).toMatchObject({ start: 10, offset: 9, end: 20 });
+        expect(segmentWindow(uneven, 10.9, 20)!.lead).toBeCloseTo(0.9, 6);
+        expect(segmentWindow(uneven, 10.9, 20)!.limit).toBeCloseTo(10 - 9.1 / 2, 6);
+        expect(segmentWindow(uneven, 20, 30)).toMatchObject({ start: 20, offset: 19, lead: 0 });
+        expect(segmentWindow(uneven, 40.001, 50)).toMatchObject({ start: 40.001, offset: 39, lead: 0 });
     });
 
     it('rejects ranges outside the media', () => {

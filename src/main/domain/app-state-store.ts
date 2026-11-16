@@ -2,6 +2,7 @@ import type { DbHandle } from '../infra/db';
 import { normalizeLogin } from './config-normalize';
 import { sanitizeConfigInput } from './config-input';
 import { createDownloadHistoryStore } from './download-history-store';
+import { normalizeMcpPort, normalizeMcpPublicUrl } from '../mcp/access';
 
 export interface AppStateStore {
     loadConfig(): Record<string, unknown>;
@@ -11,7 +12,13 @@ export interface AppStateStore {
 }
 
 function normalizeConfig(config: object): Record<string, unknown> {
-    return sanitizeConfigInput(config);
+    const normalized = sanitizeConfigInput(config);
+    const source = config as Record<string, unknown>;
+    if (typeof source.mcp_enabled === 'boolean') normalized.mcp_enabled = source.mcp_enabled;
+    if (typeof source.mcp_network_access === 'boolean') normalized.mcp_network_access = source.mcp_network_access;
+    if (source.mcp_port !== undefined) normalized.mcp_port = normalizeMcpPort(source.mcp_port);
+    if (typeof source.mcp_public_url === 'string') normalized.mcp_public_url = normalizeMcpPublicUrl(source.mcp_public_url);
+    return normalized;
 }
 
 function replaceConfig(db: DbHandle, normalized: Record<string, unknown>): void {

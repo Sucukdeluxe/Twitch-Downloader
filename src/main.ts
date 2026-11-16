@@ -16,7 +16,7 @@ import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-librar
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
 import { registerEditingWorkflows } from './main/editing-workflows';
-import { McpService, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
+import { McpService, MediaJobDeferred, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
 import { createApplicationBackup, inspectApplicationBackup, queueApplicationRestore, applyPendingApplicationRestore } from './main/domain/application-backup';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode } from './main/domain/media-format';
 import { createDevelopmentLiveUpdates } from './main/development-live';
@@ -4129,6 +4129,9 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
         });
         if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
         if (trim && trimFilename) {
+            partialDownloadRegistry.discard(partialFilename);
+            const trimSpace = ensureDiskSpace(path.dirname(filename), fs.statSync(remuxFilename).size + 32 * 1024 * 1024, 'MP4');
+            if (!trimSpace.success) return trimSpace;
             finalization = { stage: 'optimizing', elapsedSeconds: 0 };
             report();
             await trimMp4({
@@ -4308,6 +4311,8 @@ async function prepareLiveVodSnapshot(
     }
 }
 
+const MIN_TRIMMED_RANGE_SECONDS = 2;
+
 async function downloadVODPart(
     url: string,
     filename: string,
@@ -4319,7 +4324,7 @@ async function downloadVODPart(
     totalParts: number,
     expectedTotalSec: number = 0,
     quality?: string,
-    range?: { start: number; duration: number }
+    range?: { start: number; duration: number; exact?: boolean }
 ): Promise<DownloadResult> {
     if (!(await ensureFfmpegInstalled())) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
     if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) return { success: false, error: tBackend('downloadCancelled') };
@@ -4333,10 +4338,11 @@ async function downloadVODPart(
         const boundaries = await loadVodSegmentBoundaries(url, requestedQuality);
         rangeWindow = boundaries ? segmentWindow(boundaries, range.start, range.start + range.duration) : null;
         appendDebugLog('download-part-window', { itemId, range, window: rangeWindow });
-        if (!rangeWindow) return { success: false, error: tBackend('editedVodSegmentsUnavailable') };
+        if (!rangeWindow && range.exact) return { success: false, error: tBackend('editedVodSegmentsUnavailable') };
     }
-    const rangeTrim = range && rangeWindow && (rangeWindow.lead > 0.05 || rangeWindow.tail > 0.05)
-        ? { startSeconds: rangeWindow.lead > 0.05 ? rangeWindow.lead : 0, durationSeconds: range.duration } : undefined;
+    const rangeTrim = !range || ffmpegInput || range.duration < MIN_TRIMMED_RANGE_SECONDS ? undefined
+        : !rangeWindow ? { startSeconds: 0, durationSeconds: range.duration }
+            : rangeWindow.lead > 0.05 || rangeWindow.tail > 0.05 ? { startSeconds: rangeWindow.lead > 0.05 ? rangeWindow.lead : 0, durationSeconds: range.duration } : undefined;
     let streamlinkCmd: { command: string; prefixArgs: string[] };
     let ffmpegPath: string | null;
     try {
@@ -6114,7 +6120,7 @@ async function downloadVOD(
                         start = span.start;
                         end = span.end;
                     }
-                    const result = await downloadVODPart(item.url, filename, clock(start), clock(end - start), value => progress(value.progress), item.id, 1, 1, 0, item.quality, { start, duration: end - start });
+                    const result = await downloadVODPart(item.url, filename, clock(start), clock(end - start), value => progress(value.progress), item.id, 1, 1, 0, item.quality, { start, duration: end - start, exact: omissions.cuts === 'segments' });
                     if (!result.success) throw new Error(result.error || tBackend('editedVodFailed'));
                 },
                 filename(part) {
@@ -6930,7 +6936,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
                                 currentPart: 0,
                                 totalParts: 0
                             } as DownloadProgress);
-                        }, () => cancelledItemIds.has(item.id) || queueProcessRegistry.isCancelled(item.id));
+                        }, () => !isDownloading || appShutdownStarted || cancelledItemIds.has(item.id) || queueProcessRegistry.isCancelled(item.id));
 
                         const chatPath = chatReplayPathFor(firstOutput);
                         const payload = {
@@ -9762,6 +9768,15 @@ function notifyMcpStateChanged(): void {
 const vodSegmentCache = new Map<string, { expires: number; boundaries: number[] }>();
 
 async function loadVodSegmentBoundaries(url: string, quality: string | undefined, signal?: AbortSignal): Promise<number[] | null> {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        const boundaries = await requestVodSegmentBoundaries(url, quality, signal);
+        if (boundaries || signal?.aborted || appShutdownStarted || attempt === 3) return boundaries;
+        await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+    }
+    return null;
+}
+
+async function requestVodSegmentBoundaries(url: string, quality: string | undefined, signal?: AbortSignal): Promise<number[] | null> {
     const key = url + '|' + (quality || '');
     const cached = vodSegmentCache.get(key);
     if (cached && cached.expires > Date.now()) return cached.boundaries;
@@ -9814,7 +9829,7 @@ function setMcpChannelAutomation(channel: string, change: Partial<McpChannelAuto
 }
 
 const mcpMediaJobs = new MediaJobQueue(async (request, context) => {
-    if (appShutdownStarted || applicationBackupBusy) throw new Error('The application is busy or closing.');
+    if (appShutdownStarted || applicationBackupBusy) throw new MediaJobDeferred('The application is busy or closing.');
     if (!(await ensureFfmpegInstalled())) throw new Error(tBackend('ffmpegAutoInstallFailed'));
     const result = await composeLossless({
         segments: request.segments,
@@ -9869,7 +9884,23 @@ async function getMcpToolAvailability(): Promise<{ ffmpeg: boolean; streamlink: 
     return value;
 }
 
+function isLexicallyInside(roots: string[], candidate: string): boolean {
+    const target = path.resolve(candidate).toLowerCase();
+    return roots.some((root) => {
+        if (!root) return false;
+        const base = path.resolve(root).toLowerCase();
+        return target === base || target.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+    });
+}
+
+function mcpRootSpellings(): string[] {
+    return [config.download_path, clipDownloadRoot()].filter(Boolean).flatMap((root) => {
+        try { return [root, fs.realpathSync.native(root)]; } catch { return [root]; }
+    });
+}
+
 function isWithinMcpRoots(candidate: string): boolean {
+    if (!isLexicallyInside(mcpRootSpellings(), candidate)) return false;
     return [config.download_path, clipDownloadRoot()].some(root => Boolean(root)
         && (normalizeComparablePath(root) === normalizeComparablePath(candidate) || isPathInsideDirectory(root, candidate)));
 }
@@ -10041,14 +10072,17 @@ function createMcpHost(): McpHost {
                 item.createdAt = new Date().toISOString();
                 if (draft.outputPath) {
                     const outputPath = path.resolve(draft.outputPath);
-                    if (path.extname(outputPath).toLowerCase() !== '.mp4' || path.basename(outputPath).length > 240 || !isPathInsideDirectory(config.download_path, outputPath)) {
+                    if (path.extname(outputPath).toLowerCase() !== '.mp4' || path.basename(outputPath).length > 240 || path.resolve(config.download_path).toLowerCase() === outputPath.toLowerCase() || !isLexicallyInside([config.download_path], outputPath)) {
                         return { accepted: false, reason: 'invalid', item: null };
                     }
                     item.outputPath = outputPath;
                 }
                 const result = commitQueueItemWithResult(item, false);
                 if (result.accepted) appendDebugLog('mcp-queue-item-added', { id: item.id, title: item.title });
-                return result.accepted ? { accepted: true, reason: null, item } : { accepted: false, reason: result.reason, item: null };
+                if (result.accepted) return { accepted: true, reason: null, item };
+                const fingerprint = getQueueItemFingerprint(item);
+                const existing = result.reason === 'duplicate' ? downloadQueue.find(candidate => candidate.status !== 'completed' && getQueueItemFingerprint(candidate) === fingerprint) : undefined;
+                return { accepted: false, reason: result.reason, item: existing ?? null };
             });
         },
         partOutputFolder(channel, startedAt) {
@@ -10174,6 +10208,11 @@ function startMcpService(): void {
     });
     try {
         const stored = fs.existsSync(MCP_FILE_JOBS_FILE) ? parseMediaJobs(JSON.parse(fs.readFileSync(MCP_FILE_JOBS_FILE, 'utf8'))) : [];
+        for (const directory of new Set(stored.filter(job => isWithinMcpRoots(job.outputPath)).map(job => path.dirname(job.outputPath)))) {
+            for (const entry of fs.existsSync(directory) ? fs.readdirSync(directory, { withFileTypes: true }) : []) {
+                if (entry.isDirectory() && /^\.mcp-compose-[0-9a-f-]{36}$/.test(entry.name)) fs.rmSync(path.join(directory, entry.name), { recursive: true, force: true });
+            }
+        }
         const waiting = mcpMediaJobs.restore(stored, job => isWithinMcpRoots(job.outputPath));
         if (waiting > 0) appendDebugLog('mcp-file-jobs-resumed', { waiting });
     } catch (error) {
@@ -10194,20 +10233,26 @@ ipcMain.handle('set-mcp-settings', async (event, value: unknown) => {
     if (typeof value.enabled === 'boolean') next.mcp_enabled = value.enabled && mcpEncryptionAvailable();
     if (typeof value.networkAccess === 'boolean') next.mcp_network_access = value.networkAccess;
     if (typeof value.port === 'number' && Number.isInteger(value.port) && value.port >= MCP_MIN_PORT && value.port <= MCP_MAX_PORT) next.mcp_port = value.port;
-    if (typeof value.publicUrl === 'string') next.mcp_public_url = normalizeMcpPublicUrl(value.publicUrl);
+    let rejected: 'public-url' | null = null;
+    if (typeof value.publicUrl === 'string') {
+        const publicUrl = normalizeMcpPublicUrl(value.publicUrl);
+        if (value.publicUrl.trim() && !publicUrl) rejected = 'public-url';
+        else next.mcp_public_url = publicUrl;
+    }
     if (next.mcp_enabled && !mcpAccessToken && !storeMcpAccessToken(generateAccessToken())) next.mcp_enabled = false;
     config = persistStateChange(config, () => next, saveConfig);
     await applyMcpSettings();
-    return getMcpState();
+    return { ...getMcpState(), rejected };
 });
 
 ipcMain.handle('regenerate-mcp-token', async (event) => {
     if (!isTrustedRendererEvent(event)) return null;
-    if (!appShutdownStarted && storeMcpAccessToken(generateAccessToken())) {
+    const stored = !appShutdownStarted && storeMcpAccessToken(generateAccessToken());
+    if (stored) {
         appendDebugLog('mcp-token-regenerated');
         await applyMcpSettings();
     }
-    return getMcpState();
+    return { ...getMcpState(), rejected: stored ? null : 'token' };
 });
 
 ipcMain.handle('copy-mcp-value', (event, kind: unknown, target: unknown): boolean => {

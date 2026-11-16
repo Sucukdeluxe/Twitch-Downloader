@@ -3,7 +3,7 @@ import type { McpHost } from './host';
 import { startMcpHttpServer, type McpHttpActivity, type McpHttpServer } from './http-server';
 import { createMcpServer } from './tools';
 
-export { MediaJobQueue, type MediaJob, type MediaJobRequest } from './media-jobs';
+export { MediaJobDeferred, MediaJobQueue, type MediaJob, type MediaJobRequest } from './media-jobs';
 export { composeLossless, formatDifferences, probeComposeSource } from './lossless-compose';
 export { decodeToRgb, encodeJpeg, grabFrames, grabRawFrames, qualitiesForWidth } from './frame-grab';
 export { loadChatActivity, loadChatRange, loadVodClips, type GqlRequest } from './vod-signals';

@@ -51,6 +51,19 @@ describe('createAppStateStore', () => {
         expect(persisted).not.toContain('/webhooks/plain');
     });
 
+    it('keeps the AI connection settings across a restart and normalises stored values', () => {
+        const store = createAppStateStore(db);
+        store.saveConfig({ language: 'de', mcp_enabled: true, mcp_port: 5000, mcp_network_access: true, mcp_public_url: 'https://mcp.example.de/' });
+        db.close();
+        db = openDatabase(databasePath);
+        const restored = createAppStateStore(db).loadConfig();
+        expect(restored).toMatchObject({ language: 'de', mcp_enabled: true, mcp_port: 5000, mcp_network_access: true, mcp_public_url: 'https://mcp.example.de' });
+        createAppStateStore(db).saveConfig({ ...restored, mcp_enabled: 'yes', mcp_port: 80, mcp_public_url: 'ftp://example.de' });
+        const repaired = createAppStateStore(db).loadConfig();
+        expect(repaired.mcp_enabled).toBeUndefined();
+        expect(repaired).toMatchObject({ mcp_port: 47821, mcp_network_access: true, mcp_public_url: '' });
+    });
+
     it('persists queue snapshots atomically and preserves order across restart', () => {
         const first = { id: 'q2', status: 'pending', title: 'second', streamer: 'Beta' };
         const second = { id: 'q1', status: 'completed', title: 'first', streamer: 'Alpha' };

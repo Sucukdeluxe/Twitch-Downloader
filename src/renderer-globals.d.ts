@@ -222,6 +222,7 @@ interface McpState {
     lastTool: string | null;
     recentCalls: Array<{ at: number; tool: string; client: string }>;
     fileJobs: Array<{ id: string; name: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; progress: number; error: string | null }>;
+    rejected?: 'public-url' | 'token' | null;
 }
 
 interface McpSettingsInput { enabled?: boolean; port?: number; networkAccess?: boolean; publicUrl?: string }

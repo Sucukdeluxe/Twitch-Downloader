@@ -155,10 +155,26 @@ function renderMcpSettings(): void {
     renderMcpList('mcpRecentCalls', state.recentCalls.map(call => ({ lead: time.format(new Date(call.at)), text: call.tool, state: '' })), text.callsEmpty);
     renderMcpList('mcpFileJobs', state.fileJobs.map(job => ({
         lead: job.status === 'queued' ? text.jobQueued : job.status === 'running' ? text.jobRunning.replace('{progress}', String(job.progress))
-            : job.status === 'completed' ? text.jobCompleted : job.status === 'cancelled' ? text.jobCancelled : text.jobFailed.replace('{error}', job.error || '–'),
+            : job.status === 'completed' ? text.jobCompleted : job.status === 'cancelled' ? text.jobCancelled : text.jobFailed.replace('{error}', mcpJobError(job.error)),
         text: job.name,
         state: job.status,
     })), text.jobsEmpty, true);
+}
+
+const MCP_JOB_ERRORS_DE: Array<[RegExp, string]> = [
+    [/^The job was not continued because its files are no longer inside the download folder\.$/, 'Der Auftrag wurde nicht fortgesetzt, weil seine Dateien nicht mehr im Download-Ordner liegen.'],
+    [/^Output file already exists: (.+)$/, 'Die Ausgabedatei existiert bereits: $1'],
+    [/^Source file not found: (.+)$/, 'Quelldatei nicht gefunden: $1'],
+    [/^Source file is not readable as video: (.+)$/, 'Quelldatei ist nicht als Video lesbar: $1'],
+    [/^The sources cannot be joined without re-encoding because their formats differ \((.+)\)\.$/, 'Die Quellen lassen sich nicht ohne Neukodierung zusammenfügen, weil ihre Formate abweichen ($1).'],
+    [/^The output is (.+) s long, expected (.+) s\.$/, 'Die Ausgabe ist $1 s lang, erwartet waren $2 s.'],
+];
+
+function mcpJobError(error: string | null): string {
+    if (!error) return '–';
+    if (mcpText() !== MCP_TEXT.de) return error;
+    for (const [pattern, german] of MCP_JOB_ERRORS_DE) if (pattern.test(error)) return error.replace(pattern, german);
+    return error;
 }
 
 function renderMcpList(id: string, rows: Array<{ lead: string; text: string; state: string }>, emptyText: string, leadLast = false): void {
@@ -205,7 +221,7 @@ async function saveMcpSettings(settings: McpSettingsInput): Promise<void> {
     try {
         const state = await window.api.setMcpSettings(settings);
         if (state) mcpState = state;
-        mcpNotice = '';
+        mcpNotice = state?.rejected === 'public-url' ? mcpText().invalidUrl : '';
     } catch {
         mcpNotice = mcpText().saveFailed;
     }
@@ -222,7 +238,7 @@ async function regenerateMcpToken(): Promise<void> {
     try {
         const state = await window.api.regenerateMcpToken();
         if (state) mcpState = state;
-        mcpNotice = mcpText().regenerated;
+        mcpNotice = state && state.rejected !== 'token' ? mcpText().regenerated : mcpText().saveFailed;
     } catch {
         mcpNotice = mcpText().saveFailed;
     }

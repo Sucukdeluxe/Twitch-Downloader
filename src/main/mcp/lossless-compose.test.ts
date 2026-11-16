@@ -24,6 +24,12 @@ describe('formatDifferences', () => {
         expect(formatDifferences([first, second])).toEqual([]);
     });
 
+    it('refuses sources whose time bases differ', () => {
+        const first = source('a.mp4', 60, { video: { time_base: '1/90000' } });
+        expect(formatDifferences([first, source('b.mp4', 60, { video: { time_base: '1/90000' } })])).toEqual([]);
+        expect(formatDifferences([first, source('c.mp4', 60, { video: { time_base: '1/600' } })])).toEqual(['video time base']);
+    });
+
     it('names every property that prevents joining without re-encoding', () => {
         const base = source('a.mp4', 60);
         expect(formatDifferences([base, source('b.mp4', 60, { video: { height: 720, width: 1280, extradata_hash: 'SHA256:other' } })])).toEqual(['video width', 'video height', 'video encoder settings']);

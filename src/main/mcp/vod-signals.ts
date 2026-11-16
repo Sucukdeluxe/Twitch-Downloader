@@ -3,20 +3,25 @@ export interface ChatMessage { id: string; offset: number; user: string; text: s
 export interface ChatRange { messages: ChatMessage[]; nextFrom: number | null }
 export interface ChatActivityBucket { start: number; messagesPerMinute: number; samples: string[] }
 export interface VodClip { slug: string; title: string; views: number; duration: number; offset: number; createdAt: string }
+export interface VodClipList { clips: VodClip[]; complete: boolean; uncovered: { start: number; end: number | null } | null }
 
 export const MAX_CHAT_MESSAGES = 1000;
 export const MAX_CHAT_ACTIVITY_BUCKETS = 240;
-export const MAX_VOD_CLIPS = 100;
+export const MAX_VOD_CLIPS = 200;
+const CLIPS_PER_REQUEST = 100;
 const MAX_CHAT_PAGES = 60;
 const MAX_TEXT_LENGTH = 300;
+const ACTIVITY_LOOKAHEAD_SECONDS = 2;
 const CHAT_QUERY = 'query($videoID:ID!,$offset:Int){video(id:$videoID){comments(contentOffsetSeconds:$offset){edges{node{id contentOffsetSeconds message{fragments{text}} commenter{displayName}}} pageInfo{hasNextPage}}}}';
-const CLIPS_QUERY = 'query($videoID:ID!,$first:Int){video(id:$videoID){clips(first:$first){edges{node{slug title viewCount durationSeconds videoOffsetSeconds createdAt}}}}}';
+const CLIP_FIELDS = '{edges{node{slug title viewCount durationSeconds videoOffsetSeconds createdAt}} pageInfo{hasNextPage}}';
+const CLIPS_QUERY = `query($videoID:ID!,$first:Int){video(id:$videoID){clips(first:$first)${CLIP_FIELDS}}}`;
+const LAST_CLIPS_QUERY = `query($videoID:ID!,$first:Int){video(id:$videoID){clips(first:$first,sort:DESC)${CLIP_FIELDS}}}`;
 
 interface CommentsResult {
     video: { comments: { edges: Array<{ node: { id?: unknown; contentOffsetSeconds?: unknown; message?: { fragments?: Array<{ text?: unknown }> }; commenter?: { displayName?: unknown } | null } }> | null; pageInfo?: { hasNextPage?: boolean } } | null } | null;
 }
 interface ClipsResult {
-    video: { clips: { edges: Array<{ node: { slug?: unknown; title?: unknown; viewCount?: unknown; durationSeconds?: unknown; videoOffsetSeconds?: unknown; createdAt?: unknown } }> | null } | null } | null;
+    video: { clips: { edges: Array<{ node: { slug?: unknown; title?: unknown; viewCount?: unknown; durationSeconds?: unknown; videoOffsetSeconds?: unknown; createdAt?: unknown } }> | null; pageInfo?: { hasNextPage?: boolean } } | null } | null;
 }
 
 function cleanText(value: unknown, maximum = MAX_TEXT_LENGTH): string {
@@ -51,7 +56,8 @@ export async function loadChatRange(gql: GqlRequest, vodId: string, from: number
         for (const message of fresh) {
             if (message.offset < from) continue;
             if (message.offset >= to) return { messages, nextFrom: null };
-            if (messages.length >= limit) return { messages, nextFrom: message.offset };
+            const previous = messages.at(-1);
+            if (messages.length >= limit && previous && Math.floor(message.offset) > Math.floor(previous.offset)) return { messages, nextFrom: Math.floor(message.offset) };
             messages.push(message);
         }
         const last = result.messages.at(-1);
@@ -71,7 +77,10 @@ export async function loadChatActivity(gql: GqlRequest, vodId: string, from: num
         while (next < starts.length && !signal.aborted) {
             const index = next++;
             const start = starts[index];
-            const page = await loadChatPage(gql, vodId, start);
+            let page = await loadChatPage(gql, vodId, start);
+            for (let shift = 1; page && page.hasNext && !page.messages.some(message => message.offset >= start) && shift <= ACTIVITY_LOOKAHEAD_SECONDS; shift++) {
+                page = await loadChatPage(gql, vodId, start + shift) ?? page;
+            }
             if (!page) { failed += 1; continue; }
             const inBucket = page.messages.filter(message => message.offset >= start && message.offset < start + stepSeconds);
             const span = inBucket.length > 1 ? Math.max(1, inBucket[inBucket.length - 1].offset - inBucket[0].offset) : stepSeconds;
@@ -87,10 +96,8 @@ export async function loadChatActivity(gql: GqlRequest, vodId: string, from: num
     return buckets.filter((bucket): bucket is ChatActivityBucket => bucket !== null);
 }
 
-export async function loadVodClips(gql: GqlRequest, vodId: string): Promise<VodClip[] | null> {
-    const data = await gql<ClipsResult>(CLIPS_QUERY, { videoID: vodId, first: MAX_VOD_CLIPS });
-    if (!data?.video) return null;
-    return (data.video.clips?.edges ?? []).flatMap((edge): VodClip[] => {
+function readClips(data: ClipsResult | null): VodClip[] {
+    return (data?.video?.clips?.edges ?? []).flatMap((edge): VodClip[] => {
         const node = edge?.node;
         const offset = typeof node?.videoOffsetSeconds === 'number' ? node.videoOffsetSeconds : Number.NaN, duration = Number(node?.durationSeconds);
         if (!node || typeof node.slug !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(node.slug) || !Number.isFinite(offset) || offset < 0) return [];
@@ -98,5 +105,22 @@ export async function loadVodClips(gql: GqlRequest, vodId: string): Promise<VodC
             slug: node.slug, title: cleanText(node.title, 200), views: Number.isFinite(Number(node.viewCount)) ? Number(node.viewCount) : 0,
             duration: Number.isFinite(duration) ? duration : 0, offset, createdAt: typeof node.createdAt === 'string' ? node.createdAt.slice(0, 40) : '',
         }];
-    }).sort((a, b) => a.offset - b.offset);
+    });
+}
+
+export async function loadVodClips(gql: GqlRequest, vodId: string): Promise<VodClipList | null> {
+    const first = await gql<ClipsResult>(CLIPS_QUERY, { videoID: vodId, first: CLIPS_PER_REQUEST });
+    if (!first?.video) return null;
+    const head = readClips(first);
+    const sorted = (clips: VodClip[]): VodClip[] => [...new Map(clips.map(clip => [clip.slug, clip])).values()].sort((a, b) => a.offset - b.offset);
+    if (first.video.clips?.pageInfo?.hasNextPage !== true) return { clips: sorted(head), complete: true, uncovered: null };
+    const last = await gql<ClipsResult>(LAST_CLIPS_QUERY, { videoID: vodId, first: CLIPS_PER_REQUEST });
+    const tail = readClips(last);
+    const headEnd = head.reduce((latest, clip) => Math.max(latest, clip.offset), 0);
+    const tailStart = tail.reduce((earliest, clip) => Math.min(earliest, clip.offset), Number.POSITIVE_INFINITY);
+    const overlapping = tail.length > 0 && (tailStart <= headEnd || tail.some(clip => head.some(other => other.slug === clip.slug)));
+    return {
+        clips: sorted([...head, ...tail]), complete: overlapping,
+        uncovered: overlapping ? null : { start: headEnd, end: tail.length > 0 ? tailStart : null },
+    };
 }

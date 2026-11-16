@@ -98,22 +98,70 @@ describe('loadChatActivity', () => {
 });
 
 describe('loadVodClips', () => {
+    const clip = (slug: string, offset: number | null, views = 1) => ({ node: { slug, title: 'titel ' + slug, viewCount: views, durationSeconds: 30, videoOffsetSeconds: offset, createdAt: '2026-11-15T21:40:00Z' } });
+
     it('returns clips in VOD order and ignores malformed entries', async () => {
-        const gql = (async (_query: string, variables: Record<string, unknown>) => {
+        const queries: string[] = [];
+        const gql = (async (query: string, variables: Record<string, unknown>) => {
+            queries.push(query);
             expect(variables).toEqual({ videoID: '900', first: 100 });
-            return { video: { clips: { edges: [
-                { node: { slug: 'SpaeterClip-1', title: 'van der linde crash', viewCount: 204, durationSeconds: 30, videoOffsetSeconds: 17996, createdAt: '2026-11-15T21:40:00Z' } },
-                { node: { slug: 'FrueherClip-2', title: 'rewi anruf', viewCount: 308, durationSeconds: 60, videoOffsetSeconds: 6570, createdAt: '2026-11-15T18:30:00Z' } },
-                { node: { slug: '../kaputt', title: 'x', viewCount: 1, durationSeconds: 5, videoOffsetSeconds: 10 } },
-                { node: { slug: 'OhneZeit', title: 'x', viewCount: 1, durationSeconds: 5, videoOffsetSeconds: null } },
-            ] } } };
+            return { video: { clips: { edges: [clip('SpaeterClip-1', 17996, 204), clip('FrueherClip-2', 6570, 308), clip('../kaputt', 10), clip('OhneZeit', null)], pageInfo: { hasNextPage: false } } } };
         }) as GqlRequest;
-        const clips = await loadVodClips(gql, '900');
-        expect(clips!.map(clip => [clip.slug, clip.offset, clip.title, clip.views])).toEqual([['FrueherClip-2', 6570, 'rewi anruf', 308], ['SpaeterClip-1', 17996, 'van der linde crash', 204]]);
+        const list = await loadVodClips(gql, '900');
+        expect(list!.clips.map(entry => [entry.slug, entry.offset, entry.views])).toEqual([['FrueherClip-2', 6570, 308], ['SpaeterClip-1', 17996, 204]]);
+        expect(list).toMatchObject({ complete: true, uncovered: null });
+        expect(queries).toHaveLength(1);
     });
 
-    it('distinguishes an unknown VOD from a VOD without clips', async () => {
+    it('also reads the last clips of a VOD and names the range Twitch does not list', async () => {
+        const gql = (async (query: string) => ({ video: { clips: {
+            edges: query.includes('sort:DESC') ? [clip('Ende-2', 23000), clip('Ende-1', 14730)] : [clip('Anfang-1', 219), clip('Anfang-2', 5850)],
+            pageInfo: { hasNextPage: true },
+        } } })) as GqlRequest;
+        const list = await loadVodClips(gql, '900');
+        expect(list!.clips.map(entry => entry.slug)).toEqual(['Anfang-1', 'Anfang-2', 'Ende-1', 'Ende-2']);
+        expect(list).toMatchObject({ complete: false, uncovered: { start: 5850, end: 14730 } });
+    });
+
+    it('reports a complete list when the first and the last clips overlap', async () => {
+        const gql = (async (query: string) => ({ video: { clips: {
+            edges: query.includes('sort:DESC') ? [clip('C', 900), clip('B', 500)] : [clip('A', 100), clip('B', 500)],
+            pageInfo: { hasNextPage: true },
+        } } })) as GqlRequest;
+        const list = await loadVodClips(gql, '900');
+        expect(list!.clips.map(entry => entry.slug)).toEqual(['A', 'B', 'C']);
+        expect(list).toMatchObject({ complete: true, uncovered: null });
+    });
+
+    it('keeps the first clips when the last ones cannot be read and distinguishes an unknown VOD', async () => {
+        const partial = await loadVodClips((async (query: string) => query.includes('sort:DESC') ? null : { video: { clips: { edges: [clip('A', 100)], pageInfo: { hasNextPage: true } } } }) as GqlRequest, '900');
+        expect(partial).toMatchObject({ complete: false, uncovered: { start: 100, end: null } });
         expect(await loadVodClips((async () => ({ video: null })) as GqlRequest, '900')).toBeNull();
-        expect(await loadVodClips((async () => ({ video: { clips: { edges: [] } } })) as GqlRequest, '900')).toEqual([]);
+        expect(await loadVodClips((async () => ({ video: { clips: { edges: [] } } })) as GqlRequest, '900')).toEqual({ clips: [], complete: true, uncovered: null });
+    });
+});
+
+describe('Twitch pages that do not start at the requested position', () => {
+    const node = (id: string, offset: number) => ({ node: { id, contentOffsetSeconds: offset, message: { fragments: [{ text: 'text ' + id }] }, commenter: { displayName: 'u' } } });
+
+    it('looks one second further when a page ends before the requested step', async () => {
+        const gql = (async (_query: string, variables: Record<string, unknown>) => ({ video: { comments: {
+            edges: Number(variables.offset) === 300 ? [node('a', 296), node('b', 299)] : [node('c', 300), node('d', 310), node('e', 700)],
+            pageInfo: { hasNextPage: true },
+        } } })) as GqlRequest;
+        const buckets = await loadChatActivity(gql, '900', 300, 600, 300, signal);
+        expect(buckets![0].samples).toEqual(['text c', 'text d']);
+        expect(buckets![0].messagesPerMinute).toBeGreaterThan(0);
+    });
+
+    it('finishes a second before stopping at the message limit so that the next call moves on', async () => {
+        const all = [...Array.from({ length: 15 }, (_value, index) => ({ id: 's' + index, offset: 1000, user: 'u', text: 'voll ' + index })), { id: 'next', offset: 1001, user: 'u', text: 'weiter' }, { id: 'later', offset: 1005, user: 'u', text: 'danach' }];
+        const { gql } = chatGql(all, 30);
+        const first = await loadChatRange(gql, '900', 1000, 1300, 10, signal);
+        expect(first!.messages).toHaveLength(15);
+        expect(first!.nextFrom).toBe(1001);
+        const second = await loadChatRange(gql, '900', first!.nextFrom!, 1300, 10, signal);
+        expect(second!.messages.map(message => message.text)).toEqual(['weiter', 'danach']);
+        expect(second!.nextFrom).toBeNull();
     });
 });

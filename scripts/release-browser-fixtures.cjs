@@ -122,6 +122,7 @@ function createDispatcher({ state, overrides, contract, calls, emit, validateCon
     selectFolder: () => null, selectVideoFile: () => null, selectMultipleVideos: () => [], saveVideoDialog: () => null,
     saveQueueOutputDialog: () => null,
     getCutterProjectRecovery: () => null,
+    getMcpState: () => null,
   };
   const queueChanged = async () => { await emit('queue-updated', state.queue); return state.queue; };
   const addQueueItem = async (item, notifyDuplicate) => {

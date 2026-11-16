@@ -20,6 +20,7 @@ const timeline: VodTimeline = {
 function createFixture() {
     const queue: QueueItem[] = [], plans: StoredPlan[] = [], grabs: Array<{ source: string; times: number[]; width: number; height: number }> = [];
     const automation = { vod: new Set<string>(['kanal']), record: new Set<string>() };
+    const existing = new Set<string>();
     const chat = Array.from({ length: 400 }, (_value, index) => ({ id: 'm' + index, offset: 1000 + index * 3, user: 'user' + (index % 7), text: index % 50 === 0 ? 'TIKTOK ZEIT' : 'lol ' + index }));
     const jobs = new MediaJobQueue(async request => ({ outputPath: request.outputPath, duration: 1, bytes: 1 }));
     const file = path.join(ROOT, 'kanal', 'aufnahme.mp4');
@@ -29,7 +30,7 @@ function createFixture() {
     };
     const unused = () => { throw new Error('not used in this test'); };
     const host = {
-        status: unused, streamers: () => [{ login: 'kanal', displayName: 'Kanal', live: true, liveVodId: null }],
+        status: async () => ({ waitingForTimeWindow: false, downloading: false, nextDownloadWindowStart: null }), streamers: () => [{ login: 'kanal', displayName: 'Kanal', live: true, liveVodId: null }],
         listVods: async () => [{ id: '900', title: 'Langer Stream', startedAt: new Date(2026, 10, 14, 12).toISOString(), durationSeconds: 14400, url: 'https://www.twitch.tv/videos/900', channel: 'kanal', live: false, downloaded: false },
             { id: '899', title: 'Vortag', startedAt: new Date(2026, 10, 13, 12).toISOString(), durationSeconds: 7200, url: 'https://www.twitch.tv/videos/899', channel: 'kanal', live: false, downloaded: false }],
         timeline: async (vodId: string) => vodId === '900' ? structuredClone(timeline) : null,
@@ -43,7 +44,7 @@ function createFixture() {
         },
         chatActivity: async (vodId: string, from: number, to: number, step: number) => vodId !== '900' ? null
             : Array.from({ length: Math.ceil((to - from) / step) }, (_value, index) => ({ start: from + index * step, messagesPerMinute: index === 1 ? 240 : 12, samples: index === 1 ? ['TIKTOK ZEIT', 'endlich'] : ['hallo'] })),
-        vodClips: async (vodId: string) => vodId !== '900' ? null : [{ slug: 'KlarerClip-abc', title: 'rewi anruf', views: 308, duration: 60, offset: 6570, createdAt: '2026-11-14T13:00:00Z' }],
+        vodClips: async (vodId: string) => vodId !== '900' ? null : { clips: [{ slug: 'KlarerClip-abc', title: 'rewi anruf', views: 308, duration: 60, offset: 6570, createdAt: '2026-11-14T13:00:00Z' }], complete: false, uncovered: { start: 6570, end: 12000 } },
         queue: () => queue, queueState: () => ({ downloading: false, paused: false }),
         addToQueue: (drafts: Array<{ title: string; url: string; date: string; streamer: string; outputPath?: string }>) => drafts.map((draft) => {
             const item: QueueItem = { id: `1700000000000-${queue.length + 1}`, title: draft.title, url: draft.url, date: draft.date, streamer: draft.streamer, duration_str: '4h0m0s', status: 'pending', progress: 0, outputPath: draft.outputPath };
@@ -62,7 +63,7 @@ function createFixture() {
         savePartPlan: async (plan: StoredPlan) => { plans.push(plan); },
         partPlans: async (vodId: string) => plans.filter(plan => plan.vodId === vodId).reverse(),
         plannedVodIds: async () => new Set(plans.map(plan => plan.vodId)),
-        fileSize: async (candidate: string) => candidate.endsWith('TikTok.mp4') ? 5 * 1024 ** 3 : null,
+        fileSize: async (candidate: string) => existing.has(path.basename(candidate)) ? 5 * 1024 ** 3 : null,
         channelAutomation: (channel: string) => ({ autoDownloadVods: automation.vod.has(channel), autoRecord: automation.record.has(channel) }),
         setChannelAutomation: (channel: string, change: { autoDownloadVods?: boolean; autoRecord?: boolean }) => {
             if (change.autoDownloadVods !== undefined) automation.vod[change.autoDownloadVods ? 'add' : 'delete'](channel);
@@ -72,7 +73,7 @@ function createFixture() {
         startLiveRecording: async (channel: string) => channel === 'kanal' ? { started: true, reason: null, title: 'Live jetzt' } : { started: false, reason: 'offline' as const, title: null },
         enqueueMediaJob: unused, mediaJobs: () => jobs.list(), cancelMediaJob: unused, waitForMediaJobChange: unused,
     } as unknown as McpHost;
-    return { host, queue, plans, grabs, automation, file };
+    return { host, queue, plans, grabs, automation, file, existing };
 }
 
 async function start(fixture: ReturnType<typeof createFixture>) {
@@ -170,6 +171,8 @@ describe('chat and clips', () => {
         const { call } = await start(createFixture());
         const data = (await call('get_vod_clips', { vod_id: '900' })).structuredContent;
         expect(data.clips).toEqual([{ start: 6570, start_tc: '01:49:30', duration_seconds: 60, title: 'rewi anruf', views: 308, url: 'https://clips.twitch.tv/KlarerClip-abc' }]);
+        expect(data).toMatchObject({ complete: false, not_covered: { start: 6570, start_tc: '01:49:30', end: 12000, end_tc: '03:20:00' } });
+        expect(data.coverage_note).toContain('first and the last clips');
         expect((await call('get_vod_clips', { vod_id: '1' })).isError).toBe(true);
     });
 });
@@ -199,6 +202,7 @@ describe('prepared parts and automation', () => {
         expect(running).toMatchObject({ prepared: true, channel: 'kanal', earlier_plans: 0, all_parts_finished: false });
         expect(running.parts.map((part: any) => [part.name, part.state, part.progress_percent ?? null, part.error ?? null])).toEqual([['TikTok', 'downloading', 41.3, null], ['Spiel', 'failed', 0, 'Netzwerkfehler']]);
         fixture.queue.splice(0);
+        fixture.existing.add('14.11.2026_Part01_TikTok.mp4');
         const later = (await call('get_vod_parts_state', { vod_id: '900' })).structuredContent;
         expect(later.parts.map((part: any) => [part.state, part.file_size ?? null])).toEqual([['finished', '5.00 GB'], ['not present', null]]);
         expect((await call('list_vods', { channel: 'kanal' })).structuredContent.vods.map((vod: any) => vod.parts_prepared)).toEqual([true, false]);

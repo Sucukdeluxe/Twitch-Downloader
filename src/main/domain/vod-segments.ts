@@ -5,6 +5,7 @@ export const MAX_SEGMENT_PLAYLIST_BYTES = 8 * 1024 * 1024;
 const MAX_SEGMENT_SECONDS = 120;
 const MAX_SEGMENTS = 200000;
 const BOUNDARY_TOLERANCE_SECONDS = 0.001;
+const WHOLE_SECOND_MARGIN = 0.002;
 
 export function parseSegmentBoundaries(playlist: string): number[] | null {
     if (typeof playlist !== 'string' || !playlist.startsWith('#EXTM3U')) return null;
@@ -46,15 +47,23 @@ export function segmentSpan(boundaries: number[], start: number, end: number): S
     return { start: boundaries[first], end: boundaries[last], firstSegment: first, segmentCount: last - first };
 }
 
+function wholeSecondOffset(boundaries: number[], index: number): number | null {
+    if (index === 0) return 0;
+    const second = Math.floor(boundaries[index] - WHOLE_SECOND_MARGIN);
+    return second > boundaries[index - 1] + WHOLE_SECOND_MARGIN ? second : null;
+}
+
 export function segmentWindow(boundaries: number[], start: number, end: number): SegmentWindow | null {
     const final = boundaries.length - 1;
     if (!(end > start) || start < 0 || start >= boundaries[final] - BOUNDARY_TOLERANCE_SECONDS) return null;
-    const first = Math.min(final - 1, lastBoundaryAtOrBefore(boundaries, start + BOUNDARY_TOLERANCE_SECONDS));
+    let first = Math.min(final - 1, lastBoundaryAtOrBefore(boundaries, start + BOUNDARY_TOLERANCE_SECONDS));
+    const containing = first;
+    while (wholeSecondOffset(boundaries, first) === null) first -= 1;
     const before = lastBoundaryAtOrBefore(boundaries, end - BOUNDARY_TOLERANCE_SECONDS);
-    const last = Math.max(first + 1, boundaries[before] >= end - BOUNDARY_TOLERANCE_SECONDS ? before : Math.min(final, before + 1));
+    const last = Math.max(containing + 1, boundaries[before] >= end - BOUNDARY_TOLERANCE_SECONDS ? before : Math.min(final, before + 1));
     return {
         start: boundaries[first], end: boundaries[last],
-        offset: first === 0 ? 0 : (boundaries[first - 1] + boundaries[first]) / 2,
+        offset: wholeSecondOffset(boundaries, first)!,
         limit: boundaries[last] - boundaries[first] - (boundaries[last] - boundaries[last - 1]) / 2,
         lead: Math.max(0, start - boundaries[first]),
         tail: Math.max(0, boundaries[last] - end),

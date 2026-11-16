@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { runMediaProcess, type MediaProcessOptions } from './media-process';
-import { planEditedVod, type EditedVodPart, type OmissionConfig, type OmittedRange } from './vod-edit-plan';
+import { MAX_EDITED_VOD_SECONDS, planEditedVod, type EditedVodPart, type OmissionConfig, type OmittedRange } from './vod-edit-plan';
 
 interface CachedInput { size: number; duration: number; signature: string }
 interface PublishedPart { path: string; size: number }
@@ -191,7 +191,7 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
     await runMediaProcess(options.ffmpegPath, [
         '-hide_banner', '-loglevel', 'warning', '-nostdin', '-f', 'concat', '-safe', '1', '-i', path.join(workspace, 'concat.ffconcat'),
         '-map', '0:v:0', '-map', '0:a?', '-map_metadata', '-1', '-c', 'copy',
-        '-f', 'segment', ...(splitTimes.length ? ['-segment_times', splitTimes.join(',')] : ['-segment_time', '86401']),
+        '-f', 'segment', ...(splitTimes.length ? ['-segment_times', splitTimes.join(',')] : ['-segment_time', String(MAX_EDITED_VOD_SECONDS * 2)]),
         '-segment_time_delta', '0.05', '-reset_timestamps', '1', '-segment_format', 'mp4', '-segment_format_options', 'movflags=+faststart',
         '-progress', 'pipe:1', '-y', path.join(workspace, 'part-%04d.mp4'),
     ], { ...options, timeoutMs: 3 * 60 * 60 * 1000, onProcess(process) {
@@ -215,7 +215,7 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
         await save();
         try { await fs.link(stagedPath, target); }
         catch (error) {
-            if (!['EPERM', 'ENOTSUP', 'EXDEV', 'EOPNOTSUPP'].includes((error as NodeJS.ErrnoException).code || '')) throw error;
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw error;
             options.checkSpace(staged[index].size + 32 * 1024 * 1024);
             const output = await fs.open(target, 'wx');
             try {

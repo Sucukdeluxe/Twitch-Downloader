@@ -15,6 +15,7 @@ const PARALLEL_STRETCHES = 8;
 const DENSE_SPAN_SECONDS = 10;
 const DENSE_MIN_MESSAGES = 20;
 const DENSE_READS = 3;
+const END_TOLERANCE_SECONDS = 3;
 const MIN_STRETCH_SECONDS = 600;
 const DEFAULT_MAX_PAGES = 250000;
 const DEFAULT_MAX_MESSAGES = 2000000;
@@ -50,7 +51,11 @@ export async function fetchChatReplay(gql: ChatReplayGql, videoId: string, optio
             if (options.cancelCheck?.() || pages >= maxPages || messages.size >= maxMessages) { truncated = true; return; }
             const data = await gql<CommentsPage>(QUERY, { videoID: videoId, offset });
             const comments = data?.video?.comments;
-            if (!comments) { truncated = true; return; }
+            if (!comments) {
+                if (to === Number.POSITIVE_INFINITY && duration > 0 && offset >= Math.floor(duration) - END_TOLERANCE_SECONDS) return;
+                truncated = true;
+                return;
+            }
             pages += 1;
             let earliest: number | null = null, latest: number | null = null, count = 0;
             for (const edge of comments.edges ?? []) {
@@ -65,7 +70,7 @@ export async function fetchChatReplay(gql: ChatReplayGql, videoId: string, optio
             reads += 1;
             if (latest !== null && earliest !== null && count >= DENSE_MIN_MESSAGES && latest - earliest <= DENSE_SPAN_SECONDS && reads < DENSE_READS) continue;
             reads = 0;
-            if (comments.pageInfo?.hasNextPage !== true || latest === null || latest >= to) return;
+            if (comments.pageInfo?.hasNextPage !== true || latest === null || latest >= to || (duration > 0 && latest >= duration)) return;
             offset = Math.floor(latest) > offset ? Math.floor(latest) : offset + 1;
         }
     };

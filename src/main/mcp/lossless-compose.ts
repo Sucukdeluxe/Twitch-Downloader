@@ -81,11 +81,11 @@ export function planCompose(inputs: ComposeSegmentInput[], sources: ComposeSourc
     return { segments, duration, estimatedBytes, temporaryBytes };
 }
 
-const VIDEO_FORMAT_FIELDS = ['codec_name', 'profile', 'width', 'height', 'pix_fmt', 'extradata_hash'] as const;
-const AUDIO_FORMAT_FIELDS = ['codec_name', 'profile', 'sample_rate', 'channels', 'channel_layout', 'extradata_hash'] as const;
+const VIDEO_FORMAT_FIELDS = ['codec_name', 'profile', 'width', 'height', 'pix_fmt', 'extradata_hash', 'time_base'] as const;
+const AUDIO_FORMAT_FIELDS = ['codec_name', 'profile', 'sample_rate', 'channels', 'channel_layout', 'extradata_hash', 'time_base'] as const;
 const FORMAT_LABELS: Record<string, string> = {
     codec_name: 'codec', profile: 'codec profile', width: 'width', height: 'height', pix_fmt: 'pixel format', extradata_hash: 'encoder settings',
-    sample_rate: 'audio sample rate', channels: 'audio channels', channel_layout: 'audio channel layout',
+    sample_rate: 'audio sample rate', channels: 'audio channels', channel_layout: 'audio channel layout', time_base: 'time base',
 };
 
 function frameRate(stream: Record<string, unknown>): number {
@@ -139,7 +139,7 @@ async function publish(temporary: string, target: string): Promise<void> {
     } catch (error) {
         const code = (error as NodeJS.ErrnoException).code || '';
         if (code === 'EEXIST') throw new ComposeError(`Output file already exists: ${path.basename(target)}`);
-        if (!['EPERM', 'ENOTSUP', 'EXDEV', 'EOPNOTSUPP', 'ENOSYS'].includes(code)) throw error;
+
         const handle = await fs.open(target, 'wx').catch((openError: NodeJS.ErrnoException) => {
             if (openError.code === 'EEXIST') throw new ComposeError(`Output file already exists: ${path.basename(target)}`);
             throw openError;
@@ -172,9 +172,12 @@ export async function composeLossless(options: ComposeOptions): Promise<ComposeR
             if (segment.whole) { inputs.push(segment.path); continue; }
             const length = segment.end - segment.start;
             const extracted = path.join(workspace, 'segment-' + String(index).padStart(4, '0') + '.mp4');
+            const sourceVideo = sources.find(source => sameFile(source.path, segment.path))?.probe.streams.find(stream => stream.codec_type === 'video');
+            const timescale = Number(String(sourceVideo?.time_base || '').split('/')[1]);
             await runMediaProcess(options.ffmpegPath, [
                 '-hide_banner', '-loglevel', 'error', '-nostdin', '-ss', segment.start.toFixed(3), '-i', segment.path, '-t', length.toFixed(3),
-                '-map', '0:v:0', '-map', '0:a?', '-c', 'copy', '-avoid_negative_ts', 'make_zero', '-progress', 'pipe:1', '-nostats', '-y', extracted,
+                '-map', '0:v:0', '-map', '0:a?', '-c', 'copy', ...(Number.isInteger(timescale) && timescale > 0 ? ['-video_track_timescale', String(timescale)] : []),
+                '-avoid_negative_ts', 'make_zero', '-progress', 'pipe:1', '-nostats', '-y', extracted,
             ], { signal: options.signal, timeoutMs: PROCESS_TIMEOUT_MS, onProcess: trackProgress(seconds => report(seconds, length)) });
             finishedWork += length;
             inputs.push(extracted);

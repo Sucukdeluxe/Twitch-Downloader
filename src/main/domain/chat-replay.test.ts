@@ -89,6 +89,22 @@ describe('fetchChatReplay', () => {
         expect(none).toEqual({ messages: [], truncated: true, pages: 0 });
     });
 
+    it('treats the end of the VOD as the end of the chat', async () => {
+        const tail = [...stream, { id: 'nach-ende-1', offset: 7300, text: 'bis bald' }, { id: 'nach-ende-2', offset: 7303, text: 'gg' }];
+        const gql = (async (_query: string, variables: Record<string, unknown>) => {
+            const offset = Number(variables.offset);
+            if (offset > 7302) return null;
+            const found = tail.findIndex(message => message.offset >= offset);
+            const index = found < 0 ? tail.length : found, start = Math.max(0, index - 14);
+            return { video: { comments: { edges: tail.slice(start, start + 56).map(message => ({ node: { id: message.id, contentOffsetSeconds: message.offset, createdAt: '', message: { fragments: [{ text: message.text }] }, commenter: null } })), pageInfo: { hasNextPage: true } } } };
+        }) as ChatReplayGql;
+        const replay = await fetchChatReplay(gql, '900', { durationSeconds: 7300 });
+        expect(replay.truncated).toBe(false);
+        expect(replay.messages.length).toBeGreaterThanOrEqual(stream.length);
+        const unknownLength = await fetchChatReplay(gql, '900');
+        expect(unknownLength.truncated).toBe(true);
+    });
+
     it('stops when cancelled or at the page limit and says so', async () => {
         let calls = 0;
         const cancelled = await fetchChatReplay(twitch(stream).gql, '900', { cancelCheck: () => ++calls > 5 });

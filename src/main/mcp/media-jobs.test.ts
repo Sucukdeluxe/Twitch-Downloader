@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaJobQueue, type MediaJobContext, type MediaJobRequest } from './media-jobs';
+import { MediaJobDeferred, MediaJobQueue, type MediaJob, type MediaJobContext, type MediaJobRequest } from './media-jobs';
 
 function deferred<T>() {
     let resolve!: (value: T) => void, reject!: (error: Error) => void;
@@ -78,6 +78,20 @@ describe('MediaJobQueue', () => {
         expect(queue.get(running.id)!.status).toBe('cancelled');
         expect(queue.get(waiting.id)!.status).toBe('cancelled');
         expect(() => queue.enqueue(request('c'))).toThrow(/closing/);
+    });
+
+    it('keeps jobs waiting while the application cannot run them and does not fail the jobs behind', async () => {
+        let busy = true;
+        const saved: MediaJob[][] = [];
+        const queue = new MediaJobQueue(async (job) => { if (busy) throw new MediaJobDeferred('busy'); return { outputPath: job.outputPath, duration: 1, bytes: 1 }; }, { persist: jobs => saved.push(jobs) });
+        const first = queue.enqueue(request('eins')), second = queue.enqueue(request('zwei'));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect([queue.get(first.id)!.status, queue.get(second.id)!.status]).toEqual(['queued', 'queued']);
+        expect(saved.at(-1)!.map(job => job.status)).toEqual(['queued', 'queued']);
+        expect(queue.get(first.id)!.error).toBeNull();
+        await queue.dispose();
+        expect(saved.at(-1)!.map(job => job.status)).toEqual(['queued', 'queued']);
+        busy = false;
     });
 
     it('returns copies so callers cannot change job state', async () => {

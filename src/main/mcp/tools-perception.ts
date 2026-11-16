@@ -169,15 +169,20 @@ export function registerPerceptionTools(server: McpServer, host: McpHost): void 
 
     server.registerTool('get_vod_clips', {
         title: 'Viewer clips of a VOD',
-        description: `Returns the clips viewers created from a VOD with title, position in the VOD, length and views (up to ${MAX_VOD_CLIPS}). Clip titles describe moments viewers found notable. ${UNTRUSTED_NOTE}`,
+        description: `Returns the clips viewers created from a VOD with title, position in the VOD, length and views. Twitch lists at most the first and the last 100 clips by position (up to ${MAX_VOD_CLIPS} together); when clips in between cannot be listed, complete is false and not_covered names that range. Clip titles describe moments viewers found notable. ${UNTRUSTED_NOTE}`,
         inputSchema: z.object({ vod_id: vodId }),
         annotations: { ...READ_ONLY, openWorldHint: true },
     }, run(async (args) => {
         const id = normalizeVodId(args.vod_id);
-        const clips = await host.vodClips(id);
-        if (!clips) throw new ToolError('The VOD was not found on Twitch or its clips are currently unavailable.');
+        const list = await host.vodClips(id);
+        if (!list) throw new ToolError('The VOD was not found on Twitch or its clips are currently unavailable.');
+        const clips = list.clips;
         return ok({
-            vod_id: id, note: UNTRUSTED_NOTE, clip_count: clips.length,
+            vod_id: id, note: UNTRUSTED_NOTE, clip_count: clips.length, complete: list.complete,
+            ...(list.uncovered ? {
+                not_covered: { start: list.uncovered.start, start_tc: formatTimecode(list.uncovered.start), end: list.uncovered.end, end_tc: list.uncovered.end === null ? null : formatTimecode(list.uncovered.end) },
+                coverage_note: 'Twitch only lists the first and the last clips of a VOD by position. The range under not_covered may contain further clips; an end of null means up to the end of the VOD.',
+            } : {}),
             clips: clips.map(clip => ({ start: clip.offset, start_tc: formatTimecode(clip.offset), duration_seconds: clip.duration, title: clip.title, views: clip.views, url: 'https://clips.twitch.tv/' + clip.slug })),
         });
     }));

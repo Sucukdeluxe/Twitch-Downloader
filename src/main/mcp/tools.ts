@@ -55,6 +55,13 @@ function coverageView(coverage: CoverageReport): Record<string, unknown> {
     };
 }
 
+async function startQueueView(host: McpHost, ignoreTimeWindow = false): Promise<{ queue_started: boolean; waiting_for_time_window?: boolean; next_time_window_start?: string | null }> {
+        const requested = await host.startQueue(ignoreTimeWindow);
+        const status = await host.status();
+        const waiting = status.waitingForTimeWindow && !status.downloading;
+        return { queue_started: requested && !waiting, ...(waiting ? { waiting_for_time_window: true, next_time_window_start: status.nextDownloadWindowStart } : {}) };
+}
+
 function partView(part: PlannedPart): Record<string, unknown> {
     return { number: part.number, name: part.name, duration_seconds: part.duration, duration: formatTimecode(part.duration), ranges: part.ranges.map(rangeView) };
 }
@@ -289,6 +296,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
             minSegmentSeconds: (args.min_block_minutes ?? 5) * 60,
             fallbackName: timeline.title || 'Stream',
         });
+        drafts = drafts.map(draft => ({ ...draft, name: draft.name.slice(0, 100).trim() || 'Stream' }));
         if (args.max_part_minutes) drafts = splitLongParts(drafts, args.max_part_minutes * 60);
         const plan = planParts(drafts, timeline.duration);
         return ok({
@@ -313,8 +321,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
         if (!result.accepted || !result.item) {
             throw new ToolError(result.reason === 'duplicate' ? 'This VOD is already waiting or downloading in the queue.' : `The VOD could not be added to the queue (${result.reason || 'rejected'}).`);
         }
-        const started = args.start === false ? false : await host.startQueue();
-        return ok({ queued: queueItemView(result.item), queue_started: started, ...host.queueState() });
+        return ok({ queued: queueItemView(result.item), ...(args.start === false ? { queue_started: false } : await startQueueView(host)), ...host.queueState() });
     }));
 
     server.registerTool('queue_vod_parts', {
@@ -354,6 +361,13 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
         const filenames = uniqueFilenames(plan.parts.map(part => renderPartFilename(args.filename_template ?? DEFAULT_PART_FILENAME_TEMPLATE, {
             date: started, part: part.number, name: part.name, title: timeline.title, channel: timeline.login, vodId: timeline.vodId,
         })));
+        const outputPaths: string[] = [];
+        for (const name of filenames) {
+            const extension = path.extname(name), stem = name.slice(0, name.length - extension.length);
+            let candidate = path.join(folder, name);
+            for (let counter = 1; outputPaths.some(taken => taken.toLowerCase() === candidate.toLowerCase()) || await host.fileSize(candidate) !== null; counter++) candidate = path.join(folder, `${stem}_${counter}${extension}`);
+            outputPaths.push(candidate);
+        }
         const drafts: McpQueueDraft[] = plan.parts.map((part, index) => ({
             url: `https://www.twitch.tv/videos/${timeline.vodId}`,
             title: `Part ${part.number} · ${part.name}`.slice(0, 500),
@@ -362,7 +376,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
             durationSeconds: timeline.duration,
             quality: args.quality,
             customClip: { startSec: 0, durationSec: sourceSeconds, startPart: part.number, filenameFormat: 'parts', omissions: partOmissions(part, sourceSeconds, 'segments') },
-            outputPath: path.join(folder, filenames[index]),
+            outputPath: outputPaths[index],
         }));
         const base = {
             vod_id: timeline.vodId, title: timeline.title, channel: timeline.login, duration_seconds: timeline.duration, duration: formatTimecode(timeline.duration),
@@ -383,7 +397,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
             return ok({ ...base, dry_run: true, queued: false, parts: plan.parts.map((part, index) => ({ ...partView(part), output_file: drafts[index].outputPath })) });
         }
         const results = host.addToQueue(drafts);
-        const queueStarted = args.start !== false && results.some(result => result.accepted) ? await host.startQueue() : false;
+        const queueStart = args.start !== false && results.some(result => result.accepted) ? await startQueueView(host) : { queue_started: false };
         if (results.some(result => result.accepted)) {
             await host.savePartPlan({
                 vodId: timeline.vodId, channel: timeline.login, title: timeline.title, startedAt: started.toISOString(), durationSeconds: timeline.duration, savedAt: new Date().toISOString(),
@@ -398,7 +412,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
                 queue_item_id: results[index].item?.id ?? null,
                 result: results[index].accepted ? 'queued' : results[index].reason === 'duplicate' ? 'already in queue' : `rejected (${results[index].reason || 'unknown'})`,
             })),
-            queue_started: queueStarted, ...host.queueState(),
+            ...queueStart, ...host.queueState(),
             next_step: 'Use wait_for_queue with the queue_item_id values to follow the downloads.',
         });
     }));
@@ -440,7 +454,10 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
         description: 'Starts the download queue, or resumes it after a pause. If the app only downloads in a configured time window, the queue waits for that window unless ignore_time_window is true.',
         inputSchema: z.object({ ignore_time_window: z.boolean().optional().describe('Start now even outside the configured download time window. Default false.') }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    }, run(async args => ok({ started: await host.startQueue(args.ignore_time_window === true), ...host.queueState() })));
+    }, run(async (args) => {
+        const view = await startQueueView(host, args.ignore_time_window === true);
+        return ok({ started: view.queue_started, ...view, ...host.queueState() });
+    }));
 
     server.registerTool('pause_queue', {
         title: 'Pause downloads',
@@ -619,12 +636,23 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
             return { isError: true, content: [{ type: 'text', text: `Nothing was started. Fix these points and call the tool again:\n${problems.join('\n')}` }], structuredContent: { ...plan, started: false, problems } };
         }
         if (args.dry_run === true) return ok({ ...plan, dry_run: true, started: false });
-        const jobs = outputs.map(output => host.enqueueMediaJob({
-            name: path.basename(output.outputPath),
-            outputPath: output.outputPath,
-            segments: output.segments.map(segment => segment.whole ? { path: segment.path } : { path: segment.path, start: segment.start, end: segment.end }),
-        }));
-        return ok({ ...plan, dry_run: false, started: true, jobs: jobs.map(mediaJobView), next_step: 'Use wait_for_file_jobs with the job IDs to follow the work.' });
+        const waiting = host.mediaJobs().filter(job => job.status === 'queued' || job.status === 'running');
+        const taken = outputs.filter(output => waiting.some(job => job.outputPath.toLowerCase() === output.outputPath.toLowerCase()));
+        if (taken.length) throw new ToolError(`Nothing was started. A job for ${taken.map(output => path.basename(output.outputPath)).join(', ')} is already waiting or running.`);
+        const jobs: MediaJob[] = [], rejected: Array<{ output_file: string; reason: string }> = [];
+        for (const output of outputs) {
+            try {
+                jobs.push(host.enqueueMediaJob({
+                    name: path.basename(output.outputPath),
+                    outputPath: output.outputPath,
+                    segments: output.segments.map(segment => segment.whole ? { path: segment.path } : { path: segment.path, start: segment.start, end: segment.end }),
+                }));
+            } catch (error) {
+                rejected.push({ output_file: output.outputPath, reason: error instanceof Error ? error.message : String(error) });
+            }
+        }
+        if (!jobs.length) throw new ToolError(`Nothing was started: ${rejected[0].reason}`);
+        return ok({ ...plan, dry_run: false, started: true, jobs: jobs.map(mediaJobView), ...(rejected.length ? { not_started: rejected } : {}), next_step: 'Use wait_for_file_jobs with the job IDs to follow the work.' });
     }));
 
     const jobSelection = z.object({ ids: z.array(z.string().min(1).max(64)).max(200).optional().describe('Job IDs. Default: all jobs of this app session.') });

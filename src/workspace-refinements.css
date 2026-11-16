@@ -2446,6 +2446,7 @@ body.theme-light .streamer-search-dialog { --workspace-panel: #fff; --workspace-
 .player-seek-options .btn-secondary[aria-pressed="true"] { border-color: var(--workspace-text); background: var(--workspace-control-hover); font-weight: 700; }
 
 #settingsTab[data-settings-pane="downloads"].active,
+#settingsTab[data-settings-pane="mcp"].active,
 #settingsTab[data-settings-pane="automation"].active,
 #settingsTab[data-settings-pane="storage"].active,
 #settingsTab[data-settings-pane="system"].active {

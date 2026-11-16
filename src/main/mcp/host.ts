@@ -5,7 +5,7 @@ import type { MediaJob, MediaJobRequest } from './media-jobs';
 import type { Storyboard } from './vod-storyboard';
 import type { GrabbedFrame } from './frame-grab';
 import type { ComposedSheet } from './frame-sheet';
-import type { ChatActivityBucket, ChatRange, VodClip } from './vod-signals';
+import type { ChatActivityBucket, ChatRange, VodClipList } from './vod-signals';
 import type { StoredPlan } from './part-plan-store';
 
 export interface McpAppStatus {
@@ -82,7 +82,7 @@ export interface McpHost {
     decodeJpeg(jpeg: Buffer, width: number, height: number, signal: AbortSignal): Promise<Buffer | null>;
     chatRange(vodId: string, from: number, to: number, maximum: number, signal: AbortSignal): Promise<ChatRange | null>;
     chatActivity(vodId: string, from: number, to: number, stepSeconds: number, signal: AbortSignal): Promise<ChatActivityBucket[] | null>;
-    vodClips(vodId: string): Promise<VodClip[] | null>;
+    vodClips(vodId: string): Promise<VodClipList | null>;
     savePartPlan(plan: StoredPlan): Promise<void>;
     partPlans(vodId: string): Promise<StoredPlan[]>;
     plannedVodIds(): Promise<Set<string>>;

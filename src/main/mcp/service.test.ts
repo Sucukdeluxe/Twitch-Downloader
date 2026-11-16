@@ -25,12 +25,13 @@ const timeline: VodTimeline = {
 
 const fixtureSegments: { value: number[] | null } = { value: null };
 
-interface Fixture { host: McpHost; queue: QueueItem[]; drafts: McpQueueDraft[]; jobRequests: MediaJobRequest[]; starts: boolean[]; jobs: MediaJobQueue; plans: StoredPlan[]; automation: { vod: Set<string>; record: Set<string> }; grabs: Array<{ times: number[]; width: number; height: number }>; live: Set<string> }
+interface Fixture { host: McpHost; queue: QueueItem[]; drafts: McpQueueDraft[]; jobRequests: MediaJobRequest[]; starts: boolean[]; jobs: MediaJobQueue; plans: StoredPlan[]; automation: { vod: Set<string>; record: Set<string> }; grabs: Array<{ times: number[]; width: number; height: number }>; existing: Set<string>; window: { waiting: boolean }; live: Set<string> }
 
 function createFixture(): Fixture {
     fixtureSegments.value = Array.from({ length: 2161 }, (_value, index) => index * 10);
     const queue: QueueItem[] = [], drafts: McpQueueDraft[] = [], jobRequests: MediaJobRequest[] = [], starts: boolean[] = [], plans: StoredPlan[] = [];
     const automation = { vod: new Set<string>(['kanal']), record: new Set<string>() };
+    const existing = new Set<string>(), window = { waiting: false };
     const grabs: Array<{ times: number[]; width: number; height: number }> = [];
     const live = new Set<string>(['kanal']);
     const rawFrames = (times: number[], width: number, height: number) => { grabs.push({ times, width, height }); return times.map((_time, index) => index === 2 ? null : Buffer.alloc(width * height * 3, 90)); };
@@ -44,7 +45,7 @@ function createFixture(): Fixture {
     const host: McpHost = {
         status: async () => ({
             version: '9.9.9', language: 'de', downloadFolder: ROOT, downloadMode: 'parts', partMinutes: 60, freeBytes: 50 * 1024 ** 3, parallelDownloads: 1,
-            defaultQuality: 'source', downloading: false, paused: false, waitingForTimeWindow: false, nextDownloadWindowStart: null,
+            defaultQuality: 'source', downloading: false, paused: false, waitingForTimeWindow: window.waiting, nextDownloadWindowStart: window.waiting ? '2026-11-17T01:00:00.000Z' : null,
             tools: { ffmpeg: true, streamlink: true }, autoVodChannels: ['kanal'], autoRecordChannels: [],
         }),
         streamers: () => [{ login: 'kanal', displayName: 'Kanal', live: false, liveVodId: null }],
@@ -64,11 +65,11 @@ function createFixture(): Fixture {
             return { messages: matching.slice(0, maximum), nextFrom: matching.length > maximum ? matching[maximum].offset : null };
         },
         chatActivity: async (_vodId, from, to, step) => Array.from({ length: Math.ceil((to - from) / step) }, (_value, index) => ({ start: from + index * step, messagesPerMinute: index === 1 ? 240 : 12, samples: index === 1 ? ['TIKTOK ZEIT', 'endlich'] : ['hallo'] })),
-        vodClips: async vodId => vodId !== '900' ? null : [{ slug: 'KlarerClip-abc', title: 'rewi anruf', views: 308, duration: 60, offset: 6570, createdAt: '2026-11-14T13:00:00Z' }],
+        vodClips: async vodId => vodId !== '900' ? null : { clips: [{ slug: 'KlarerClip-abc', title: 'rewi anruf', views: 308, duration: 60, offset: 6570, createdAt: '2026-11-14T13:00:00Z' }], complete: true, uncovered: null },
         savePartPlan: async (plan) => { plans.push(plan); },
         partPlans: async vodId => plans.filter(plan => plan.vodId === vodId).reverse(),
         plannedVodIds: async () => new Set(plans.map(plan => plan.vodId)),
-        fileSize: async file => file.endsWith('TikTok.mp4') ? 5 * 1024 ** 3 : null,
+        fileSize: async file => existing.has(path.basename(file)) ? 5 * 1024 ** 3 : null,
         channelAutomation: channel => ({ autoDownloadVods: automation.vod.has(channel), autoRecord: automation.record.has(channel) }),
         setChannelAutomation: (channel, change) => {
             if (change.autoDownloadVods !== undefined) automation.vod[change.autoDownloadVods ? 'add' : 'delete'](channel);
@@ -113,7 +114,7 @@ function createFixture(): Fixture {
         cancelMediaJob: id => jobs.cancel(id),
         waitForMediaJobChange: (timeoutMs, signal) => jobs.waitForChange(Math.min(timeoutMs, 50), signal),
     };
-    return { host, queue, drafts, jobRequests, starts, jobs, plans, automation, grabs, live };
+    return { host, queue, drafts, jobRequests, starts, jobs, plans, automation, grabs, live, existing, window };
 }
 
 async function startService(fixture: Fixture) {
@@ -366,6 +367,31 @@ describe('MCP queue tools', () => {
         expect(result.content[0].text).toContain('segment list of this VOD could not be read');
         expect(fixture.drafts).toHaveLength(0);
         expect(fixture.plans).toHaveLength(0);
+    });
+
+    it('gives parts new file names when files of an earlier plan exist and reports a closed download window', async () => {
+        const fixture = createFixture();
+        fixture.existing.add('14.11.2026_Part01_TikTok.mp4');
+        fixture.existing.add('14.11.2026_Part01_TikTok_1.mp4');
+        fixture.window.waiting = true;
+        const { call } = await startService(fixture);
+        const data = (await call('queue_vod_parts', { vod_id: '900', parts })).structuredContent;
+        expect(data.parts.map((part: any) => path.basename(part.output_file))).toEqual(['14.11.2026_Part01_TikTok_2.mp4', '14.11.2026_Part02_Minecraft.mp4']);
+        expect(fixture.plans[0].parts[0].outputFile).toBe(path.join(ROOT, 'kanal', '14.11.2026', '14.11.2026_Part01_TikTok_2.mp4'));
+        expect(data).toMatchObject({ queued: true, queue_started: false, waiting_for_time_window: true, next_time_window_start: '2026-11-17T01:00:00.000Z' });
+        const started = (await call('start_queue', {})).structuredContent;
+        expect(started).toMatchObject({ started: false, waiting_for_time_window: true });
+    });
+
+    it('suggests parts for a VOD without categories even when the title is very long', async () => {
+        const fixture = createFixture();
+        const original = fixture.host.timeline;
+        fixture.host.timeline = async (id, refresh) => { const value = await original(id, refresh); return value ? { ...value, chapters: [], title: 'Sehr langer Titel '.repeat(9) } : value; };
+        const { call } = await startService(fixture);
+        const result = await call('suggest_vod_parts', { vod_id: '900', max_part_minutes: 120 });
+        expect(result.isError).toBeUndefined();
+        expect(result.structuredContent.parts).toHaveLength(3);
+        expect(result.structuredContent.parts.every((part: any) => part.name.length <= 120)).toBe(true);
     });
 
     it('queues a complete VOD and reports duplicates', async () => {
