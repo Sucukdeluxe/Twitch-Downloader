@@ -40,9 +40,10 @@ import { autoUpdater } from 'electron-updater';
 import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan';
 import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
-import { remuxMp4 } from './main/domain/mp4-remux';
+import { remuxMp4, trimMp4 } from './main/domain/mp4-remux';
+import { fetchChatReplay, type ChatReplayResult } from './main/domain/chat-replay';
 import { VodPlaybackService, validateVodMediaUrl } from './main/domain/vod-playback-service';
-import { MAX_SEGMENT_PLAYLIST_BYTES, parseSegmentBoundaries, segmentSpan } from './main/domain/vod-segments';
+import { MAX_SEGMENT_PLAYLIST_BYTES, parseSegmentBoundaries, segmentSpan, segmentWindow, type SegmentWindow } from './main/domain/vod-segments';
 import { VodTimelineService, type VodTimeline } from './main/domain/vod-timeline';
 import { compareUpdateVersions, createUpdateCheckCoordinator, normalizeUpdateVersion, UpdateLifecycle } from './main/updates';
 import { writeFileAtomicSync } from './main/infra/fs-atomic';
@@ -4091,8 +4092,9 @@ async function splitMergedFile(
 // ==========================================
 // DOWNLOAD FUNCTIONS
 // ==========================================
-async function finalizeDownloadedMp4(partialFilename: string, filename: string, itemId: string | null, expectedDuration: number | null, clipTracking?: ActiveClipDownloadTracking, onProgress?: (progress: DownloadProgress) => void): Promise<DownloadResult> {
+async function finalizeDownloadedMp4(partialFilename: string, filename: string, itemId: string | null, expectedDuration: number | null, clipTracking?: ActiveClipDownloadTracking, onProgress?: (progress: DownloadProgress) => void, trim?: { startSeconds: number; durationSeconds: number }): Promise<DownloadResult> {
     const remuxFilename = partialDownloadRegistry.begin(`${filename}.remux`);
+    const trimFilename = trim ? partialDownloadRegistry.begin(`${filename}.trim`) : null;
     let progressTimer: ReturnType<typeof setInterval> | undefined;
     try {
         if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
@@ -4126,10 +4128,27 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
             },
         });
         if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
-        const integrity = await validateDownloadedFileIntegrity(remuxFilename, expectedDuration);
+        if (trim && trimFilename) {
+            finalization = { stage: 'optimizing', elapsedSeconds: 0 };
+            report();
+            await trimMp4({
+                inputPath: remuxFilename, outputPath: trimFilename, ffmpegPath: await getFFmpegPath(), startSeconds: trim.startSeconds, durationSeconds: trim.durationSeconds,
+                onProcess: (process) => {
+                    if (clipTracking) clipTracking.process = process;
+                    const trimRegistration = itemId ? queueProcessRegistry.register(itemId, 'post-processing', createPhaseBoundaryProcessResource(
+                        process, () => waitForChildProcessExit(process),
+                    )) : null;
+                    if (appShutdownStarted || clipTracking?.cancelled) process.kill();
+                    return () => trimRegistration?.release();
+                },
+            });
+            if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
+        }
+        const finishedFilename = trimFilename ?? remuxFilename;
+        const integrity = await validateDownloadedFileIntegrity(finishedFilename, expectedDuration);
         if (appShutdownStarted || clipTracking?.cancelled || !(await waitForQueuePhaseBoundary(itemId))) throw new Error('Download cancelled');
         if (!integrity.success) return integrity;
-        partialDownloadRegistry.commit(remuxFilename, filename);
+        partialDownloadRegistry.commit(finishedFilename, filename);
         readArchiveInventory.invalidate();
         return { success: true };
     } catch (error) {
@@ -4137,6 +4156,7 @@ async function finalizeDownloadedMp4(partialFilename: string, filename: string, 
         return { success: false, error: tBackend('mp4FinalizationFailed') };
     } finally {
         clearInterval(progressTimer);
+        if (trimFilename) partialDownloadRegistry.discard(trimFilename);
         partialDownloadRegistry.discard(remuxFilename);
         partialDownloadRegistry.discard(partialFilename);
     }
@@ -4298,7 +4318,8 @@ async function downloadVODPart(
     partNum: number,
     totalParts: number,
     expectedTotalSec: number = 0,
-    quality?: string
+    quality?: string,
+    range?: { start: number; duration: number }
 ): Promise<DownloadResult> {
     if (!(await ensureFfmpegInstalled())) return { success: false, error: tBackend('ffmpegAutoInstallFailed') };
     if (appShutdownStarted || !(await waitForQueuePhaseBoundary(itemId))) return { success: false, error: tBackend('downloadCancelled') };
@@ -4307,6 +4328,15 @@ async function downloadVODPart(
     if (liveSnapshot && 'error' in liveSnapshot) return { success: false, error: liveSnapshot.error };
     const directSource = liveSnapshot ? null : await resolveVodQualitySource(url, requestedQuality);
     const ffmpegInput = Boolean(directSource || liveSnapshot);
+    let rangeWindow: SegmentWindow | null = null;
+    if (range && !ffmpegInput) {
+        const boundaries = await loadVodSegmentBoundaries(url, requestedQuality);
+        rangeWindow = boundaries ? segmentWindow(boundaries, range.start, range.start + range.duration) : null;
+        appendDebugLog('download-part-window', { itemId, range, window: rangeWindow });
+        if (!rangeWindow) return { success: false, error: tBackend('editedVodSegmentsUnavailable') };
+    }
+    const rangeTrim = range && rangeWindow && (rangeWindow.lead > 0.05 || rangeWindow.tail > 0.05)
+        ? { startSeconds: rangeWindow.lead > 0.05 ? rangeWindow.lead : 0, durationSeconds: range.duration } : undefined;
     let streamlinkCmd: { command: string; prefixArgs: string[] };
     let ffmpegPath: string | null;
     try {
@@ -4353,10 +4383,10 @@ async function downloadVODPart(
         const mediaProgress = new MediaDownloadProgress();
 
         if (!ffmpegInput && startTime) {
-            args.push('--hls-start-offset', startTime);
+            args.push('--hls-start-offset', rangeWindow ? formatDownloadTime(rangeWindow.offset) : startTime);
         }
         if (!ffmpegInput && endTime) {
-            args.push('--hls-duration', endTime);
+            args.push('--hls-duration', rangeWindow ? formatDownloadTime(rangeWindow.limit) : endTime);
         }
 
         // download-part-start in the debug log captures the same info
@@ -4565,7 +4595,7 @@ async function downloadVODPart(
                 }
 
                 onProgress({ id: itemId, progress: 100, progressPhase: 'finalizing', speed: '', eta: '', status: tBackend('statusFinalizingMp4'), currentPart: partNum, totalParts });
-                const finalized = await finalizeDownloadedMp4(partialFilename, filename, itemId, expectedDurationSeconds, undefined, progress => onProgress({ ...progress, currentPart: partNum, totalParts }));
+                const finalized = await finalizeDownloadedMp4(partialFilename, filename, itemId, expectedDurationSeconds, undefined, progress => onProgress({ ...progress, currentPart: partNum, totalParts }), rangeTrim);
                 if (!finalized.success) { resolve(finalized); return; }
                 runtimeMetrics.downloadedBytesTotal += stats.size;
                 appendDebugLog('download-part-success', { itemId, filename, bytes: stats.size });
@@ -5022,89 +5052,10 @@ function restartLiveStatusPoller(): void {
 // ==========================================
 // Twitch retains chat replay alongside the VOD itself — same 7-60 day TTL.
 // Anyone archiving the video usually wants the chat too. fetchVodChatReplay
-// pulls the entire chat for a VOD via the public GQL endpoint, paginated
-// via edge cursors (Twitch returns ~100 comments per page).
-interface ChatReplayMessage {
-    id: string;
-    offset: number;          // contentOffsetSeconds — when in the VOD
-    createdAt: string;       // ISO timestamp
-    user: string;            // display name
-    login: string;           // login (lowercase)
-    color: string;           // user chat color
-    text: string;            // assembled message text
-}
-
-interface ChatReplayResult {
-    messages: ChatReplayMessage[];
-    truncated: boolean;
-    pages: number;
-}
-
-async function fetchVodChatReplay(
-    videoId: string,
-    onProgress?: (count: number) => void,
-    cancelCheck?: () => boolean
-): Promise<ChatReplayResult> {
-    const messages: ChatReplayMessage[] = [];
-    let cursor: string | null = null;
-    let pages = 0;
-    let truncated = false;
-    // Hard cap to keep one runaway stream from filling memory. 200 pages =
-    // ~20k messages which covers typical 6-hour streams. Above that we
-    // stop and mark truncated.
-    const MAX_PAGES = 500;
-
-    type CommentNode = {
-        id: string;
-        contentOffsetSeconds: number;
-        createdAt: string;
-        message?: { fragments?: Array<{ text?: string }>; userColor?: string };
-        commenter?: { displayName?: string; login?: string };
-    };
-    type CommentEdge = { node: CommentNode; cursor: string };
-    type CommentsPage = {
-        video: { comments: { edges: CommentEdge[]; pageInfo: { hasNextPage: boolean } } } | null;
-    };
-
-    const query = 'query($videoID:ID!,$cursor:Cursor){video(id:$videoID){comments(contentOffsetSeconds:0,cursor:$cursor){edges{node{id contentOffsetSeconds createdAt message{fragments{text} userColor} commenter{displayName login}} cursor} pageInfo{hasNextPage}}}}';
-
-    while (pages < MAX_PAGES) {
-        if (cancelCheck && cancelCheck()) {
-            truncated = true;
-            break;
-        }
-        const data: CommentsPage | null = await fetchPublicTwitchGql<CommentsPage>(query, {
-            videoID: videoId,
-            cursor
-        });
-        if (!data || !data.video || !data.video.comments) break;
-
-        const edges: CommentEdge[] = Array.isArray(data.video.comments.edges) ? data.video.comments.edges : [];
-        for (const edge of edges) {
-            const node = edge.node;
-            const fragments = node.message?.fragments || [];
-            const text = fragments.map((f: { text?: string }) => (typeof f.text === 'string' ? f.text : '')).join('');
-            messages.push({
-                id: node.id,
-                offset: Number(node.contentOffsetSeconds) || 0,
-                createdAt: node.createdAt || '',
-                user: node.commenter?.displayName || '',
-                login: node.commenter?.login || '',
-                color: node.message?.userColor || '',
-                text
-            });
-        }
-
-        pages += 1;
-        if (onProgress) onProgress(messages.length);
-
-        const last: CommentEdge | undefined = edges[edges.length - 1];
-        if (!data.video.comments.pageInfo.hasNextPage || !last) break;
-        cursor = last.cursor;
-    }
-
-    if (pages >= MAX_PAGES) truncated = true;
-    return { messages, truncated, pages };
+// pulls the entire chat for a VOD via the public GQL endpoint, page by page
+// by position in the VOD.
+function fetchVodChatReplay(videoId: string, durationSeconds: number, onProgress?: (count: number) => void, cancelCheck?: () => boolean): Promise<ChatReplayResult> {
+    return fetchChatReplay(fetchPublicTwitchGql, videoId, { durationSeconds, onProgress, cancelCheck });
 }
 
 function chatReplayPathFor(vodFilePath: string): string {
@@ -6139,7 +6090,7 @@ async function downloadVOD(
             && !cancelledItemIds.has(item.id) && await waitForQueuePhaseBoundary(item.id);
         try {
             const outputFiles = await downloadEditedVod({
-                id: item.id, url: item.url, folder, duration: clip.durationSec, startPart: clip.startPart, omissions, exactRanges: omissions.cuts === 'segments',
+                id: item.id, url: item.url, folder, duration: clip.durationSec, startPart: clip.startPart, omissions,
                 namingIdentity: JSON.stringify([clip.filenameFormat, clip.filenameTemplate, item.title, item.date, item.streamer, item.outputPath]),
                 ffmpegPath: await getFFmpegPath(), ffprobePath: await getFFprobePath(), wait,
                 onProcess(process) {
@@ -6154,16 +6105,16 @@ async function downloadVOD(
                         const milliseconds = Math.round(seconds * 1000);
                         return formatDuration(Math.floor(milliseconds / 1000)) + '.' + String(milliseconds % 1000).padStart(3, '0');
                     };
-                    let offset = range.start, length = range.end - range.start;
+                    let start = range.start, end = range.end;
                     if (omissions.cuts === 'segments') {
                         const boundaries = await loadVodSegmentBoundaries(item.url, item.quality);
                         const span = boundaries ? segmentSpan(boundaries, range.start, range.end) : null;
                         appendDebugLog('edited-vod-segment-span', { itemId: item.id, requested: range, span });
                         if (!span) throw new Error(tBackend('editedVodSegmentsUnavailable'));
-                        offset = span.offset;
-                        length = span.limit;
+                        start = span.start;
+                        end = span.end;
                     }
-                    const result = await downloadVODPart(item.url, filename, clock(offset), clock(length), value => progress(value.progress), item.id, 1, 1, 0, item.quality);
+                    const result = await downloadVODPart(item.url, filename, clock(start), clock(end - start), value => progress(value.progress), item.id, 1, 1, 0, item.quality, { start, duration: end - start });
                     if (!result.success) throw new Error(result.error || tBackend('editedVodFailed'));
                 },
                 filename(part) {
@@ -6257,7 +6208,8 @@ async function downloadVOD(
                     i + 1,
                     numParts,
                     0,
-                    item.quality
+                    item.quality,
+                    { start: startOffset, duration: thisDuration }
                 ), () => persistCompletedVodParts(item, completedParts));
 
                 if (!result.success) return result;
@@ -6282,7 +6234,8 @@ async function downloadVOD(
                 1,
                 1,
                 0,
-                item.quality
+                item.quality,
+                { start: clip.startSec, duration: clip.durationSec }
             );
             return result.success ? { ...result, outputFiles: [filename] } : result;
         }
@@ -6467,7 +6420,7 @@ async function processDownloadMergeGroup(
                             return () => registration.release();
                         },
                         async download(range, filename, progress) {
-                            const partResult = await downloadVODPart(vodItem.url, filename, formatDownloadTime(range.start), formatDownloadTime(range.end - range.start), value => progress(value.progress), item.id, i + 1, mg.items.length, range.end - range.start, vodItem.quality);
+                            const partResult = await downloadVODPart(vodItem.url, filename, formatDownloadTime(range.start), formatDownloadTime(range.end - range.start), value => progress(value.progress), item.id, i + 1, mg.items.length, range.end - range.start, vodItem.quality, { start: range.start, duration: range.end - range.start });
                             if (!partResult.success) throw new Error(partResult.error || tBackend('editedVodFailed'));
                         },
                         filename: () => tmpFilename,
@@ -6514,7 +6467,8 @@ async function processDownloadMergeGroup(
                     i + 1,
                     mg.items.length,
                     vodDuration,
-                    vodItem.quality
+                    vodItem.quality,
+                    vodItem.customClip ? { start: vodItem.customClip.startSec, duration: vodItem.customClip.durationSec } : undefined
                 );
             }
 
@@ -6966,7 +6920,7 @@ async function processOneQueueItem(item: QueueItem): Promise<void> {
                             totalParts: 0
                         } as DownloadProgress);
 
-                        const replay = await fetchVodChatReplay(vodIdForChat, (count) => {
+                        const replay = await fetchVodChatReplay(vodIdForChat, parseDuration(item.duration_str || '0s'), (count) => {
                             mainWindow?.webContents.send('download-progress', {
                                 id: item.id,
                                 progress: 100,

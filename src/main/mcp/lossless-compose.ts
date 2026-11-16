@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runMediaProcess } from '../domain/media-process';
+import { frameRatesMatch } from '../domain/merge-compatibility';
 
 export interface ComposeSegmentInput { path: string; start?: number | null; end?: number | null }
 export interface ComposeSegment { path: string; start: number; end: number; whole: boolean }
@@ -103,7 +104,7 @@ export function formatDifferences(sources: ComposeSourceInfo[]): string[] {
         const current = layout(source);
         for (const field of VIDEO_FORMAT_FIELDS) if (base.video[field] !== current.video[field]) differences.add('video ' + FORMAT_LABELS[field]);
         const rates = [frameRate(base.video), frameRate(current.video)];
-        if (rates[0] > 0 && rates[1] > 0 && Math.abs(rates[0] - rates[1]) / Math.max(...rates) > 0.01) differences.add('frame rate');
+        if (rates[0] > 0 && rates[1] > 0 && !frameRatesMatch(rates[0], rates[1])) differences.add('frame rate');
         if (base.audio.length !== current.audio.length) { differences.add('number of audio tracks'); continue; }
         for (const [index, track] of base.audio.entries()) {
             for (const field of AUDIO_FORMAT_FIELDS) if (track[field] !== current.audio[index][field]) differences.add(FORMAT_LABELS[field].startsWith('audio') ? FORMAT_LABELS[field] : 'audio ' + FORMAT_LABELS[field]);

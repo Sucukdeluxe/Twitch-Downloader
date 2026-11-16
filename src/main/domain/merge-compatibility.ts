@@ -13,6 +13,11 @@ export interface MergeCompatibility {
 }
 const fields = ['codec_type', 'codec_name', 'width', 'height', 'pix_fmt', 'sample_rate', 'channels', 'channel_layout', 'color_primaries', 'color_transfer', 'color_space', 'color_range', 'time_base', 'profile', 'level', 'extradata_hash', 'sample_aspect_ratio'] as const;
 const fps = (stream: Record<string, unknown>) => { const [n, d = 1] = String(stream.avg_frame_rate || '0').split('/').map(Number); return d ? n / d : 0; };
+export const FRAME_RATE_TOLERANCE = 0.02;
+export function frameRatesMatch(left: number, right: number): boolean {
+    const a = Number.isFinite(left) ? left : 0, b = Number.isFinite(right) ? right : 0;
+    return a > 0 && b > 0 ? Math.abs(a - b) <= Math.max(a, b) * FRAME_RATE_TOLERANCE : a === b;
+}
 const rotation = (stream: Record<string, any>) => Number(stream.side_data_list?.find((value: Record<string, unknown>) => value.rotation !== undefined)?.rotation ?? stream.tags?.rotate ?? 0);
 export function compareMergeMedia(probes: MergeProbe[], names: string[]): MergeCompatibility {
     if (probes.length < 2 || probes.length !== names.length) throw new Error('At least two merge sources are required');
@@ -24,7 +29,7 @@ export function compareMergeMedia(probes: MergeProbe[], names: string[]): MergeC
             const left = base[index], right = probe.streams[index];
             if (!left || !right) continue;
             for (const field of fields) if (left[field] !== right[field]) differences.add(field);
-            if (Math.abs(fps(left) - fps(right)) > 0.00001) differences.add('frame_rate');
+            if (!frameRatesMatch(fps(left), fps(right))) differences.add('frame_rate');
             if (rotation(left) !== rotation(right)) differences.add('rotation');
             if (left.tags?.language !== right.tags?.language) differences.add('language');
         }

@@ -152,6 +152,8 @@ The VOD trim workspace uses the Streamrecorder player to play and seek through t
 
 To remove multiple sections, choose **Exclude ranges** in **Trim VOD**, mark each section with I/O and select **Exclude selection**. Edit or restore exclusions individually in the list. Remaining content is joined in order and split into the selected number of minutes per part; only the final part can be shorter. The file preview shows each part's duration and original VOD ranges. Completely excluded original parts retain a gap in the numbering. Part length and exclusions are saved with the queue item. Downloads and joins preserve the source codecs; boundaries may align with HLS segments or video keyframes. Completed source ranges are retained for retry after interruption and removed when the job completes or is removed from the queue.
 
+Trimmed downloads and the ranges kept around exclusions are copied without re-encoding. Each one begins on the keyframe at or before the selected start, which Twitch usually places every two seconds, and ends at the selected end. Nothing of the selection is lost; up to about two seconds before the selected start can be included.
+
 Release verification sources are included in the repository. The public suite reconstructs the previously private acceptance checks against the current application; it does not claim to recover the original private test files. Shared domain tests, Chromium and WebKit renderer scenarios, native Electron workflows, media fixtures, package checks and an isolated NSIS installation test cover the release path. Test data is generated in temporary directories; project memory and test artifacts remain excluded.
 
 ### Verify and build

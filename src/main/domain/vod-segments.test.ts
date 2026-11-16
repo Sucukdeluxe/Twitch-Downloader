@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestBoundaryIndex, parseSegmentBoundaries, segmentSpan, snapTime } from './vod-segments';
+import { nearestBoundaryIndex, parseSegmentBoundaries, segmentSpan, segmentWindow, snapTime } from './vod-segments';
 
 const playlist = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:12', '#EXTINF:10.000,', '0.ts', '#EXTINF:10.000,', '1.ts', '#EXTINF:11.466,', '2.ts', '#EXTINF:10.767,', '3.ts', '#EXTINF:0.068,', '4.ts', '#EXT-X-ENDLIST'].join('\r\n');
 
@@ -33,17 +33,36 @@ describe('snapping', () => {
         const first = segmentSpan(boundaries, 0, 27)!, second = segmentSpan(boundaries, 27, 42)!;
         expect([first.start, first.end, second.start, second.end]).toEqual([0, 31.466, 31.466, 42.233]);
         expect([first.firstSegment, first.segmentCount, second.firstSegment, second.segmentCount]).toEqual([0, 3, 3, 1]);
+        expect(first).toEqual({ start: 0, end: 31.466, firstSegment: 0, segmentCount: 3 });
     });
 
-    it('places the start offset inside the previous segment and the limit inside the last one', () => {
-        expect(segmentSpan(boundaries, 0, 20)).toEqual({ start: 0, end: 20, firstSegment: 0, segmentCount: 2, offset: 0, limit: 15 });
-        const span = segmentSpan(boundaries, 20, 42.233)!;
-        expect(span.offset).toBe(15);
-        expect(span.limit).toBeCloseTo(22.233 - 10.767 / 2, 6);
-        const tail = segmentSpan(boundaries, 31.466, 42.301)!;
+    it('requests whole segments by placing the start offset inside the previous segment and the limit inside the last one', () => {
+        expect(segmentWindow(boundaries, 0, 20)).toEqual({ start: 0, end: 20, offset: 0, limit: 15, lead: 0, tail: 0 });
+        const window = segmentWindow(boundaries, 20, 42.233)!;
+        expect(window.offset).toBe(15);
+        expect(window.limit).toBeCloseTo(22.233 - 10.767 / 2, 6);
+        expect([window.lead, window.tail]).toEqual([0, 0]);
+        const tail = segmentWindow(boundaries, 31.466, 42.301)!;
         expect(tail.offset).toBeCloseTo(25.733, 6);
         expect(tail.limit).toBeCloseTo(10.835 - 0.034, 6);
         expect(tail.limit).toBeGreaterThan(10.767);
+    });
+
+    it('covers a requested range with the segments that contain it and reports what has to be trimmed', () => {
+        const window = segmentWindow(boundaries, 23.5, 40)!;
+        expect([window.start, window.end]).toEqual([20, 42.233]);
+        expect(window.offset).toBe(15);
+        expect(window.lead).toBeCloseTo(3.5, 6);
+        expect(window.tail).toBeCloseTo(2.233, 6);
+        expect(segmentWindow(boundaries, 9.9995, 20.0004)).toMatchObject({ start: 10, end: 20, lead: 0, tail: 0 });
+        expect(segmentWindow(boundaries, 41, 500)).toMatchObject({ start: 31.466, end: 42.301, tail: 0 });
+        expect(segmentWindow(boundaries, 4, 5)).toMatchObject({ start: 0, end: 10, offset: 0, lead: 4, tail: 5 });
+    });
+
+    it('rejects ranges outside the media', () => {
+        expect(segmentWindow(boundaries, 42.301, 50)).toBeNull();
+        expect(segmentWindow(boundaries, 10, 10)).toBeNull();
+        expect(segmentWindow(boundaries, -1, 10)).toBeNull();
     });
 
     it('reports a range that contains no complete segment', () => {

@@ -47,3 +47,21 @@ export async function remuxMp4(options: Mp4RemuxOptions): Promise<void> {
         throw new Error('Invalid MP4 output');
     }
 }
+
+export interface Mp4TrimOptions extends MediaProcessOptions {
+    inputPath: string;
+    outputPath: string;
+    ffmpegPath: string;
+    startSeconds: number;
+    durationSeconds: number;
+}
+
+export async function trimMp4(options: Mp4TrimOptions): Promise<void> {
+    if (!(options.durationSeconds > 0) || !(options.startSeconds >= 0)) throw new Error('Invalid MP4 trim range');
+    await runMediaProcess(options.ffmpegPath, [
+        '-hide_banner', '-loglevel', 'error', '-nostdin',
+        ...(options.startSeconds > 0 ? ['-ss', options.startSeconds.toFixed(3)] : []), '-i', options.inputPath,
+        '-map', '0:v:0', '-map', '0:a?', '-c', 'copy', '-t', options.durationSeconds.toFixed(3), '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero', '-f', 'mp4', '-y', options.outputPath,
+    ], { ...options, timeoutMs: options.timeoutMs ?? 30 * 60 * 1000 });
+}
