@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.24 - 2026-11-16
+
+This update makes the AI connection reliable for very long VODs, including the VODs of 48-hour streams, and simplifies connecting from another computer.
+
+- Frames shown to AI assistants match the requested time exactly. Before, a frame could show a moment up to about 12 seconds earlier.
+- AI assistants can view frames from the whole length of very long VODs. Before, no frames could be read behind about 26.5 hours.
+- VODs of 48-hour streams, which Twitch stores a few seconds longer than 48 hours, can be downloaded as parts, trimmed and edited with exclusions.
+- With access from the network switched on, the copy buttons of the AI connection use the network address. A selection above the buttons offers every address of the server.
+- The settings state that the port has to be open in the firewall before other computers can reach the server.
+
 ## 1.1.23 - 2026-11-16
 
 This update adds an AI connection that lets assistants such as Claude or ChatGPT prepare VODs in the app, and fixes trimming, chat replays and merging.
