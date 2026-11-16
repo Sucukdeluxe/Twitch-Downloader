@@ -217,6 +217,7 @@ interface McpState {
     error: 'port-in-use' | 'no-access' | 'failed' | null;
     localUrl: string;
     networkUrls: string[];
+    copyAddresses: string[];
     requests: number;
     lastActivityAt: number | null;
     lastTool: string | null;
@@ -506,7 +507,7 @@ interface ApiBridge {
     getMcpState(): Promise<McpState | null>;
     setMcpSettings(settings: McpSettingsInput): Promise<McpState | null>;
     regenerateMcpToken(): Promise<McpState | null>;
-    copyMcpValue(kind: McpCopyKind, target: 'public' | 'local'): Promise<boolean>;
+    copyMcpValue(kind: McpCopyKind, address: string): Promise<boolean>;
     onMcpStateChanged(callback: (state: McpState) => void): void;
     onConfigChanged(callback: () => void): void;
     login(): Promise<boolean>;

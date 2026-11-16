@@ -24,6 +24,11 @@ const MCP_TEXT = {
         copyUrl: 'Adresse kopieren',
         copyToken: 'Zugriffsschlüssel kopieren',
         copyTarget: 'Die Kopierschaltflächen verwenden die Adresse {url}.',
+        copyAddress: 'Adresse für die Kopierschaltflächen',
+        addressPublic: '{url} (öffentliche Adresse)',
+        addressNetwork: '{url} (Netzwerk)',
+        addressLocal: '{url} (nur dieser PC)',
+        firewallNote: 'Andere Rechner erreichen den Server nur, wenn Port {port} (TCP) in der Windows-Firewall und bei gemieteten Servern zusätzlich in der Firewall des Anbieters freigegeben ist.',
         clientNote: 'Claude Code und Claude Desktop senden den Schlüssel als Bearer-Token. Für ChatGPT und claude.ai die Adresse mit Schlüssel eintragen und „Keine Authentifizierung“ wählen; beide benötigen eine öffentliche HTTPS-Adresse.',
         regenerate: 'Neuen Zugriffsschlüssel erzeugen',
         regenerateConfirm: 'Neuen Zugriffsschlüssel erzeugen? Bereits eingerichtete KI-Clients verlieren den Zugriff, bis der neue Schlüssel eingetragen ist.',
@@ -70,6 +75,11 @@ const MCP_TEXT = {
         copyUrl: 'Copy address',
         copyToken: 'Copy access key',
         copyTarget: 'The copy buttons use the address {url}.',
+        copyAddress: 'Address used by the copy buttons',
+        addressPublic: '{url} (public address)',
+        addressNetwork: '{url} (network)',
+        addressLocal: '{url} (this PC only)',
+        firewallNote: 'Other computers reach the server only if port {port} (TCP) is open in the Windows Firewall and, on rented servers, also in the firewall of the provider.',
         clientNote: 'Claude Code and Claude Desktop send the key as a bearer token. For ChatGPT and claude.ai enter the address with key and choose "No authentication"; both need a public HTTPS address.',
         regenerate: 'Create new access key',
         regenerateConfirm: 'Create a new access key? AI clients that are already set up lose access until the new key is entered.',
@@ -96,13 +106,15 @@ const MCP_TEXT = {
 let mcpState: McpState | null = null;
 let mcpNotice = '';
 let mcpRefreshTimer: number | null = null;
+let mcpCopyChoice = '';
 
 function mcpText(): typeof MCP_TEXT.de {
     return currentLanguage === 'en' ? MCP_TEXT.en : MCP_TEXT.de;
 }
 
-function mcpCopyTarget(): 'public' | 'local' {
-    return mcpState?.publicUrl ? 'public' : 'local';
+function mcpCopyAddress(): string {
+    const offered = mcpState?.copyAddresses ?? [];
+    return offered.includes(mcpCopyChoice) ? mcpCopyChoice : offered[0] ?? '';
 }
 
 function renderMcpSettings(): void {
@@ -112,7 +124,7 @@ function renderMcpSettings(): void {
         mcpPortLabel: text.port, mcpPublicUrlLabel: text.publicUrl, mcpConnectTitle: text.connectTitle, mcpConnectHint: text.connectHint,
         mcpCopyClaudeCode: text.copyClaudeCode, mcpCopyJson: text.copyJson, mcpCopySecretUrl: text.copySecretUrl, mcpCopyUrl: text.copyUrl,
         mcpCopyToken: text.copyToken, mcpClientNote: text.clientNote, mcpRegenerateToken: text.regenerate, mcpNetworkNote: text.networkNote,
-        mcpActivityTitle: text.activityTitle, mcpActivityHint: text.activityHint, mcpCallsTitle: text.callsTitle, mcpJobsTitle: text.jobsTitle,
+        mcpCopyAddressLabel: text.copyAddress, mcpActivityTitle: text.activityTitle, mcpActivityHint: text.activityHint, mcpCallsTitle: text.callsTitle, mcpJobsTitle: text.jobsTitle,
     };
     for (const [id, value] of Object.entries(labels)) {
         const element = document.getElementById(id);
@@ -138,6 +150,9 @@ function renderMcpSettings(): void {
                         : state.networkAccess ? text.statusNetwork.replace('{url}', [...state.networkUrls, state.localUrl].join('\n'))
                             : text.statusLocal.replace('{url}', state.localUrl);
     byId<HTMLElement>('mcpNetworkNote').hidden = !state.networkAccess;
+    const firewallNote = byId<HTMLElement>('mcpFirewallNote');
+    firewallNote.hidden = !state.networkAccess;
+    firewallNote.textContent = text.firewallNote.replace('{port}', port);
     const activity = byId<HTMLElement>('mcpActivityLine');
     activity.hidden = !state.running;
     activity.textContent = state.lastActivityAt
@@ -145,8 +160,21 @@ function renderMcpSettings(): void {
             .replace('{tool}', state.lastTool || 'MCP')
             .replace('{time}', new Intl.DateTimeFormat(getIntlLocale(), { timeStyle: 'medium' }).format(new Date(state.lastActivityAt)))
         : text.activityNone;
-    const copyBase = state.publicUrl || state.localUrl.replace(/\/mcp$/, '');
-    byId<HTMLElement>('mcpCopyTarget').textContent = text.copyTarget.replace('{url}', copyBase + '/mcp');
+    const offered = state.copyAddresses, chosen = mcpCopyAddress();
+    const addressSelect = byId<HTMLSelectElement>('mcpCopyAddress');
+    const optionKey = [currentLanguage, ...offered].join('\n');
+    if (addressSelect.dataset.options !== optionKey) {
+        addressSelect.replaceChildren(...offered.map((address) => {
+            const label = address === state.localUrl ? text.addressLocal : state.networkUrls.includes(address) ? text.addressNetwork : text.addressPublic;
+            return new Option(label.replace('{url}', address), address);
+        }));
+        addressSelect.dataset.options = optionKey;
+    }
+    addressSelect.value = chosen;
+    byId<HTMLElement>('mcpCopyAddressGroup').hidden = offered.length < 2;
+    const copyTarget = byId<HTMLElement>('mcpCopyTarget');
+    copyTarget.hidden = offered.length > 1;
+    copyTarget.textContent = text.copyTarget.replace('{url}', chosen);
     for (const id of ['mcpCopyClaudeCode', 'mcpCopyJson', 'mcpCopySecretUrl', 'mcpCopyToken', 'mcpRegenerateToken']) {
         byId<HTMLButtonElement>(id).disabled = !state.tokenConfigured;
     }
@@ -229,7 +257,7 @@ async function saveMcpSettings(settings: McpSettingsInput): Promise<void> {
 }
 
 async function copyMcpValue(kind: McpCopyKind): Promise<void> {
-    const copied = await window.api.copyMcpValue(kind, mcpCopyTarget()).catch(() => false);
+    const copied = await window.api.copyMcpValue(kind, mcpCopyAddress()).catch(() => false);
     setMcpNotice(copied ? mcpText().copied : mcpText().copyFailed);
 }
 
@@ -268,6 +296,11 @@ function initMcpSettings(): void {
             return;
         }
         void saveMcpSettings({ publicUrl: value });
+    });
+    const addressSelect = byId<HTMLSelectElement>('mcpCopyAddress');
+    addressSelect.addEventListener('change', () => {
+        mcpCopyChoice = addressSelect.value;
+        renderMcpSettings();
     });
     window.api.onConfigChanged(() => { void reloadConfigAfterExternalChange(); });
     window.api.onMcpStateChanged((state) => {

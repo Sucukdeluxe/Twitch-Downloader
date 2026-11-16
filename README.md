@@ -100,7 +100,10 @@ Enable the server under **Settings → AI connection (MCP)**. It listens on `htt
 | Clients with a JSON configuration and header support | **Copy JSON configuration** |
 | ChatGPT and claude.ai connectors | **Copy address with key**, authentication "None"; requires a public HTTPS address |
 
-To reach the app on another machine, allow access from the network and put an HTTPS reverse proxy or tunnel in front of the port. Enter its address as the public address so the copy buttons use it. The built-in server speaks plain HTTP and should not be exposed to the internet directly.
+There are two ways to reach the app from another machine:
+
+- **Tunnel or reverse proxy on the same machine.** It forwards a public HTTPS address to `http://127.0.0.1:47821`. Access from the network can stay off and no port has to be opened. ChatGPT and claude.ai need this way. Example with a Cloudflare quick tunnel: `cloudflared tunnel --url http://127.0.0.1:47821`. Enter the HTTPS address it prints as the public address; the copy buttons then use it. A quick tunnel gets a new address every time it starts, so use a named tunnel or a reverse proxy with your own domain for permanent use.
+- **Direct access in a trusted network.** Allow access from the network and open the port (TCP) in the Windows Firewall, on rented servers also in the firewall of the provider. The copy buttons then use the network address; another address can be chosen above them. The built-in server speaks plain HTTP and should not be exposed to the internet directly.
 
 The server supports the MCP revisions 2026-07-28, 2025-11-25, 2025-06-18 and 2025-03-26 over Streamable HTTP.
 

@@ -36,6 +36,18 @@ export function normalizeMcpPublicUrl(value: unknown): string {
     return url.origin + basePath;
 }
 
+export interface McpAddresses { publicUrl: string; networkUrls: string[]; localUrl: string }
+
+export function mcpCopyAddresses(addresses: McpAddresses): string[] {
+    const publicAddress = addresses.publicUrl ? addresses.publicUrl + MCP_ENDPOINT_PATH : '';
+    return [...new Set([publicAddress, ...addresses.networkUrls, addresses.localUrl].filter(Boolean))];
+}
+
+export function resolveMcpCopyAddress(addresses: McpAddresses, requested: unknown): string {
+    const offered = mcpCopyAddresses(addresses);
+    return typeof requested === 'string' && offered.includes(requested) ? requested : offered[0];
+}
+
 export interface RequestCredentials { endpoint: boolean; token: string | null; source: 'header' | 'path' | null }
 
 export function readRequestCredentials(pathname: string, authorization: string | undefined): RequestCredentials {

@@ -5,9 +5,11 @@ import {
     generateAccessToken,
     isAllowedOrigin,
     isValidAccessToken,
+    mcpCopyAddresses,
     normalizeMcpPort,
     normalizeMcpPublicUrl,
     readRequestCredentials,
+    resolveMcpCopyAddress,
     tokensMatch,
 } from './access';
 
@@ -84,6 +86,30 @@ describe('settings normalisation', () => {
         expect(normalizeMcpPublicUrl('http://192.168.1.20:47821/mcp/')).toBe('http://192.168.1.20:47821');
         const withCredentials = ['https://user', 'pw@example.de'].join(':');
         for (const value of ['', 'ftp://example.de', withCredentials, 'https://example.de/?a=1', 'example.de', 5]) expect(normalizeMcpPublicUrl(value)).toBe('');
+    });
+});
+
+describe('addresses for the copy buttons', () => {
+    const local = 'http://127.0.0.1:47821/mcp', network = ['http://192.168.1.20:47821/mcp', 'http://10.8.0.2:47821/mcp'];
+
+    it('offers the public address first, then the network addresses, then the local one', () => {
+        expect(mcpCopyAddresses({ publicUrl: 'https://mcp.example.de', networkUrls: network, localUrl: local })).toEqual(['https://mcp.example.de/mcp', ...network, local]);
+        expect(mcpCopyAddresses({ publicUrl: '', networkUrls: network, localUrl: local })).toEqual([...network, local]);
+        expect(mcpCopyAddresses({ publicUrl: '', networkUrls: [], localUrl: local })).toEqual([local]);
+        expect(mcpCopyAddresses({ publicUrl: 'http://192.168.1.20:47821', networkUrls: network, localUrl: local })).toEqual([...network, local]);
+    });
+
+    it('uses the network address by default when network access is on and nothing public is set', () => {
+        expect(resolveMcpCopyAddress({ publicUrl: '', networkUrls: network, localUrl: local }, '')).toBe(network[0]);
+        expect(resolveMcpCopyAddress({ publicUrl: '', networkUrls: [], localUrl: local }, undefined)).toBe(local);
+    });
+
+    it('accepts only an offered address as the choice', () => {
+        const addresses = { publicUrl: 'https://mcp.example.de', networkUrls: network, localUrl: local };
+        expect(resolveMcpCopyAddress(addresses, local)).toBe(local);
+        expect(resolveMcpCopyAddress(addresses, network[1])).toBe(network[1]);
+        expect(resolveMcpCopyAddress(addresses, 'https://evil.example/mcp')).toBe('https://mcp.example.de/mcp');
+        expect(resolveMcpCopyAddress(addresses, 5)).toBe('https://mcp.example.de/mcp');
     });
 });
 

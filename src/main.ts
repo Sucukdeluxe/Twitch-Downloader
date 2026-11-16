@@ -16,7 +16,7 @@ import { VodLibraryStore, type VodLibraryChange } from './main/domain/vod-librar
 import { createStorageCleanupService, type StorageCleanupPreview, type StorageCleanupResult } from './main/domain/storage-cleanup';
 import { discoverClips, type ClipDiscoveryRequest } from './main/domain/clip-discovery';
 import { registerEditingWorkflows } from './main/editing-workflows';
-import { McpService, MediaJobDeferred, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
+import { McpService, MediaJobDeferred, MediaJobQueue, PartPlanStore, composeLossless, decodeToRgb, encodeJpeg, formatDifferences, grabRawFrames, loadChatActivity, loadChatRange, loadVodClips, parseMediaJobs, probeComposeSource, qualitiesForWidth, generateAccessToken, grabFrames, isValidAccessToken, loadStoryboard, mcpCopyAddresses, normalizeMcpPort, normalizeMcpPublicUrl, resolveMcpCopyAddress, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT, type GqlRequest, type McpChannelAutomation, type McpHost, type McpRecordingEvent } from './main/mcp';
 import { createApplicationBackup, inspectApplicationBackup, queueApplicationRestore, applyPendingApplicationRestore } from './main/domain/application-backup';
 import { cutterVideoFormat, readVideoSourceFormat, type VideoSourceFormat, type CutterColorMode } from './main/domain/media-format';
 import { createDevelopmentLiveUpdates } from './main/development-live';
@@ -10173,6 +10173,8 @@ function getMcpState() {
     const status = mcpService?.status() ?? { running: false, bindAddress: null, port: null, error: null, requests: 0, lastActivity: null, recentCalls: [] };
     const addresses = Object.values(networkInterfaces()).flatMap(entries => entries || [])
         .filter(entry => entry.family === 'IPv4' && !entry.internal).map(entry => entry.address);
+    const localUrl = `http://127.0.0.1:${config.mcp_port}${MCP_ENDPOINT_PATH}`;
+    const networkUrls = status.running && config.mcp_network_access ? addresses.map(address => `http://${address}:${config.mcp_port}${MCP_ENDPOINT_PATH}`) : [];
     return {
         available: mcpEncryptionAvailable(),
         enabled: config.mcp_enabled,
@@ -10182,8 +10184,9 @@ function getMcpState() {
         tokenConfigured: Boolean(mcpAccessToken),
         running: status.running,
         error: status.error,
-        localUrl: `http://127.0.0.1:${config.mcp_port}${MCP_ENDPOINT_PATH}`,
-        networkUrls: status.running && config.mcp_network_access ? addresses.map(address => `http://${address}:${config.mcp_port}${MCP_ENDPOINT_PATH}`) : [],
+        localUrl,
+        networkUrls,
+        copyAddresses: mcpCopyAddresses({ publicUrl: config.mcp_public_url, networkUrls, localUrl }),
         requests: status.requests,
         lastActivityAt: status.lastActivity?.at ?? null,
         lastTool: status.lastActivity?.tool ?? null,
@@ -10257,8 +10260,8 @@ ipcMain.handle('regenerate-mcp-token', async (event) => {
 
 ipcMain.handle('copy-mcp-value', (event, kind: unknown, target: unknown): boolean => {
     if (!isTrustedRendererEvent(event)) return false;
-    const base = target === 'public' && config.mcp_public_url ? config.mcp_public_url : `http://127.0.0.1:${config.mcp_port}`;
-    const url = base + MCP_ENDPOINT_PATH;
+    const state = getMcpState();
+    const url = resolveMcpCopyAddress({ publicUrl: state.publicUrl, networkUrls: state.networkUrls, localUrl: state.localUrl }, target);
     if (kind !== 'url' && !mcpAccessToken) return false;
     const text = kind === 'url' ? url
         : kind === 'token' ? mcpAccessToken

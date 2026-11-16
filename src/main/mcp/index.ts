@@ -10,7 +10,7 @@ export { loadChatActivity, loadChatRange, loadVodClips, type GqlRequest } from '
 export { PartPlanStore } from './part-plan-store';
 export { parseMediaJobs } from './media-jobs';
 export { loadStoryboard } from './vod-storyboard';
-export { generateAccessToken, isValidAccessToken, normalizeMcpPort, normalizeMcpPublicUrl, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT } from './access';
+export { generateAccessToken, isValidAccessToken, mcpCopyAddresses, normalizeMcpPort, normalizeMcpPublicUrl, resolveMcpCopyAddress, MCP_DEFAULT_PORT, MCP_ENDPOINT_PATH, MCP_MAX_PORT, MCP_MIN_PORT } from './access';
 export type { McpChannelAutomation, McpLiveRecordingResult, McpHost, McpAppStatus, McpQueueDraft, McpQueueAddResult, McpRecordingEvent, McpStreamer, McpVideoInfo, McpVod } from './host';
 
 export interface McpServiceSettings { enabled: boolean; port: number; network: boolean }
