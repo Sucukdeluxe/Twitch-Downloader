@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.23 - 2026-11-16
+
+This update adds an AI connection that lets assistants such as Claude or ChatGPT prepare VODs in the app, and fixes trimming, chat replays and merging.
+
+- Connect AI assistants under Settings → AI connection (MCP). They can look through a VOD using frames with timestamps, chat activity and viewer clips, and download it as named parts by topic.
+- A part can combine several separate time ranges of a VOD. The parts cover the whole VOD without gaps or duplicated content and are copied without re-encoding.
+- Cut and join downloaded files without re-encoding. These jobs run in the background and continue after a restart.
+- Trimmed VODs and the ranges kept around exclusions no longer lose up to ten seconds at the start. They begin at the selected start or up to about two seconds before it.
+- Chat replays are saved completely again.
+- Merge videos without re-encoding when parts of the same stream differ slightly in their measured frame rate.
+- Trim VODs and exclude ranges in VODs of up to 48 hours.
+
 ## 1.1.22 - 2026-11-15
 
 This update shows the selected end position in the video when adjusting a VOD trim.
