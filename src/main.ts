@@ -41,7 +41,8 @@ import { parseOmissionConfig, planEditedVod } from './main/domain/vod-edit-plan'
 import { normalizePlayerSeekSeconds } from './player-preferences';
 import { cleanupEditedVod, downloadEditedVod } from './main/domain/vod-edit-download';
 import { remuxMp4 } from './main/domain/mp4-remux';
-import { VodPlaybackService } from './main/domain/vod-playback-service';
+import { VodPlaybackService, validateVodMediaUrl } from './main/domain/vod-playback-service';
+import { MAX_SEGMENT_PLAYLIST_BYTES, parseSegmentBoundaries, segmentSpan } from './main/domain/vod-segments';
 import { VodTimelineService, type VodTimeline } from './main/domain/vod-timeline';
 import { compareUpdateVersions, createUpdateCheckCoordinator, normalizeUpdateVersion, UpdateLifecycle } from './main/updates';
 import { writeFileAtomicSync } from './main/infra/fs-atomic';
@@ -6138,7 +6139,7 @@ async function downloadVOD(
             && !cancelledItemIds.has(item.id) && await waitForQueuePhaseBoundary(item.id);
         try {
             const outputFiles = await downloadEditedVod({
-                id: item.id, url: item.url, folder, duration: clip.durationSec, startPart: clip.startPart, omissions,
+                id: item.id, url: item.url, folder, duration: clip.durationSec, startPart: clip.startPart, omissions, exactRanges: omissions.cuts === 'segments',
                 namingIdentity: JSON.stringify([clip.filenameFormat, clip.filenameTemplate, item.title, item.date, item.streamer, item.outputPath]),
                 ffmpegPath: await getFFmpegPath(), ffprobePath: await getFFprobePath(), wait,
                 onProcess(process) {
@@ -6153,7 +6154,16 @@ async function downloadVOD(
                         const milliseconds = Math.round(seconds * 1000);
                         return formatDuration(Math.floor(milliseconds / 1000)) + '.' + String(milliseconds % 1000).padStart(3, '0');
                     };
-                    const result = await downloadVODPart(item.url, filename, clock(range.start), clock(range.end - range.start), value => progress(value.progress), item.id, 1, 1, 0, item.quality);
+                    let offset = range.start, length = range.end - range.start;
+                    if (omissions.cuts === 'segments') {
+                        const boundaries = await loadVodSegmentBoundaries(item.url, item.quality);
+                        const span = boundaries ? segmentSpan(boundaries, range.start, range.end) : null;
+                        appendDebugLog('edited-vod-segment-span', { itemId: item.id, requested: range, span });
+                        if (!span) throw new Error(tBackend('editedVodSegmentsUnavailable'));
+                        offset = span.offset;
+                        length = span.limit;
+                    }
+                    const result = await downloadVODPart(item.url, filename, clock(offset), clock(length), value => progress(value.progress), item.id, 1, 1, 0, item.quality);
                     if (!result.success) throw new Error(result.error || tBackend('editedVodFailed'));
                 },
                 filename(part) {
@@ -9795,6 +9805,28 @@ function notifyMcpStateChanged(): void {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp-state-changed', getMcpState());
 }
 
+const vodSegmentCache = new Map<string, { expires: number; boundaries: number[] }>();
+
+async function loadVodSegmentBoundaries(url: string, quality: string | undefined, signal?: AbortSignal): Promise<number[] | null> {
+    const key = url + '|' + (quality || '');
+    const cached = vodSegmentCache.get(key);
+    if (cached && cached.expires > Date.now()) return cached.boundaries;
+    try {
+        const source = await resolveVodPlaybackSource(url, quality || config.streamlink_quality || 'source', signal) || await resolveVodPlaybackSource(url, 'source', signal);
+        if (!source) return null;
+        const response = await fetch(validateVodMediaUrl(source), { signal: AbortSignal.any([AbortSignal.timeout(20000), ...(signal ? [signal] : [])]) });
+        if (!response.ok || Number(response.headers.get('content-length') || 0) > MAX_SEGMENT_PLAYLIST_BYTES) return null;
+        const text = await response.text();
+        const boundaries = text.length > MAX_SEGMENT_PLAYLIST_BYTES ? null : parseSegmentBoundaries(text);
+        if (!boundaries) return null;
+        if (vodSegmentCache.size >= 12) vodSegmentCache.delete(vodSegmentCache.keys().next().value!);
+        vodSegmentCache.set(key, { expires: Date.now() + 60000, boundaries });
+        return boundaries;
+    } catch (error) {
+        appendDebugLog('vod-segments-failed', String(error));
+        return null;
+    }
+}
 async function resolveMcpFrameSource(vodId: string, width: number, signal: AbortSignal): Promise<string | null> {
     for (const quality of qualitiesForWidth(width)) {
         const source = await resolveVodPlaybackSource('https://www.twitch.tv/videos/' + vodId, quality, signal);
@@ -10105,6 +10137,9 @@ function createMcpHost(): McpHost {
                 path: file, sizeBytes: stat.size, durationSeconds: info.duration, width: info.width, height: info.height, fps: info.fps,
                 videoCodec: info.videoCodec, audioCodec: info.audioCodec, audioTracks: info.audioStreams.length,
             };
+        },
+        vodSegments(vodId, quality, signal) {
+            return loadVodSegmentBoundaries('https://www.twitch.tv/videos/' + vodId, quality, signal);
         },
         async sourceFormatDifferences(files, signal) {
             if (appShutdownStarted || !(await ensureFfmpegInstalled())) return [];

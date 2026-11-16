@@ -1,4 +1,5 @@
 import { MAX_EDITED_VOD_SECONDS, parseOmissionConfig, planEditedVod, type OmissionConfig } from '../domain/vod-edit-plan';
+import { snapTime } from '../domain/vod-segments';
 import { sanitizeFilenamePart } from '../infra/format-helpers';
 
 export interface TimeRange { start: number; end: number }
@@ -7,6 +8,8 @@ export interface CoverageOverlap extends TimeRange { parts: [number, number] }
 export interface CoverageReport { duration: number; coveredSeconds: number; gaps: TimeRange[]; overlaps: CoverageOverlap[]; complete: boolean }
 export interface PartPlan { parts: PlannedPart[]; coverage: CoverageReport }
 export interface PartDraft { name: string; ranges: TimeRange[] }
+export interface MovedCut { requested: number; actual: number }
+export interface AlignedParts { drafts: PartDraft[]; duration: number; moved: MovedCut[] }
 export interface ChapterLike { start: number; end: number; name: string }
 export interface PartFilenameContext { date: Date; part: number; name: string; title: string; channel: string; vodId: string }
 
@@ -164,7 +167,34 @@ export function describeCoverageProblems(coverage: CoverageReport): string[] {
     ];
 }
 
-export function partOmissions(part: PlannedPart, sourceDuration: number): OmissionConfig {
+export function alignPartsToSegments(parts: PlannedPart[], boundaries: number[], declaredDuration: number): AlignedParts {
+    const total = boundaries[boundaries.length - 1];
+    const moved = new Map<number, number>(), cuts = new Map<number, number>();
+    let anchor = Number.NEGATIVE_INFINITY, anchorCut = 0;
+    for (const time of [...new Set(parts.flatMap(part => part.ranges.flatMap(range => [range.start, range.end])))].sort((a, b) => a - b)) {
+        if (time >= declaredDuration - COVERAGE_TOLERANCE_SECONDS) { cuts.set(time, total); continue; }
+        if (time - anchor > COVERAGE_TOLERANCE_SECONDS) { anchor = time; anchorCut = snapTime(boundaries, time); }
+        cuts.set(time, anchorCut);
+    }
+    const snap = (time: number): number => {
+        const actual = cuts.get(time)!;
+        if (Math.abs(actual - time) >= 0.5) moved.set(time, actual);
+        return actual;
+    };
+    const drafts = parts.map(part => ({
+        name: part.name,
+        ranges: part.ranges.map((range, index) => {
+            const start = snap(range.start), end = snap(range.end);
+            if (end <= start) {
+                throw new PartPlanError(`Range ${index + 1} of part ${part.number} ("${part.name}") (${formatTimecode(range.start)}–${formatTimecode(range.end)}) is shorter than one segment of the VOD at that position. Cuts are possible about every 10 seconds; extend the range or merge it into a neighbouring part.`);
+            }
+            return { start, end };
+        }),
+    }));
+    return { drafts, duration: total, moved: [...moved].map(([requested, actual]) => ({ requested, actual })).sort((a, b) => a.requested - b.requested) };
+}
+
+export function partOmissions(part: PlannedPart, sourceDuration: number, cuts?: 'segments'): OmissionConfig {
     if (sourceDuration > MAX_PART_SOURCE_SECONDS) {
         throw new PartPlanError('Range-based parts support VODs of up to 48 hours. Download the VOD completely and build the parts from the downloaded files.');
     }
@@ -175,6 +205,7 @@ export function partOmissions(part: PlannedPart, sourceDuration: number): Omissi
         partDurationSec: Math.min(MAX_PART_SOURCE_SECONDS, Math.max(60, Math.ceil(part.duration))),
         ranges: omitted,
         selection,
+        ...(cuts ? { cuts } : {}),
     }, sourceDuration);
     if (!config) throw new PartPlanError(`Part ${part.number} ("${part.name}") cannot be expressed as a download.`);
     const plan = planEditedVod(sourceDuration, config.partDurationSec, config.ranges, 1, config.selection);

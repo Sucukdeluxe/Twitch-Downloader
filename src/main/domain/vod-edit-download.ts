@@ -12,7 +12,7 @@ interface PendingPart extends PublishedPart { index: number; number: number; cop
 interface EditJournal { version: 1; identity: string; inputs: Record<string, CachedInput>; published: Record<string, PublishedPart>; pending?: PendingPart }
 export interface EditedVodOptions extends MediaProcessOptions {
     id: string; url: string; folder: string; duration: number; startPart: number; omissions: OmissionConfig;
-    namingIdentity: string; ffmpegPath: string; ffprobePath: string;
+    namingIdentity: string; ffmpegPath: string; ffprobePath: string; exactRanges?: boolean;
     download(range: OmittedRange, filename: string, progress: (percent: number) => void): Promise<void>;
     filename(part: EditedVodPart): string;
     wait(): Promise<boolean>;
@@ -174,13 +174,13 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
         }
         if (signature && signature !== cached.signature) throw new Error('Source ranges use different media formats');
         signature = cached.signature;
-        inputs.push({ name, duration: Math.min(duration, cached.duration) });
+        inputs.push({ name, duration: options.exactRanges ? cached.duration : Math.min(duration, cached.duration) });
         completedDuration += duration;
         options.progress(completedDuration / plan.duration * 75, 'download', index + 1, plan.ranges.length);
     }
     if (!(await options.wait())) throw new Error('Edited VOD cancelled');
     options.checkSpace(Object.values(journal.inputs).reduce((sum, input) => sum + input.size, 0) * 1.1 + 32 * 1024 * 1024);
-    await fs.writeFile(path.join(workspace, 'concat.ffconcat'), 'ffconcat version 1.0\n' + inputs.map(input => 'file ' + input.name + '\noutpoint ' + input.duration.toFixed(6) + '\nduration ' + input.duration.toFixed(6)).join('\n') + '\n');
+    await fs.writeFile(path.join(workspace, 'concat.ffconcat'), 'ffconcat version 1.0\n' + inputs.map(input => 'file ' + input.name + (options.exactRanges ? '' : '\noutpoint ' + input.duration.toFixed(6)) + '\nduration ' + input.duration.toFixed(6)).join('\n') + '\n');
     for (const name of await fs.readdir(workspace)) if (/^part-\d{4}\.mp4$/.test(name)) await fs.unlink(path.join(workspace, name));
     const splitTimes = plan.parts.slice(1).map(part => part.start.toFixed(6));
     if (splitTimes.length && plan.parts[plan.parts.length - 1].duration < 12) {
@@ -190,7 +190,7 @@ export async function downloadEditedVod(options: EditedVodOptions): Promise<stri
     options.progress(75, 'assemble', 0, plan.parts.length);
     await runMediaProcess(options.ffmpegPath, [
         '-hide_banner', '-loglevel', 'warning', '-nostdin', '-f', 'concat', '-safe', '1', '-i', path.join(workspace, 'concat.ffconcat'),
-        '-map', '0:v:0', '-map', '0:a?', '-map_metadata', '-1', '-c', 'copy', '-t', plan.duration.toFixed(6),
+        '-map', '0:v:0', '-map', '0:a?', '-map_metadata', '-1', '-c', 'copy', ...(options.exactRanges ? [] : ['-t', plan.duration.toFixed(6)]),
         '-f', 'segment', ...(splitTimes.length ? ['-segment_times', splitTimes.join(',')] : ['-segment_time', '86401']),
         '-segment_time_delta', '0.05', '-reset_timestamps', '1', '-segment_format', 'mp4', '-segment_format_options', 'movflags=+faststart',
         '-progress', 'pipe:1', '-y', path.join(workspace, 'part-%04d.mp4'),

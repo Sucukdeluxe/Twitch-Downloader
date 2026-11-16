@@ -14,7 +14,7 @@ export function splitPromptText(channel: string, day: string): string {
         '2. Mit get_vod_timeline Kategorien, Titelwechsel und Zuschauerzahlen holen, dazu get_vod_clips und get_vod_chat_activity.',
         '3. Das VOD selbst ansehen: zuerst scan_vod_frames über die ganze Länge, danach an jedem Übergang mit kleinem Abstand nachschauen, bis der Wechsel auf wenige Sekunden genau feststeht. Die Themen bestimmst du aus dem, was du siehst, nicht nur aus den Kategorien.',
         '4. Parts nach Thema bilden. Gleiche Themen zu verschiedenen Zeiten kommen in denselben Part. Jede Sekunde des VODs gehört in genau einen Part, auch Anfang und Verabschiedung.',
-        '5. Den Plan mit queue_vod_parts und dry_run=true prüfen, mir die Parts mit Zeiten und Dateinamen zeigen und nach meiner Bestätigung ohne dry_run starten.',
+        '5. Den Plan mit queue_vod_parts und dry_run=true prüfen. Das Tool legt jeden Schnitt auf die nächste Segmentgrenze des VODs (etwa alle 10 Sekunden) und nennt die tatsächlichen Zeiten; liegt ein Schnitt dadurch ungünstig, die Zeit um etwa 10 Sekunden verschieben. Mir die Parts mit den tatsächlichen Zeiten und Dateinamen zeigen und nach meiner Bestätigung ohne dry_run starten.',
         '6. Mit wait_for_queue verfolgen und am Ende die fertigen Dateien nennen.',
     ].join('\n');
 }

@@ -104,6 +104,7 @@ export interface McpHost {
     resolveRecording(file: string): Promise<string | null>;
     resolveOutputFolder(folder: string | null, fallbackSource: string): Promise<string | null>;
     videoInfo(file: string): Promise<McpVideoInfo | null>;
+    vodSegments(vodId: string, quality: string | undefined, signal: AbortSignal): Promise<number[] | null>;
     sourceFormatDifferences(files: string[], signal: AbortSignal): Promise<string[]>;
     recordingEvents(file: string): Promise<McpRecordingEvent[] | null>;
     fileFrames(file: string, times: number[], width: number, signal: AbortSignal): Promise<GrabbedFrame[]>;

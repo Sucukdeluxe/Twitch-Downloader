@@ -239,6 +239,8 @@
     "src/main/domain/vod-preview.test.ts",
     "src/main/domain/vod-preview.ts",
     "src/main/domain/vod-quality.ts",
+    "src/main/domain/vod-segments.test.ts",
+    "src/main/domain/vod-segments.ts",
     "src/main/domain/vod-source-download.ts",
     "src/main/domain/vod-timeline.ts",
     "src/main/domain/workspace-session.ts",

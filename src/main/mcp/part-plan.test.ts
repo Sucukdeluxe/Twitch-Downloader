@@ -3,6 +3,7 @@ import { planEditedVod } from '../domain/vod-edit-plan';
 import {
     DEFAULT_PART_FILENAME_TEMPLATE,
     PartPlanError,
+    alignPartsToSegments,
     describeCoverageProblems,
     formatTimecode,
     parseTimeValue,
@@ -219,5 +220,59 @@ describe('splitLongParts', () => {
     it('leaves parts below the limit unchanged', () => {
         const part = { name: 'A', ranges: [{ start: 0, end: 3600 }] };
         expect(splitLongParts([part], 3600)).toEqual([part]);
+    });
+});
+
+describe('alignPartsToSegments', () => {
+    const boundaries = [0, 10, 20, 31.466, 41.466, 51.466, 62.233, 72.233, 82.233, 92.301];
+    const align = (drafts: Array<{ name: string; ranges: Array<{ start: number; end: number }> }>, declared = 92) => alignPartsToSegments(planParts(drafts, declared).parts, boundaries, declared);
+
+    it('moves every cut to the nearest segment boundary and keeps neighbouring parts on the same cut', () => {
+        const aligned = align([
+            { name: 'A', ranges: [{ start: 0, end: 27 }, { start: 60, end: 92 }] },
+            { name: 'B', ranges: [{ start: 27, end: 60 }] },
+        ]);
+        expect(aligned.duration).toBe(92.301);
+        expect(aligned.drafts).toEqual([
+            { name: 'A', ranges: [{ start: 0, end: 31.466 }, { start: 62.233, end: 92.301 }] },
+            { name: 'B', ranges: [{ start: 31.466, end: 62.233 }] },
+        ]);
+        expect(aligned.moved).toEqual([{ requested: 27, actual: 31.466 }, { requested: 60, actual: 62.233 }]);
+        const plan = planParts(aligned.drafts, aligned.duration);
+        expect(plan.coverage).toMatchObject({ complete: true, gaps: [], overlaps: [] });
+        expect(plan.parts.reduce((sum, part) => sum + part.duration, 0)).toBeCloseTo(92.301, 6);
+    });
+
+    it('extends a range that reaches the declared end to the real end of the media', () => {
+        expect(align([{ name: 'Ende', ranges: [{ start: 41.466, end: 92 }] }]).drafts[0].ranges).toEqual([{ start: 41.466, end: 92.301 }]);
+        expect(alignPartsToSegments(planParts([{ name: 'Ende', ranges: [{ start: 50, end: 100 }] }], 100).parts, boundaries, 100).drafts[0].ranges).toEqual([{ start: 51.466, end: 92.301 }]);
+    });
+
+    it('keeps two times within the coverage tolerance on one cut', () => {
+        const aligned = align([{ name: 'A', ranges: [{ start: 0, end: 25.5 }] }, { name: 'B', ranges: [{ start: 26, end: 92 }] }]);
+        expect(aligned.drafts.map(draft => draft.ranges[0])).toEqual([{ start: 0, end: 20 }, { start: 20, end: 92.301 }]);
+        expect(planParts(aligned.drafts, aligned.duration).coverage.complete).toBe(true);
+    });
+
+    it('leaves cuts that already lie on a boundary untouched', () => {
+        const aligned = align([{ name: 'A', ranges: [{ start: 10, end: 41.466 }] }]);
+        expect(aligned.drafts[0].ranges).toEqual([{ start: 10, end: 41.466 }]);
+        expect(aligned.moved).toEqual([]);
+    });
+
+    it('rejects a range that does not contain a whole segment', () => {
+        const parts = planParts([{ name: 'Zu kurz', ranges: [{ start: 2, end: 13 }] }], 60).parts;
+        expect(() => alignPartsToSegments(parts, [0, 30, 60], 60)).toThrow(/Range 1 of part 1 \("Zu kurz"\) \(00:00:02–00:00:13\) is shorter than one segment/);
+        expect(align([{ name: 'Ein Segment', ranges: [{ start: 21, end: 31 }] }]).drafts[0].ranges).toEqual([{ start: 20, end: 31.466 }]);
+    });
+
+    it('marks the download so that the ranges are taken as whole segments', () => {
+        const aligned = align([{ name: 'A', ranges: [{ start: 0, end: 27 }, { start: 60, end: 92 }] }]);
+        const plan = planParts(aligned.drafts, aligned.duration);
+        const omissions = partOmissions(plan.parts[0], Math.ceil(aligned.duration), 'segments');
+        expect(omissions).toEqual({ version: 1, partDurationSec: 62, ranges: [{ start: 31.466, end: 62.233 }], selection: { start: 0, end: 92.301 }, cuts: 'segments' });
+        const edited = planEditedVod(Math.ceil(aligned.duration), omissions.partDurationSec, omissions.ranges, 1, omissions.selection);
+        expect(edited.ranges).toEqual([{ start: 0, end: 31.466 }, { start: 62.233, end: 92.301 }]);
+        expect(edited.parts).toHaveLength(1);
     });
 });

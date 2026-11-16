@@ -23,9 +23,12 @@ const timeline: VodTimeline = {
     viewerGaps: [], chaptersStatus: 'available', titlesStatus: 'local',
 };
 
+const fixtureSegments: { value: number[] | null } = { value: null };
+
 interface Fixture { host: McpHost; queue: QueueItem[]; drafts: McpQueueDraft[]; jobRequests: MediaJobRequest[]; starts: boolean[]; jobs: MediaJobQueue; plans: StoredPlan[]; automation: { vod: Set<string>; record: Set<string> }; grabs: Array<{ times: number[]; width: number; height: number }>; live: Set<string> }
 
 function createFixture(): Fixture {
+    fixtureSegments.value = Array.from({ length: 2161 }, (_value, index) => index * 10);
     const queue: QueueItem[] = [], drafts: McpQueueDraft[] = [], jobRequests: MediaJobRequest[] = [], starts: boolean[] = [], plans: StoredPlan[] = [];
     const automation = { vod: new Set<string>(['kanal']), record: new Set<string>() };
     const grabs: Array<{ times: number[]; width: number; height: number }> = [];
@@ -101,6 +104,7 @@ function createFixture(): Fixture {
             return target === ROOT || target.startsWith(ROOT + path.sep) ? target : null;
         },
         videoInfo: async file => ({ path: file, sizeBytes: 1024 ** 3, durationSeconds: files.get(file)!, width: 1920, height: 1080, fps: 60, videoCodec: 'h264', audioCodec: 'aac', audioTracks: 1 }),
+        vodSegments: async vodId => vodId === '900' ? fixtureSegments.value : null,
         sourceFormatDifferences: async files => files.some(file => file.endsWith('b.mp4')) && files.some(file => file.endsWith('c.mp4')) ? ['video height'] : [],
         recordingEvents: async () => [{ offsetSeconds: 0, at: '2026-11-14T11:00:00.000Z', type: 'recording_start', title: 'Start', category: 'Just Chatting' }],
         fileFrames: async (_file, times) => times.map(time => ({ time, jpeg: JPEG })),
@@ -302,7 +306,8 @@ describe('MCP queue tools', () => {
             outputPath: path.join(ROOT, 'kanal', '14.11.2026', 'kanal_03_TikTok.mp4'),
             customClip: { startSec: 0, durationSec: 21600, startPart: 3, filenameFormat: 'parts', omissions: { version: 1, partDurationSec: 10800, ranges: [{ start: 3600, end: 14400 }], selection: { start: 0, end: 21600 } } },
         });
-        expect(fixture.drafts[1].customClip!.omissions).toEqual({ version: 1, partDurationSec: 10800, ranges: [], selection: { start: 3600, end: 14400 } });
+        expect(fixture.drafts[1].customClip!.omissions).toEqual({ version: 1, partDurationSec: 10800, ranges: [], selection: { start: 3600, end: 14400 }, cuts: 'segments' });
+        expect(data.cuts.moved).toEqual([]);
         const again = (await call('queue_vod_parts', { vod_id: '900', parts, first_part_number: 3, start: false })).structuredContent;
         expect(again.parts.map((part: any) => part.result)).toEqual(['already in queue', 'already in queue']);
         expect(again.queued).toBe(false);
@@ -326,6 +331,41 @@ describe('MCP queue tools', () => {
         const missing = await call('queue_vod_parts', { vod_id: '123', parts });
         expect(missing.isError).toBe(true);
         expect(missing.content[0].text).toContain('not found');
+    });
+
+    it('moves every cut to a segment boundary of the VOD so that neighbouring parts meet exactly', async () => {
+        const fixture = createFixture();
+        const uneven = [0];
+        while (uneven.at(-1)! < 21600) uneven.push(Math.round((uneven.at(-1)! + (uneven.length % 7 === 0 ? 11.466 : 10)) * 1000) / 1000);
+        uneven[uneven.length - 1] = 21600.068;
+        fixtureSegments.value = uneven;
+        const { call } = await startService(fixture);
+        const data = (await call('queue_vod_parts', { vod_id: '900', parts: [
+            { name: 'A', ranges: [{ start: 0, end: 3600 }, { start: 14403, end: 21600 }] },
+            { name: 'B', ranges: [{ start: 3600, end: 14403 }] },
+        ] })).structuredContent;
+        const cut = (time: number): number => uneven.reduce((best, boundary) => Math.abs(boundary - time) < Math.abs(best - time) ? boundary : best, 0);
+        const first = cut(3600), second = cut(14403);
+        expect(first).not.toBe(3600);
+        expect(data.coverage).toMatchObject({ complete: true, source_duration_seconds: 21600.068, gaps: [], double_coverage: [] });
+        expect(data.parts[0].ranges.map((range: any) => [range.start, range.end])).toEqual([[0, first], [second, 21600.068]]);
+        expect(data.parts[1].ranges.map((range: any) => [range.start, range.end])).toEqual([[first, second]]);
+        expect(data.cuts.moved.map((move: any) => [move.requested, move.actual])).toEqual([[3600, first], [14403, second]]);
+        expect(data.cuts.moved[0]).toMatchObject({ requested_tc: '01:00:00', moved_seconds: Math.round((first - 3600) * 1000) / 1000 });
+        expect(fixture.drafts[0].customClip).toMatchObject({ durationSec: 21601, omissions: { ranges: [{ start: first, end: second }], selection: { start: 0, end: 21600.068 }, cuts: 'segments' } });
+        expect(fixture.drafts[1].customClip!.omissions).toMatchObject({ ranges: [], selection: { start: first, end: second }, cuts: 'segments' });
+        expect(fixture.plans[0].parts.map(part => part.ranges)).toEqual([[{ start: 0, end: first }, { start: second, end: 21600.068 }], [{ start: first, end: second }]]);
+    });
+
+    it('queues nothing when the segment list of the VOD cannot be read', async () => {
+        const fixture = createFixture();
+        fixtureSegments.value = null;
+        const { call } = await startService(fixture);
+        const result = await call('queue_vod_parts', { vod_id: '900', parts });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('segment list of this VOD could not be read');
+        expect(fixture.drafts).toHaveLength(0);
+        expect(fixture.plans).toHaveLength(0);
     });
 
     it('queues a complete VOD and reports duplicates', async () => {

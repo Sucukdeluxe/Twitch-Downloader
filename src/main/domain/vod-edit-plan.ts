@@ -1,6 +1,6 @@
 export const MAX_EDITED_VOD_SECONDS = 172800;
 export interface OmittedRange { start: number; end: number }
-export interface OmissionConfig { version: 1; partDurationSec: number; ranges: OmittedRange[]; selection?: OmittedRange }
+export interface OmissionConfig { version: 1; partDurationSec: number; ranges: OmittedRange[]; selection?: OmittedRange; cuts?: 'segments' }
 export interface EditedVodPart { number: number; start: number; duration: number; ranges: OmittedRange[] }
 export interface EditedVodPlan { duration: number; omittedDuration: number; ranges: OmittedRange[]; omitted: OmittedRange[]; skippedNumbers: number[]; parts: EditedVodPart[] }
 
@@ -71,6 +71,6 @@ export function parseOmissionConfig(value: unknown, duration: number): OmissionC
         const ranges = normalizeOmissions(raw.ranges, duration);
         const selection = raw.selection === undefined ? undefined : normalizeOmissions([raw.selection], duration)[0];
         const plan = planEditedVod(duration, raw.partDurationSec!, ranges, 1, selection);
-        return plan.parts.length ? { version: 1, partDurationSec: raw.partDurationSec!, ranges, ...(selection ? { selection } : {}) } : null;
+        return plan.parts.length ? { version: 1, partDurationSec: raw.partDurationSec!, ranges, ...(selection ? { selection } : {}), ...(raw.cuts === 'segments' ? { cuts: 'segments' } : {}) } : null;
     } catch { return null; }
 }
