@@ -1,4 +1,4 @@
-export const MAX_EDITED_VOD_SECONDS = 172800;
+export const MAX_EDITED_VOD_SECONDS = 180000;
 export interface OmittedRange { start: number; end: number }
 export interface OmissionConfig { version: 1; partDurationSec: number; ranges: OmittedRange[]; selection?: OmittedRange; cuts?: 'segments' }
 export interface EditedVodPart { number: number; start: number; duration: number; ranges: OmittedRange[] }

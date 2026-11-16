@@ -196,7 +196,7 @@ export function alignPartsToSegments(parts: PlannedPart[], boundaries: number[],
 
 export function partOmissions(part: PlannedPart, sourceDuration: number, cuts?: 'segments'): OmissionConfig {
     if (sourceDuration > MAX_PART_SOURCE_SECONDS) {
-        throw new PartPlanError('Range-based parts support VODs of up to 48 hours. Download the VOD completely and build the parts from the downloaded files.');
+        throw new PartPlanError('Range-based parts support VODs of up to 50 hours. Download the VOD completely and build the parts from the downloaded files.');
     }
     const selection = { start: part.ranges[0].start, end: part.ranges[part.ranges.length - 1].end };
     const omitted = part.ranges.slice(1).map((range, index) => ({ start: part.ranges[index].end, end: range.start }));

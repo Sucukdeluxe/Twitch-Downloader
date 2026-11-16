@@ -74,6 +74,21 @@ describe('renderer queue input', () => {
         });
     });
 
+    it('accepts a trim of the VOD of a 48-hour stream, which is stored a few seconds longer', () => {
+        const stored = 48 * 3600 + 16;
+        const request = (durationSec: number) => normalizeRendererQueueInput({
+            url: 'https://www.twitch.tv/videos/123456789',
+            title: 'Fixture title',
+            date: '2026-08-11T20:00:00.000Z',
+            streamer: 'fixture_streamer',
+            duration_str: '48h0m16s',
+            customClip: { startSec: 0, durationSec, startPart: 1, filenameFormat: 'parts', omissions: { version: 1, partDurationSec: 3600, ranges: [{ start: 3600, end: 7200 }] } },
+        });
+
+        expect(request(stored)?.customClip?.durationSec).toBe(stored);
+        expect(request(51 * 3600)).toBeNull();
+    });
+
     it('rejects malformed queue requests before they can enter persistent state', () => {
         expect(normalizeRendererQueueInput(null)).toBeNull();
         expect(normalizeRendererQueueInput({ url: 'file:///C:/victim.txt', title: 'x', date: 'x', streamer: 'x', duration_str: '1s' })).toBeNull();
