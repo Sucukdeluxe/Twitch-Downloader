@@ -1,3 +1,4 @@
+import type { RecordingMove, RecordingOrganization } from './recording-files';
 import type { QueueItem, CustomClip } from '../../types';
 import type { VodTimeline } from '../domain/vod-timeline';
 import type { ArchiveSearchFilter, ArchiveSearchResult } from '../domain/archive-inventory';
@@ -69,7 +70,13 @@ export interface McpRecordingEvent { offsetSeconds: number; at: string; type: st
 export interface McpChannelAutomation { autoDownloadVods: boolean; autoRecord: boolean }
 export interface McpLiveRecordingResult { started: boolean; reason: 'offline' | 'already-recording' | 'unavailable' | 'rejected' | null; title: string | null }
 
+export interface McpDownloadSettings { download_mode: 'full' | 'parts'; part_minutes: number; parallel_downloads: number; default_quality: string }
+
 export interface McpHost {
+    createRecordingFolder(folder: string, dryRun: boolean): { path: string; created: boolean; dry_run: boolean };
+    organizeRecordings(files: RecordingMove[], dryRun: boolean): Promise<RecordingOrganization>;
+    downloadSettings(): McpDownloadSettings;
+    updateDownloadSettings(change: Partial<McpDownloadSettings>): McpDownloadSettings;
     status(): Promise<McpAppStatus>;
     streamers(): McpStreamer[];
     listVods(channel: string, refresh: boolean): Promise<McpVod[] | null>;

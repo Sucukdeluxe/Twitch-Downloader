@@ -1,3 +1,7 @@
+import { createRecordingFolder, organizeRecordings, validateRecordingPath } from './main/mcp/recording-files';
+import { downloadSettingsSchema } from './main/mcp/tools-files';
+import { relocateRecordingPath } from './main/domain/recording-paths';
+import type { McpDownloadSettings } from './main/mcp/host';
 import { MergeMediaService } from './main/domain/merge-media';
 import { createCutterWaveformAccumulator } from './main/domain/cutter-waveform';
 import { combineClipArchiveInventory, isWithinArchiveRoot } from './main/domain/clip-archive-inventory';
@@ -9923,7 +9927,7 @@ function isWithinMcpRoots(candidate: string): boolean {
 }
 
 async function resolveMcpRecording(file: string): Promise<string | null> {
-    if (typeof file !== 'string' || file.length > 1024 || file.includes('\0') || !path.isAbsolute(file) || !isSupportedVideoEditorInput(file)) return null;
+    if (typeof file !== 'string' || file.length > 1024 || file.includes('\0') || !path.isAbsolute(file) || !isSupportedVideoEditorInput(file) || !isLexicallyInside(mcpRootSpellings(), file)) return null;
     try {
         const real = await fs.promises.realpath(file);
         if (!(await fs.promises.stat(real)).isFile() || !isSupportedVideoEditorInput(real)) return null;
@@ -9965,8 +9969,60 @@ async function readMcpRecordingEvents(file: string): Promise<McpRecordingEvent[]
     }
 }
 
+function backupMcpMutation(kind: string, details: unknown): string {
+    if (!appDb) throw new Error('Application storage is unavailable.');
+    const directory = path.join(APPDATA_DIR, 'mcp-backups');
+    fs.mkdirSync(directory, { recursive: true });
+    const base = path.join(directory, new Date().toISOString().replace(/[:.]/g, '-') + '-' + kind + '-' + randomUUID());
+    const snapshot = appDb.raw.serialize();
+    fs.writeFileSync(base + '.db', snapshot, { flag: 'wx' });
+    if (!fs.readFileSync(base + '.db').equals(snapshot)) throw new Error('Could not verify the metadata backup.');
+    const sidecars = Object.fromEntries(['mcp-part-plans.json', 'mcp-file-jobs.json'].map(name => [name, fs.existsSync(path.join(APPDATA_DIR, name)) ? fs.readFileSync(path.join(APPDATA_DIR, name), 'utf8') : null]));
+    fs.writeFileSync(base + '.json', JSON.stringify({ kind, details, sidecars }), { flag: 'wx' });
+    return base;
+}
+
+function mcpDownloadSettings(): McpDownloadSettings {
+    return { download_mode: config.download_mode, part_minutes: config.part_minutes, parallel_downloads: Math.min(2, Math.max(1, config.parallel_downloads || 1)), default_quality: config.streamlink_quality };
+}
+
 function createMcpHost(): McpHost {
     return {
+        createRecordingFolder: (folder, dryRun) => createRecordingFolder([config.download_path, clipDownloadRoot()], folder, dryRun),
+        async organizeRecordings(files, dryRun) {
+            await mcpPartPlans.flush();
+            const result = organizeRecordings([config.download_path, clipDownloadRoot()], files, {
+                dryRun,
+                busy: applicationRestoreBusy() || applicationBackupBusy || downloadQueue.some(item => item.status === 'pending' || item.status === 'paused'),
+                beforeMove: planned => { backupMcpMutation('organize', { files: planned, queue: downloadQueue }); },
+            });
+            if (dryRun) return result;
+            const moved = result.files.filter(file => file.status === 'moved' || file.status === 'copied');
+            const relocate = (file: string): string => relocateRecordingPath(file, moved);
+            for (const item of downloadQueue) {
+                if (item.outputPath) item.outputPath = relocate(item.outputPath);
+                if (item.outputFiles) item.outputFiles = item.outputFiles.map(relocate);
+            }
+            saveQueue(downloadQueue, true);
+            downloadHistoryStore?.relocatePaths(moved);
+            mcpMediaJobs.relocatePaths(moved);
+            await mcpPartPlans.relocatePaths(moved);
+            readArchiveInventory.invalidate();
+            emitQueueUpdated(true);
+            return result;
+        },
+        downloadSettings: mcpDownloadSettings,
+        updateDownloadSettings(change) {
+            const accepted = downloadSettingsSchema.parse(change);
+            const before = mcpDownloadSettings();
+            const after = { ...before, ...accepted };
+            if (JSON.stringify(before) === JSON.stringify(after)) return before;
+            if (appShutdownStarted || applicationBackupBusy) throw new Error('The application is busy or closing.');
+            backupMcpMutation('settings', { before, after });
+            applyConfigTransition(config, normalizeConfigTemplates({ ...config, download_mode: after.download_mode, part_minutes: after.part_minutes, parallel_downloads: after.parallel_downloads, streamlink_quality: after.default_quality }));
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('config-changed');
+            return mcpDownloadSettings();
+        },
         async status() {
             const policy = getDownloadPolicyStatus();
             return {
@@ -10132,7 +10188,7 @@ function createMcpHost(): McpHost {
         async resolveOutputFolder(folder, fallbackSource) {
             if (folder !== null && (typeof folder !== 'string' || !path.isAbsolute(folder) || folder.includes('\0'))) return null;
             const target = path.resolve(folder ?? path.dirname(fallbackSource));
-            return isWithinMcpRoots(target) ? target : null;
+            try { return validateRecordingPath([config.download_path, clipDownloadRoot()], target); } catch { return null; }
         },
         async videoInfo(file) {
             const info = await getVideoInfo(file, currentEditorProcesses);

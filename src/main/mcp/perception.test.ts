@@ -56,7 +56,7 @@ function createFixture() {
         waitForQueueChange: () => new Promise<void>(resolve => setTimeout(resolve, 5)),
         searchRecordings: unused,
         resolveRecording: async (candidate: string) => path.resolve(candidate) === file ? file : null,
-        resolveOutputFolder: unused,
+        resolveOutputFolder: async (folder, fallback) => folder ?? path.dirname(fallback),
         videoInfo: async (candidate: string) => ({ path: candidate, sizeBytes: 1024, durationSeconds: 600, width: 1920, height: 1080, fps: 60, videoCodec: 'h264', audioCodec: 'aac', audioTracks: 1 }),
         vodSegments: async (vodId: string) => vodId === '900' ? Array.from({ length: 1441 }, (_value, index) => index * 10) : null,
         sourceFormatDifferences: unused, recordingEvents: unused,

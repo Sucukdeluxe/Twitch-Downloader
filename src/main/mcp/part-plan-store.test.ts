@@ -66,3 +66,13 @@ describe('PartPlanStore', () => {
         await store.flush();
     });
 });
+
+it('persists moved output paths without changing time ranges', async () => {
+    const file = storeFile(), store = new PartPlanStore(file);
+    const original = plan('900', 'Game', '2026-11-15T08:00:00.000Z');
+    await store.save(original);
+    const destination = path.resolve('/downloads/new/game.mp4');
+    await store.relocatePaths([{ source: original.parts[0].outputFile, destination }]);
+    const [saved] = await new PartPlanStore(file).history('900');
+    expect(saved.parts[0]).toEqual({ ...original.parts[0], outputFile: destination });
+});

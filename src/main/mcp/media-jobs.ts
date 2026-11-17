@@ -1,3 +1,4 @@
+import { relocateRecordingPath, type RecordingPathMove } from '../domain/recording-paths';
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import type { ComposeResult, ComposeSegmentInput } from './lossless-compose';
@@ -92,6 +93,12 @@ export class MediaJobQueue {
         this.changed();
         this.pump();
         return waiting;
+    }
+
+    relocatePaths(moves: readonly RecordingPathMove[]): void {
+        if (this.busy) throw new Error('File jobs are still busy.');
+        this.jobs = this.jobs.map(job => ({ ...job, outputPath: relocateRecordingPath(job.outputPath, moves), segments: job.segments.map(segment => ({ ...segment, path: relocateRecordingPath(segment.path, moves) })) }));
+        this.changed();
     }
 
     get busy(): boolean {

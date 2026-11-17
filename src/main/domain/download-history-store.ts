@@ -1,3 +1,4 @@
+import { relocateRecordingPath, type RecordingPathMove } from './recording-paths';
 import { statSync, promises as fs } from 'node:fs';
 import type { DbHandle } from '../infra/db';
 import { parseTwitchClipId } from '../twitch/clip-url';
@@ -34,6 +35,7 @@ interface DownloadCompletion {
 
 export interface DownloadHistoryStore {
     recordQueueItem(item: unknown): boolean;
+    relocatePaths(moves: readonly RecordingPathMove[]): void;
     recordClip(input: { attemptId: string; clipId: string; filename: string; completedAt?: string; title?: string; channel?: string; sourceUrl?: string }): boolean;
     recoverCompletedQueue(): number;
     summarize(now?: Date, range?: DownloadHistoryRange): LifetimeDownloadStats;
@@ -213,6 +215,19 @@ export function createDownloadHistoryStore(db: DbHandle): DownloadHistoryStore {
     };
     return {
         recordQueueItem,
+        relocatePaths(moves) {
+            db.transaction(() => {
+                const rows = new Map<string, { event_key: string; paths_json: string }>();
+                for (const move of moves) {
+                    for (const row of db.all<{ event_key: string; paths_json: string }>('SELECT DISTINCT d.event_key, d.paths_json FROM download_history_details d, json_each(d.paths_json) p WHERE p.value = ? COLLATE NOCASE', [move.source])) rows.set(row.event_key, row);
+                }
+                for (const row of rows.values()) {
+                    const paths = JSON.parse(row.paths_json) as string[];
+                    const next = paths.map(file => relocateRecordingPath(file, moves));
+                    if (JSON.stringify(paths) !== JSON.stringify(next)) db.run('UPDATE download_history_details SET paths_json = ? WHERE event_key = ? AND paths_json = ?', [JSON.stringify(next), row.event_key, row.paths_json]);
+                }
+            });
+        },
         hasClip(clipId) {
             if (!clipId || clipId.length > 512) return false;
             return !!db.get("SELECT 1 FROM download_history h, json_each(h.source_ids_json) s WHERE h.kind = 'clip' AND s.value = ? LIMIT 1", [clipId]);

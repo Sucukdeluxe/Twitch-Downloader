@@ -43,6 +43,10 @@ function createFixture(): Fixture {
     });
     const files = new Map([[path.join(ROOT, 'kanal', 'a.mp4'), 3600], [path.join(ROOT, 'kanal', 'b.mp4'), 1800], [path.join(ROOT, 'kanal', 'c.mp4'), 900]]);
     const host: McpHost = {
+        createRecordingFolder: (folder, dryRun) => ({ path: folder, created: !dryRun, dry_run: dryRun }),
+        organizeRecordings: async (files, dryRun) => ({ dry_run: dryRun, files: files.map(file => ({ ...file, bytes: 10, status: dryRun ? 'planned' : 'moved' })) }),
+        downloadSettings: () => ({ download_mode: 'parts', part_minutes: 60, parallel_downloads: 1, default_quality: 'source' }),
+        updateDownloadSettings: change => ({ ...host.downloadSettings(), ...change }),
         status: async () => ({
             version: '9.9.9', language: 'de', downloadFolder: ROOT, downloadMode: 'parts', partMinutes: 60, freeBytes: 50 * 1024 ** 3, parallelDownloads: 1,
             defaultQuality: 'source', downloading: false, paused: false, waitingForTimeWindow: window.waiting, nextDownloadWindowStart: window.waiting ? '2026-11-17T01:00:00.000Z' : null,
@@ -171,11 +175,12 @@ describe('MCP service protocol', () => {
         const { rpc } = await startService(createFixture());
         const { result } = await rpc('tools/list');
         expect(result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
+            'create_recording_folder', 'get_download_settings', 'organize_recordings', 'set_download_settings',
             'cancel_file_job', 'clear_completed_queue_items', 'create_videos_from_files', 'get_file_jobs', 'get_queue', 'get_recording_events', 'get_status',
             'get_video_frames', 'get_video_info', 'get_vod_chat', 'get_vod_chat_activity', 'get_vod_clips', 'get_vod_frames', 'get_vod_parts_state', 'get_vod_storyboard',
             'get_vod_timeline', 'list_recordings', 'list_streamers', 'list_vods', 'pause_queue', 'queue_vod', 'queue_vod_parts', 'remove_queue_items', 'retry_queue_items',
             'scan_video_frames', 'scan_vod_frames', 'set_channel_automation', 'start_live_recording', 'start_queue', 'suggest_vod_parts', 'wait_for_file_jobs', 'wait_for_queue',
-        ]);
+        ].sort());
         for (const tool of result.tools) {
             expect(tool.description.length).toBeGreaterThan(40);
             expect(tool.inputSchema.type).toBe('object');
@@ -497,5 +502,43 @@ describe('MCP file tools', () => {
         const mixed = await call('create_videos_from_files', { videos: [{ name: 'Gemischt', segments: [{ path: b }, { path: path.join(ROOT, 'kanal', 'c.mp4') }] }], dry_run: true });
         expect(mixed.isError).toBe(true);
         expect(mixed.content[0].text).toContain('formats differ (video height)');
+    });
+});
+
+
+describe('MCP recording management', () => {
+    it('uses the requested stream day for folder and filename instead of the source start date', async () => {
+        const fixture = createFixture();
+        fixture.host.partOutputFolder = (channel, startedAt) => path.join(ROOT, channel, new Date(startedAt).getDate().toString());
+        const { call } = await startService(fixture);
+        const result = await call('queue_vod_parts', { vod_id: '900', stream_date: '2026-11-16', parts: [{ name: 'Game', ranges: [{ start: 0, end: 21600 }] }], dry_run: true });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent.output_folder).toBe(path.join(ROOT, 'kanal', '16'));
+        expect(path.basename(result.structuredContent.parts[0].output_file)).toContain('16.11.2026');
+        expect(fixture.drafts).toHaveLength(0);
+    });
+    it('validates a custom output folder and rejects impossible dates', async () => {
+        const { call } = await startService(createFixture());
+        const args = { vod_id: '900', parts: [{ name: 'Game', ranges: [{ start: 0, end: 21600 }] }], dry_run: true };
+        const valid = await call('queue_vod_parts', { ...args, output_folder: path.join(ROOT, 'Final') });
+        expect(valid.structuredContent.output_folder).toBe(path.join(ROOT, 'Final'));
+        expect((await call('queue_vod_parts', { ...args, output_folder: path.resolve('/outside') })).isError).toBe(true);
+        expect((await call('queue_vod_parts', { ...args, stream_date: '2026-02-30' })).isError).toBe(true);
+    });
+    it('exposes only download settings and keeps dry runs unchanged', async () => {
+        const fixture = createFixture();
+        const changes: unknown[] = [];
+        fixture.host.downloadSettings = () => ({ download_mode: 'full', part_minutes: 60, parallel_downloads: 1, default_quality: 'source' });
+        fixture.host.updateDownloadSettings = change => { changes.push(change); return { ...fixture.host.downloadSettings(), ...change }; };
+        const { call } = await startService(fixture);
+        expect((await call('get_download_settings')).structuredContent.settings.parallel_downloads).toBe(1);
+        const preview = await call('set_download_settings', { settings: { parallel_downloads: 2 }, dry_run: true });
+        expect(preview.structuredContent.after.parallel_downloads).toBe(2);
+        expect(changes).toHaveLength(0);
+        expect((await call('set_download_settings', { settings: { parallel_downloads: 3 } })).isError).toBe(true);
+        expect((await call('set_download_settings', { settings: { mcp_access_token: 'unsafe' } })).isError).toBe(true);
+        expect((await call('set_download_settings', { settings: { default_quality: '720p60' } })).isError).toBe(true);
+        expect((await call('set_download_settings', { settings: { download_mode: 'parts' } })).isError).not.toBe(true);
+        expect(changes).toEqual([{ download_mode: 'parts' }]);
     });
 });

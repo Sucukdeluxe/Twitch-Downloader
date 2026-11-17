@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.26 - 2026-11-17
+
+AI assistants can now organize completed VODs and prepare each stream day directly in the app.
+
+- Rename or move completed videos together with their chat and event files, without overwriting existing files.
+- Choose a destination folder and stream-day date when downloading topic parts.
+- Read download settings and change full-VOD mode, part length and parallel downloads through the AI connection.
+
 ## 1.1.25 - 2026-11-16
 
 Compatible VOD parts can now be joined directly even when dropped frames make their average frame rates differ.

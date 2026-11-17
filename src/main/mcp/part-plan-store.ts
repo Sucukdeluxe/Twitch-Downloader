@@ -1,3 +1,4 @@
+import { relocateRecordingPath, type RecordingPathMove } from '../domain/recording-paths';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { TimeRange } from './part-plan';
@@ -70,6 +71,20 @@ export class PartPlanStore {
             const same = [...current.filter(entry => entry.vodId === valid.vodId), valid].slice(-MAX_PLANS_PER_VOD);
             const next = [...others, ...same].slice(-MAX_PLANS);
             await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+            const temporary = this.filePath + '.tmp';
+            await fs.writeFile(temporary, JSON.stringify({ version: 1, plans: next }));
+            await fs.rename(temporary, this.filePath);
+            this.plans = next;
+        });
+        this.pending = task.catch(error => this.onError(error));
+        return task;
+    }
+
+    relocatePaths(moves: readonly RecordingPathMove[]): Promise<void> {
+        const task = this.pending.then(async () => {
+            const current = await this.load();
+            const next = current.map(plan => ({ ...plan, parts: plan.parts.map(part => ({ ...part, outputFile: relocateRecordingPath(part.outputFile, moves) })) }));
+            if (JSON.stringify(current) === JSON.stringify(next)) return;
             const temporary = this.filePath + '.tmp';
             await fs.writeFile(temporary, JSON.stringify({ version: 1, plans: next }));
             await fs.rename(temporary, this.filePath);
